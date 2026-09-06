@@ -81,5 +81,8 @@ print &ui_form_end([ [ undef, $text{'save'} ],
 		     $cf->{'token'} ? ( [ "sync", $text{'index_syncnow'} ] ) : ( ),
 		     $cf->{'token'} ? ( [ "forget", $text{'index_forget'} ] ) : ( ) ]);
 
+print "<p>",&ui_link("compare.cgi?dom=$d->{'id'}", $text{'index_compare'}),
+      "</p>\n";
+
 &ui_print_footer("/virtual-server/summary_domain.cgi?dom=$d->{'id'}",
 		 $text{'index_return'});
