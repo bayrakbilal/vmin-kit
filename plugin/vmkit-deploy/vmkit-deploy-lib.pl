@@ -303,9 +303,14 @@ $out = $text{'err_timeout'} if ($timed);
 my $logdir = "$module_config_directory/logs";
 -d $logdir || &make_dir($logdir, 0700, 1);
 my $stamp = &make_date(time());
+# Webmin'in tempfile fonksiyonlari bareword dosya tanitici bekliyor; 'use
+# strict' altinda bu yasak oldugu icin Virtualmin eklentilerinin kendi
+# kullandigi kalipla kisa sureligine kapatiyoruz.
+no strict "subs";
 &open_tempfile(LOG, ">".&deploy_log_path($d, $dep));
 &print_tempfile(LOG, "[$stamp] ".($ok ? "OK" : "FAILED")."\n\n".$out."\n");
 &close_tempfile(LOG);
+use strict "subs";
 
 $dep->{'last_time'}   = time();
 $dep->{'last_status'} = $ok ? "ok" : "failed";
