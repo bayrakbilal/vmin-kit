@@ -1,6 +1,7 @@
 #!/usr/bin/perl
-# Bir deployment'i calistirir ve ciktisini DUZ METIN olarak dondurur.
-# Sayfadaki modal bu ciktiyi fetch ile alip gosteriyor.
+# Bir deployment'i calistirir ve ciktisini normal bir sayfada gosterir.
+# Webmin'in ui-lib'inde modal/popup destegi yok; kendi penceremizi uydurmak
+# yerine temanin standart sayfa duzenini kullaniyoruz.
 use strict;
 use warnings;
 our (%text, %in);
@@ -8,18 +9,22 @@ our (%text, %in);
 require './vmkit-deploy-lib.pl';
 &ReadParse();
 
-print "Content-type: text/plain; charset=utf-8\n\n";
-
 my $d = &virtual_server::get_domain($in{'dom'});
-if (!$d) { print $text{'index_edom'},"\n"; exit; }
-if (!&can_edit_domain($d)) { print $text{'index_eaccess'},"\n"; exit; }
-if (!$d->{'vmkit-deploy'}) { print &text('index_eoff', $d->{'dom'}),"\n"; exit; }
+$d || &error($text{'index_edom'});
+&can_edit_domain($d) || &error($text{'index_eaccess'});
+$d->{'vmkit-deploy'} || &error(&text('index_eoff', $d->{'dom'}));
 
 my $dep = &get_deploy($d, $in{'id'});
-if (!$dep) { print $text{'edit_egone'},"\n"; exit; }
+$dep || &error($text{'edit_egone'});
+
+&ui_print_header(&virtual_server::domain_in($d), $text{'deploy_title'},
+		 "", undef, 0, 0);
 
 my ($ok, $out) = &run_deploy($d, $dep);
-print $ok ? $text{'deploy_ok'} : $text{'deploy_failed'}, "\n\n";
-print $out, "\n";
 &webmin_log("deploy", "deploy", $dep->{'name'} || $dep->{'id'},
 	    { 'status' => $ok ? "ok" : "failed" });
+
+print "<p><b>", $ok ? $text{'deploy_ok'} : $text{'deploy_failed'}, "</b></p>\n";
+print "<pre style='white-space:pre-wrap'>", &html_escape($out), "</pre>\n";
+
+&ui_print_footer("index.cgi?dom=$d->{'id'}", $text{'edit_return'});

@@ -268,13 +268,14 @@ my $env = "GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND=".
 	  quotemeta(&git_ssh_command($d));
 
 my @steps;
-# Ilk deploy'da bare klon, sonrakilerde fetch. core.bare=false yapiyoruz ki
-# --work-tree ile checkout calissin.
+# Ilk deploy'da bare klon, sonrakilerde fetch. Repo BARE kalmali: core.bare
+# false yapilirsa git deponun kendi dizinini calisma kopyasi sanar ve
+# "refusing to fetch into branch ... checked out at ..." diyerek fetch'i
+# reddeder. Bare halde --work-tree ile checkout zaten calisiyor.
 push(@steps, "if [ ! -d ".quotemeta($repo)." ]; then ".
 	     "mkdir -p ".quotemeta($d->{'home'}."/.vmkit/repos")." && ".
 	     "$env git clone --quiet --bare -- ".quotemeta($url)." ".
-	     quotemeta($repo)." && ".
-	     "git --git-dir=".quotemeta($repo)." config core.bare false; ".
+	     quotemeta($repo)."; ".
 	     "fi");
 push(@steps, "git --git-dir=".quotemeta($repo).
 	     " remote set-url origin -- ".quotemeta($url));
