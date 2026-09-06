@@ -15,7 +15,6 @@ index_proxy=Proxy new web records?
 index_proxy_help=Applies to the website records only. Mail and validation records are never proxied, otherwise mail and certificate renewal break.
 index_domains=Domains
 index_nodoms=No domains with DNS enabled.
-index_skeleton=SKELETON: settings are saved, but no synchronisation runs yet.
 
 col_domain=Domain
 col_status=Zone status

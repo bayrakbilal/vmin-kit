@@ -65,8 +65,5 @@ else {
 	print &ui_form_end([ [ undef, $text{'save'} ] ]);
 	}
 
-# ISKELET uyarisi
-print "<p><table border=1 cellpadding=4><tr><td bgcolor=#ffffcc>",
-      "<b>$text{'index_skeleton'}</b></td></tr></table></p>\n";
 
 &ui_print_footer("/", $text{'index'});

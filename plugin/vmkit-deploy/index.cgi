@@ -79,9 +79,6 @@ else {
 print &ui_link("edit_deploy.cgi?dom=$d->{'id'}&new=1", $text{'index_add'}),
       "<br>\n";
 
-# ISKELET uyarisi - islevsellik henuz yok.
-print "<p><table border=1 cellpadding=4><tr><td bgcolor=#ffffcc>",
-      "<b>$text{'index_skeleton'}</b></td></tr></table></p>\n";
 
 &ui_print_footer("/virtual-server/summary_domain.cgi?dom=$d->{'id'}",
 		 $text{'index_return'});

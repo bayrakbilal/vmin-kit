@@ -23,7 +23,6 @@ index_dom=Domain
 index_count=Deployments
 index_none=No deployments have been defined for this domain yet.
 index_add=Add a new deployment
-index_skeleton=SKELETON: definitions are saved, but no git operation is performed yet.
 
 col_name=Name
 col_source=Source
