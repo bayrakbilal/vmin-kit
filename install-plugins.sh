@@ -121,6 +121,25 @@ for mod in "${MODULES[@]}"; do
   plugins_add "$mod"
 done
 
+# Domain menusu baglantilari domain basina onbellekleniyor ve yalnizca domain
+# kaydedilince tazeleniyor. Modul guncellemesinden sonra temizlemezsek yeni
+# etiketler/ikonlar panelde gorunmez.
+clear_links_cache(){
+  perl -e '"'"'
+    $ENV{WEBMIN_CONFIG} ||= "/etc/webmin"; $ENV{WEBMIN_VAR} ||= "/var/webmin";
+    push(@INC, "/usr/share/webmin"); $main::no_acl_check++;
+    chdir("/usr/share/webmin/virtual-server");
+    $0 = "/usr/share/webmin/virtual-server/clear.pl";
+    require "./virtual-server-lib.pl";
+    &clear_links_cache();
+  '"'"' 2>/dev/null || return 1
+}
+if clear_links_cache; then
+  log "Domain menu onbellegi temizlendi."
+else
+  warn "Menu onbellegi temizlenemedi; degisiklik gorunmezse domaini kaydedin."
+fi
+
 if [ "$NEED_RESTART" = 1 ]; then
   # module.info onbellegi: yalnizca /usr/share/webmin dizininin mtime'ina
   # bakildigi icin icerik degisikliklerinde kendiliginden tazelenmiyor.

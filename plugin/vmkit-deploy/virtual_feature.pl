@@ -109,7 +109,7 @@ my ($d) = @_;
 return ( { 'mod'   => $module_name,
 	   'desc'  => $text{'links_link'},
 	   'page'  => 'index.cgi?dom='.$d->{'id'},
-	   'cat'   => 'services',
+	   'cat'   => 'server',
 	   'order' => 550 } );
 }
 
