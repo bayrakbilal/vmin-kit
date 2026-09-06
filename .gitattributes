@@ -3,7 +3,7 @@
 *.env  text eol=lf
 *.pl   text eol=lf
 *.cgi  text eol=lf
-module.info  text eol=lf
+module.info* text eol=lf
 config       text eol=lf
-config.info  text eol=lf
+config.info* text eol=lf
 lang/*       text eol=lf
