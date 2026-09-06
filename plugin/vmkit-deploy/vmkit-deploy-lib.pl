@@ -226,42 +226,6 @@ my ($d) = @_;
 return "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new".
        " -o ConnectTimeout=10";
 }
-# stream_command(cmd) -> (basarili?, cikti)
-# Ciktiyi GELDIGI ANDA ekrana basar, ayni zamanda biriktirip dondurur.
-# Cagiran taraf once &ui_print_unbuffered_header ile sayfayi acmis ve <pre>
-# baslatmis olmali. Zaman asimi icin backquote_with_timeout kullanamiyoruz
-# (o komutun bitmesini bekler), onun yerine komutu 'timeout' ile sariyoruz;
-# oldurulen komut 124 ile doner.
-sub stream_command
-{
-my ($cmd, $secs) = @_;
-my $to = &has_command("timeout");
-$cmd = quotemeta($to)." ".int($secs || 600)." ".$cmd if ($to);
-# Webmin'in calisan kalibiyla ayni bicim (bkz. backquote_with_timeout):
-# komutu parantezle, translate_command'dan gecir ve STDIN'i /dev/null'a bagla.
-# STDIN acik birakilirsa su/composer CGI'nin girdisini devralip takilabiliyor
-# ve cikti alinamiyor.
-my $real = &translate_command($cmd);
-my $out = '';
-local $| = 1;
-no strict "subs";
-&open_execute_command(STREAMCMD, "($real) </dev/null 2>&1", 1, 1);
-while(my $l = <STREAMCMD>) {
-	$out .= $l;
-	print &html_escape($l);
-	}
-close(STREAMCMD);
-my $st = $?;
-use strict "subs";
-# 'timeout' oldurdugu komutu 124 ile bildirir - genel hata yerine sureyi soyle.
-if ($to && ($st >> 8) == 124) {
-	my $msg = "\n".$text{'err_timeout'}."\n";
-	print &html_escape($msg);
-	return (0, $out.$msg);
-	}
-return ($st ? 0 : 1, $out);
-}
-
 # ---- deploy islemi ------------------------------------------------------
 # Git verisi web kokunun DISINDA durur:
 #     ~/.vmkit/repos/<id>.git      (bare)
@@ -292,7 +256,6 @@ return &read_file_contents(&deploy_log_path($d, $dep));
 
 # run_deploy(&domain, &deploy) -> (basarili?, cikti)
 # Tum git komutlari domainin kendi kullanicisi olarak calisir.
-# Cikti akis halinde basilir; cagiran taraf <pre> acmis olmali.
 sub run_deploy
 {
 my ($d, $dep) = @_;
@@ -345,7 +308,9 @@ push(@steps, "git --git-dir=$R --work-tree=$T log -1 --date=short --pretty=".
 
 my $inner = "set -e; ".join("; ", @steps);
 my $cmd = &command_as_user($d->{'user'}, 1, $inner);
-my ($ok, $out) = &stream_command($cmd, 600);
+my ($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 600);
+my $ok = !$timed && !$?;
+$out = $text{'err_timeout'} if ($timed);
 
 # Log ayri dosyada: key=value bicimi coksatirli degeri tasiyamaz.
 my $logdir = "$module_config_directory/logs";
