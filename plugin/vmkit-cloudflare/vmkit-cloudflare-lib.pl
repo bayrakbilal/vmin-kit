@@ -228,4 +228,15 @@ return &norm_value($t, $r->{'priority'}." ".$r->{'content'}) if ($t eq 'MX');
 return &norm_value($t, $r->{'content'});
 }
 
+# short_value(deger) -> uzunsa kisaltilmis, tamami title'da
+# DKIM anahtarlari gibi cok uzun TXT degerleri tabloyu bozuyor.
+sub short_value
+{
+my ($v, $max) = @_;
+$max ||= 60;
+return &html_escape($v) if (length($v) <= $max);
+return "<span title=\"".&quote_escape($v)."\">".
+       &html_escape(substr($v, 0, $max))."...</span>";
+}
+
 1;

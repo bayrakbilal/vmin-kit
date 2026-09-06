@@ -66,3 +66,4 @@ err_notoken=No API token has been saved for this domain
 err_badjson=Cloudflare returned an unreadable answer
 err_apifail=Cloudflare rejected the request
 err_nozone=No zone named $1 was found on this Cloudflare account
+st_cnameclash=Cloudflare has a CNAME at this name - it will not accept another record type there

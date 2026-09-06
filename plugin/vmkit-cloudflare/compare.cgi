@@ -40,6 +40,13 @@ foreach my $r (@$cfrecs) {
 	$ck{lc($r->{'name'})."|".uc($r->{'type'})."|".&cf_value($r)} = $r;
 	}
 
+# Cloudflare'de CNAME tasiyan adlar. O adlara baska tipte kayit gonderemeyiz:
+# Cloudflare CNAME'i tek basina istiyor, aksi halde istegi reddeder.
+my %cfcname;
+foreach my $r (@$cfrecs) {
+	$cfcname{lc($r->{'name'})} = 1 if (uc($r->{'type'}) eq 'CNAME');
+	}
+
 my @table;
 # Yerelde olanlar
 foreach my $k (sort keys %lk) {
@@ -52,9 +59,11 @@ foreach my $k (sort keys %lk) {
 		}
 	else {
 		$state = $text{'st_topush'};
+		$note = $text{'st_cnameclash'}
+			if ($t ne 'CNAME' && $cfcname{$n});
 		}
-	push(@table, [ $n, $t, "<tt>".&html_escape($v)."</tt>",
-		       $c ? "<tt>".&html_escape(&cf_value($c))."</tt>" : "-",
+	push(@table, [ $n, $t, "<tt>".&short_value($v)."</tt>",
+		       $c ? "<tt>".&short_value(&cf_value($c))."</tt>" : "-",
 		       $state, $note || "" ]);
 	}
 # Yalnizca Cloudflare'de olanlar
@@ -70,7 +79,7 @@ foreach my $k (sort keys %ck) {
 		$state = $text{'st_untouched'};
 		$note  = $c->{'proxied'} ? $text{'st_proxied'} : "";
 		}
-	push(@table, [ $n, $t, "-", "<tt>".&html_escape($v)."</tt>",
+	push(@table, [ $n, $t, "-", "<tt>".&short_value($v)."</tt>",
 		       $state, $note || "" ]);
 	}
 
