@@ -44,8 +44,11 @@ foreach my $p (@pd) {
 	$best = $p if (!$best || length($p->{'dir'}) > length($best->{'dir'}));
 	}
 return (undef, undef) if (!$best || !$best->{'version'});
-# cgimode 0: komut satiri PHP'si istiyoruz, php-cgi degil.
-my $cmd = &virtual_server::php_command_for_version($best->{'version'}, 0);
+# cgimode 2 = "-cgi ile biten komutlari ele" yani KOMUT SATIRI PHP'si.
+# Varsayilan 0 degil: o mod aday listesinde once php<ver>-cgi'yi deniyor ve
+# composer CGI SAPI ile calisinca "should be invoked via the CLI version"
+# uyarisi verip hicbir sey yapmiyor.
+my $cmd = &virtual_server::php_command_for_version($best->{'version'}, 2);
 return ($best->{'version'}, $cmd);
 }
 
