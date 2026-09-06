@@ -1,39 +1,42 @@
 #!/usr/bin/perl
-# Cloudflare ayarlarini kaydet.
-# ISKELET: deger saklaniyor, henuz API cagrisi ya da senkron yok.
+# Bir domainin Cloudflare ayarlarini kaydet.
+# ISKELET: degerler saklaniyor, henuz API cagrisi ve senkron yok.
 use strict;
 use warnings;
-our (%text, %in, %config, $module_name, $module_config_directory);
+our (%text, %in);
 
 require './vmkit-cloudflare-lib.pl';
 &ReadParse();
 &error_setup($text{'save_err'});
 
-&virtual_server::master_admin() || &error($text{'index_eaccess'});
+my $d = &virtual_server::get_domain($in{'dom'});
+$d || &error($text{'index_edom'});
+&can_edit_domain($d) || &error($text{'index_eaccess'});
+$d->{'vmkit-cloudflare'} || &error(&text('index_eoff', $d->{'dom'}));
 
-if ($in{'domains'}) {
-	# Domain basina senkron acik/kapali
-	my %on = map { $_, 1 } split(/\0/, $in{'sync'});
-	foreach my $d (&virtual_server::list_domains()) {
-		next if (!$d->{'dns'});
-		&set_sync_enabled($d, $on{$d->{'id'}} ? 1 : 0);
-		}
-	}
-else {
-	# Token bos birakilirsa mevcut deger korunur - maskeli gosterdigimiz
-	# icin kullanicinin her kaydedista yeniden yazmasini istemiyoruz.
-	if ($in{'api_token'} =~ /\S/) {
-		$in{'api_token'} =~ /^[A-Za-z0-9_\-]{20,}$/
-			|| &error($text{'save_etoken'});
-		$config{'api_token'} = $in{'api_token'};
-		}
-	$config{'proxy_default'} = $in{'proxy_default'} ? 1 : 0;
-	&lock_file("$module_config_directory/config");
-	&save_module_config();
-	&unlock_file("$module_config_directory/config");
-	# Token bir sirdir: yapilandirma dosyasi baskasina okutulmamali.
-	chmod(0600, "$module_config_directory/config");
+my $cf = &get_cf($d);
+
+if ($in{'forget'}) {
+	delete($cf->{'token'});
+	&save_cf($d, $cf);
+	&webmin_log("forget", "cloudflare", $d->{'dom'});
+	&redirect("index.cgi?dom=$d->{'id'}");
+	exit;
 	}
 
-&webmin_log("save", "cloudflare");
-&redirect("");
+# Token bos birakilirsa mevcut deger korunur - maskeli gosterdigimiz icin
+# her kaydedista yeniden yazilmasini istemiyoruz.
+if ($in{'token'} =~ /\S/) {
+	$in{'token'} =~ /^[A-Za-z0-9_\-]{20,}$/ || &error($text{'save_etoken'});
+	$cf->{'token'} = $in{'token'};
+	}
+$cf->{'proxy'} = $in{'proxy'} ? 1 : 0;
+&save_cf($d, $cf);
+
+if ($in{'sync'}) {
+	# ISKELET: senkron motoru henuz yok.
+	&error($text{'save_enosync'});
+	}
+
+&webmin_log("save", "cloudflare", $d->{'dom'});
+&redirect("index.cgi?dom=$d->{'id'}");

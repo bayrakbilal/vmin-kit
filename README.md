@@ -125,14 +125,20 @@ Konteyneri yeniden başlatır, yeni token'ı okur ve adresle birlikte yazar.
 
 `plugin/` altında iki Webmin modülü var:
 
-| Modül | Kapsam | Panelde nerede |
-|---|---|---|
-| `vmkit-deploy` | **Domain başına** feature | Edit Virtual Server'da onay kutusu; açıkken domain menüsünde **Git Deploy** |
-| `vmkit-cloudflare` | **Sunucu geneli** (feature değil) | System Settings → **Cloudflare DNS Sync** |
+| Modül | Panelde nerede |
+|---|---|
+| `vmkit-deploy` | Edit Virtual Server'da onay kutusu; açıkken domain menüsünde **Git Deploy** |
+| `vmkit-cloudflare` | Edit Virtual Server'da onay kutusu; açıkken domain menüsünde **Cloudflare DNS** |
 
-Ayrı olmalarının sebebi: bir Webmin modülü tek bir feature tanımlayabiliyor ve
-Virtualmin yalnızca `feature_setup` tanımlayan modüllere domain başına onay
-kutusu veriyor. Deploy domain başına, Cloudflare senkronu sunucu geneli.
+İkisi de **domain başına** feature. Ayrı modüller olmalarının sebebi: bir Webmin
+modülü tek bir feature tanımlayabiliyor.
+
+**Her domain kendi Cloudflare API token'ını taşır.** Global token yok — bir
+Cloudflare token'ı tek bir hesaba ve onun zone'larına bağlıdır, domainler farklı
+hesaplarda olabilir.
+
+**Yetki:** root bütün domainleri yönetir; domain sahibi kendi hesabıyla girip
+yalnızca kendi domaininin ayarlarını görür (`feature_webmin` + `can_edit_domain`).
 
 Kurulum:
 

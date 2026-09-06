@@ -1,32 +1,126 @@
-# vmkit-cloudflare - Virtualmin plugin sozlesmesi.
+# vmkit-cloudflare - Virtualmin feature sozlesmesi.
 #
-# Bu modul BILEREK bir domain "feature"i DEGILDIR: feature_setup tanimlamiyor.
-# Virtualmin yalnizca feature_setup tanimlayan plugin'lere domain basina onay
-# kutusu veriyor (list_feature_plugins). Cloudflare senkronu sunucu geneli bir
-# is oldugu icin System Settings altinda tek bir ayar sayfasi olarak duruyor.
+# vmkit-deploy ile SIMETRIK: domain basina bir ozellik. Her domainin kendi
+# Cloudflare API token'i vardir, cunku token hesap/zone bazlidir ve domainler
+# farkli Cloudflare hesaplarinda olabilir. Global token yoktur.
+#
+# ISKELET: yasam dongusu yerinde, ancak henuz Cloudflare API cagrisi ve
+# senkron servisi yok.
 use strict;
 use warnings;
-our (%text);
+our (%text, %config);
 our $module_name;
 
 require 'vmkit-cloudflare-lib.pl';
 
 # feature_name()
-# Plugin listelerinde gorunen ad.
 sub feature_name
 {
 return $text{'feat_name'};
 }
 
-# settings_links()
-# System Settings bolumune baglanti ekler. @plugins icindeki her modul icin
-# cagriliyor; feature olmak gerekmiyor.
-sub settings_links
+# feature_label(in-edit-form)
+sub feature_label
 {
-return ( { 'link'  => "/$module_name/",
-	   'title' => $text{'settings_title'},
-	   'icon'  => 'network',
-	   'cat'   => 'setting' } );
+my ($edit) = @_;
+return $edit ? $text{'feat_label2'} : $text{'feat_label'};
+}
+
+sub feature_losing
+{
+return $text{'feat_losing'};
+}
+
+sub feature_disname
+{
+return $text{'feat_disname'};
+}
+
+# feature_check()
+sub feature_check
+{
+return undef;
+}
+
+# feature_suitable(&parentdom, &aliasdom, &subdom)
+# Alias domainlerin kendi zone'u yok; alt sunucularin kayitlari ust zone'a
+# yaziliyor. Bu yuzden yalnizca ust duzey sunucular icin anlamli.
+sub feature_suitable
+{
+my ($parentdom, $aliasdom, $subdom) = @_;
+return $aliasdom || $parentdom ? 0 : 1;
+}
+
+# feature_depends(&domain)
+# Senkronlayacak bir zone gerektigi icin DNS ozelligi sart.
+sub feature_depends
+{
+my ($d) = @_;
+return $d->{'dns'} ? undef : $text{'feat_edepdns'};
+}
+
+# feature_setup(&domain)
+# ISKELET: kayit dosyasini olusturur; token panelden girilir.
+sub feature_setup
+{
+my ($d) = @_;
+&$virtual_server::first_print($text{'setup_start'});
+&save_cf($d, { 'proxy' => 0 });
+&$virtual_server::second_print($text{'setup_done_token'});
+}
+
+sub feature_modify
+{
+}
+
+# feature_delete(&domain)
+# Ozellik kaldirilinca token dahil tum ayarlari sil.
+sub feature_delete
+{
+my ($d) = @_;
+&$virtual_server::first_print($text{'delete_start'});
+&delete_cf($d);
+&$virtual_server::second_print($virtual_server::text{'setup_done'});
+}
+
+sub feature_disable
+{
+}
+
+sub feature_enable
+{
+}
+
+sub feature_validate
+{
+return undef;
+}
+
+# feature_links(&domain)
+# Domainin menusune ikon ekler.
+sub feature_links
+{
+my ($d) = @_;
+return ( { 'mod'   => $module_name,
+	   'desc'  => $text{'links_link'},
+	   'page'  => 'index.cgi?dom='.$d->{'id'},
+	   'cat'   => 'server',
+	   'order' => 560 } );
+}
+
+# feature_webmin(&main-domain, &all-domains)
+# Domain sahibi kendi domaininin Cloudflare ayarlarini yonetebilsin.
+sub feature_webmin
+{
+my ($d, $alldoms) = @_;
+my @doms = map { $_->{'dom'} } grep { $_->{$module_name} } @$alldoms;
+return @doms ? ( [ $module_name, { 'dom' => join(" ", @doms),
+				   'noconfig' => 1 } ] ) : ( );
+}
+
+sub feature_modules
+{
+return ( [ $module_name, $text{'feat_module'} ] );
 }
 
 1;

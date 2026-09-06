@@ -1,16 +1,21 @@
 #!/usr/bin/perl
-# Cloudflare DNS senkron ayarlari (sunucu geneli).
+# dom verilmisse o domainin Cloudflare ayarlari, verilmemisse domain listesi.
 use strict;
 use warnings;
-our (%text, %config, $module_name);
+our (%text, %in, $module_name);
 
 require './vmkit-cloudflare-lib.pl';
 &ReadParse();
 
-&ui_print_header(undef, $text{'index_title'}, "", undef, 1, 1);
+my $d;
+if ($in{'dom'}) {
+	$d = &virtual_server::get_domain($in{'dom'});
+	$d || &error($text{'index_edom'});
+	&can_edit_domain($d) || &error($text{'index_eaccess'});
+	}
 
-# Sadece master admin gormeli - sunucu geneli bir ayar.
-&virtual_server::master_admin() || &error($text{'index_eaccess'});
+&ui_print_header($d ? &virtual_server::domain_in($d) : undef,
+		 $text{'index_title'}, "", undef, 1, 1);
 
 no warnings "once";
 if (&indexof($module_name, @virtual_server::plugins) < 0) {
@@ -18,52 +23,63 @@ if (&indexof($module_name, @virtual_server::plugins) < 0) {
 	}
 use warnings "once";
 
-print "<p>$text{'index_intro'}</p>\n";
-
-# ---- API token ----
-print &ui_form_start("save.cgi", "post");
-print &ui_table_start($text{'index_settings'}, "width=100%", 2);
-
-print &ui_table_row($text{'index_token'},
-	&ui_password("api_token", "", 50)."<br>".
-	"<font size=-1>".
-	(&token_set() ? &text('index_token_set', &masked_token())
-		      : $text{'index_token_none'}).
-	"<br>$text{'index_token_help'}</font>");
-
-print &ui_table_row($text{'index_proxy'},
-	&ui_yesno_radio("proxy_default", $config{'proxy_default'} ? 1 : 0).
-	"<br><font size=-1>$text{'index_proxy_help'}</font>");
-
-print &ui_table_end();
-print &ui_form_end([ [ undef, $text{'save'} ] ]);
-
-# ---- domain listesi ----
-print "<hr>\n";
-print &ui_subheading($text{'index_domains'});
-
-my @doms = grep { $_->{'dns'} } &virtual_server::list_domains();
-if (!@doms) {
-	print "<p><i>$text{'index_nodoms'}</i></p>\n";
-	}
-else {
-	print &ui_form_start("save.cgi", "post");
-	print &ui_hidden("domains", 1);
+# ---- domain secilmedi: erisebildiklerimizi listele ----
+if (!$d) {
+	my @doms = grep { $_->{$module_name} && &can_edit_domain($_) }
+			&virtual_server::list_domains();
+	if (!@doms) {
+		&ui_print_endpage($text{'index_edoms'});
+		}
+	print "<p>$text{'index_pickdom'}</p>\n";
 	my @table;
-	foreach my $d (@doms) {
+	foreach my $dd (@doms) {
+		my $cf = &get_cf($dd);
 		push(@table, [
-			{ 'type' => 'checkbox', 'name' => 'sync',
-			  'value' => $d->{'id'},
-			  'checked' => &sync_enabled($d) },
-			$d->{'dom'},
-			&zone_status($d),
+			&ui_link("index.cgi?dom=$dd->{'id'}", $dd->{'dom'}),
+			$cf->{'token'} ? $text{'yes'} : $text{'no'},
+			&zone_status($dd),
 			]);
 		}
 	print &ui_columns_table(
-		[ "", $text{'col_domain'}, $text{'col_status'} ],
-		100, \@table, undef, 0, undef, $text{'index_nodoms'});
-	print &ui_form_end([ [ undef, $text{'save'} ] ]);
+		[ $text{'col_domain'}, $text{'col_token'}, $text{'col_status'} ],
+		100, \@table);
+	&ui_print_footer("/", $text{'index'});
+	exit;
 	}
 
+# ---- domainde ozellik kapaliysa uyar ----
+if (!$d->{$module_name}) {
+	&ui_print_endpage(&text('index_eoff', $d->{'dom'}));
+	}
 
-&ui_print_footer("/", $text{'index'});
+# ---- domainin ayarlari ----
+my $cf = &get_cf($d);
+
+print "<p>$text{'index_intro'}</p>\n";
+
+print &ui_form_start("save.cgi", "post");
+print &ui_hidden("dom", $d->{'id'});
+print &ui_table_start($text{'index_settings'}, "width=100%", 2);
+
+# Her domain kendi token'ini tasir: domainler farkli Cloudflare hesaplarinda
+# olabilir ve token hesap/zone bazlidir.
+print &ui_table_row($text{'index_token'},
+	&ui_password("token", "", 50)."<br>".
+	"<font size=-1>".
+	($cf->{'token'} ? &text('index_token_set', &masked_token($cf->{'token'}))
+			: $text{'index_token_none'}).
+	"<br>$text{'index_token_help'}</font>");
+
+print &ui_table_row($text{'index_proxy'},
+	&ui_yesno_radio("proxy", $cf->{'proxy'} ? 1 : 0)."<br>".
+	"<font size=-1>$text{'index_proxy_help'}</font>");
+
+print &ui_table_row($text{'index_status'}, &zone_status($d));
+
+print &ui_table_end();
+print &ui_form_end([ [ undef, $text{'save'} ],
+		     $cf->{'token'} ? ( [ "sync", $text{'index_syncnow'} ] ) : ( ),
+		     $cf->{'token'} ? ( [ "forget", $text{'index_forget'} ] ) : ( ) ]);
+
+&ui_print_footer("/virtual-server/summary_domain.cgi?dom=$d->{'id'}",
+		 $text{'index_return'});
