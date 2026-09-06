@@ -55,14 +55,19 @@ if (@deps) {
 							 : $text{'st_failed'}).
 			  " - ".&make_date($dep->{'last_time'})
 			: $text{'never'};
-		my @acts = (
-			&ui_link("deploy.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
-				 $text{'act_deploy'}),
-			&ui_link("edit_deploy.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
-				 $text{'act_edit'}),
-			);
-		push(@acts, &ui_link("deploylog.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
-				     $text{'act_log'}))
+		# Deploy bir BAGLANTI degil, form POST'u: tema baglantilari XHR ile
+		# yukleyip yanitin tamamini bekliyor, boylece canli akis gorunmuyor.
+		# Virtualmin'in akan sayfalari (domain_setup, script_install) da
+		# form gonderimiyle aciliyor.
+		my $dform = &ui_form_start("deploy.cgi", "post").
+			    &ui_hidden("dom", $d->{'id'}).
+			    &ui_hidden("id", $dep->{'id'}).
+			    &ui_submit($text{'act_deploy'}).
+			    &ui_form_end();
+		my @links = ( &ui_link("edit_deploy.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
+				       $text{'act_edit'}) );
+		push(@links, &ui_link("deploylog.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
+				      $text{'act_log'}))
 			if ($dep->{'last_time'});
 		push(@table, [
 			$dep->{'name'} || $dep->{'id'},
@@ -72,7 +77,7 @@ if (@deps) {
 			$dep->{'mode'} eq 'auto' ? $text{'mode_auto'}
 						 : $text{'mode_manual'},
 			$last,
-			&ui_links_row(\@acts),
+			$dform." ".join(" | ", @links),
 			]);
 		}
 	print &ui_columns_table([ $text{'col_name'}, $text{'col_repo'},
