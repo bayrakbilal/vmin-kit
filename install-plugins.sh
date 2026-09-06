@@ -125,14 +125,14 @@ done
 # kaydedilince tazeleniyor. Modul guncellemesinden sonra temizlemezsek yeni
 # etiketler/ikonlar panelde gorunmez.
 clear_links_cache(){
-  perl -e '"'"'
+  perl -e '
     $ENV{WEBMIN_CONFIG} ||= "/etc/webmin"; $ENV{WEBMIN_VAR} ||= "/var/webmin";
     push(@INC, "/usr/share/webmin"); $main::no_acl_check++;
     chdir("/usr/share/webmin/virtual-server");
     $0 = "/usr/share/webmin/virtual-server/clear.pl";
     require "./virtual-server-lib.pl";
     &clear_links_cache();
-  '"'"' 2>/dev/null || return 1
+  ' 2>/dev/null
 }
 if clear_links_cache; then
   log "Domain menu onbellegi temizlendi."
