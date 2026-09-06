@@ -37,3 +37,4 @@ run_edir=That directory is not a Composer project of this domain
 err_nocomposer=The 'composer' command is not installed
 err_action=Unknown Composer action
 err_timeout=Composer did not finish in time
+run_nooutput=Composer produced no output.

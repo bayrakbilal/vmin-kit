@@ -37,3 +37,4 @@ run_edir=Bu klasör, bu domaine ait bir Composer projesi değil
 err_nocomposer='composer' komutu kurulu değil
 err_action=Bilinmeyen Composer işlemi
 err_timeout=Composer zamanında bitmedi
+run_nooutput=Composer hiçbir çıktı üretmedi.

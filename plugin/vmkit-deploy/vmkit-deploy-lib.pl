@@ -296,6 +296,9 @@ my $target = &deploy_target_dir($d, $dep);
 my $url    = $dep->{'repo'};
 my $branch = $dep->{'branch'};
 
+my $R = quotemeta($repo);
+my $T = quotemeta($target);
+my $B = quotemeta($branch);
 my $env = "GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND=".
 	  quotemeta(&git_ssh_command($d));
 
@@ -304,27 +307,36 @@ my @steps;
 # false yapilirsa git deponun kendi dizinini calisma kopyasi sanar ve
 # "refusing to fetch into branch ... checked out at ..." diyerek fetch'i
 # reddeder. Bare halde --work-tree ile checkout zaten calisiyor.
-push(@steps, "if [ ! -d ".quotemeta($repo)." ]; then ".
+push(@steps, "if [ ! -d $R ]; then ".
 	     "mkdir -p ".quotemeta($d->{'home'}."/.vmkit/repos")." && ".
-	     "$env git clone --quiet --bare -- ".quotemeta($url)." ".
-	     quotemeta($repo)."; ".
+	     "$env git clone --quiet --bare -- ".quotemeta($url)." $R; ".
 	     "fi");
-push(@steps, "git --git-dir=".quotemeta($repo).
-	     " remote set-url origin -- ".quotemeta($url));
-push(@steps, "$env git --git-dir=".quotemeta($repo).
-	     " fetch --quiet --prune origin ".
+push(@steps, "git --git-dir=$R remote set-url origin -- ".quotemeta($url));
+
+# Fetch oncesi ve sonrasi dalin ucunu tutuyoruz ki ne geldigi gorulebilsin.
+push(@steps, 'OLDREF=$(git --git-dir='.$R.' rev-parse -q --verify '.$B.
+	     ' 2>/dev/null || true)');
+push(@steps, "$env git --git-dir=$R fetch --prune origin ".
 	     quotemeta("+refs/heads/*:refs/heads/*"));
-push(@steps, "mkdir -p ".quotemeta($target));
+push(@steps, 'NEWREF=$(git --git-dir='.$R.' rev-parse '.$B.')');
+push(@steps, 'if [ -z "$OLDREF" ]; then echo; echo '.
+	     quotemeta($text{'log_first'}).'; '.
+	     'elif [ "$OLDREF" = "$NEWREF" ]; then echo; echo '.
+	     quotemeta($text{'log_nochange'}).'; '.
+	     'else echo; echo '.quotemeta($text{'log_newcommits'}).'; '.
+	     'git --git-dir='.$R.' log --oneline --no-decorate "$OLDREF..$NEWREF"; '.
+	     'echo; echo '.quotemeta($text{'log_changed'}).'; '.
+	     'git --git-dir='.$R.' diff --name-status "$OLDREF" "$NEWREF"; fi');
+
+push(@steps, "mkdir -p $T");
 # checkout -f: calisma kopyasi bu dalla ayni hale gelir. IZLENEN dosyalardan
 # repoda silinmis olanlar buradan da silinir; IZLENMEYEN dosyalara (yuklemeler,
 # .env) dokunulmaz - onlari yalnizca 'git clean' silerdi, kullanmiyoruz.
-# Yol belirtmiyoruz ('-- .' yok) ki HEAD de dala tasinsin; aksi halde asagidaki
-# 'log -1' baska bir dalin commit'ini gosterirdi.
-push(@steps, "git --git-dir=".quotemeta($repo)." --work-tree=".
-	     quotemeta($target)." checkout -f ".quotemeta($branch));
-push(@steps, "git --git-dir=".quotemeta($repo)." --work-tree=".
-	     quotemeta($target)." log -1 --pretty=".
-	     quotemeta("format:%h %an %s"));
+# Yol belirtmiyoruz ('-- .' yok) ki HEAD de dala tasinsin.
+push(@steps, "git --git-dir=$R --work-tree=$T checkout -f $B");
+push(@steps, "echo; echo ".quotemeta($text{'log_deployed'}));
+push(@steps, "git --git-dir=$R --work-tree=$T log -1 --date=short --pretty=".
+	     quotemeta("format:%h  %ad  %an  %s"));
 
 my $inner = "set -e; ".join("; ", @steps);
 my $cmd = &command_as_user($d->{'user'}, 1, $inner);

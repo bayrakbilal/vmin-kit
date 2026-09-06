@@ -25,6 +25,8 @@ $p || &error($text{'run_edir'});
 print "<pre style='white-space:pre-wrap'>";
 my ($ok, $out) = &run_composer($d, $p, $in{'action'});
 print "</pre>\n";
+# Bos cikti kafa karistirici: komutun calisip calismadigini soyle.
+print "<p><i>$text{'run_nooutput'}</i></p>\n" if ($out !~ /\S/);
 
 &webmin_log("composer", "composer", $p->{'rel'},
 	    { 'action' => $in{'action'}, 'status' => $ok ? "ok" : "failed" });
