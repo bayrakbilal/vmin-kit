@@ -1,0 +1,45 @@
+feat_name=VminKit - Cloudflare DNS
+feat_label=Cloudflare DNS senkronu açılsın mı?
+feat_label2=Cloudflare DNS senkronu
+feat_losing=Cloudflare API token'ı ve senkron ayarları silinecek
+feat_disname=Cloudflare DNS senkronu
+feat_edepdns=Cloudflare senkronu için önce DNS özelliği gerekli:
+feat_module=VminKit - Cloudflare DNS (domainin senkron ayarları)
+links_link=Cloudflare DNS
+setup_start=Cloudflare DNS senkronu açılıyor ..
+setup_done_token=.. tamam - şimdi bu domainin API token'ını girin
+delete_start=Cloudflare ayarları siliniyor ..
+
+index=VminKit - Cloudflare DNS
+index_title=Cloudflare DNS
+index_return=domain özetine
+index_edom=Domain bulunamadı
+index_eaccess=Bu domaini yönetme yetkiniz yok
+index_eplugin=Bu eklenti Virtualmin'de etkin değil. System Settings altındaki Features and Plugins sayfasından açın.
+index_edoms=Cloudflare senkronu açık olan ve erişebildiğiniz bir domain yok.
+index_eoff=$1 için Cloudflare senkronu açık değil. Edit Virtual Server altından açın.
+index_pickdom=Cloudflare ayarlarını yönetmek için bir domain seçin:
+index_intro=Asıl kopya, Virtualmin'in güncel tuttuğu yerel DNS zone'udur; Cloudflare yayınlanan kopyayı tutar. Kayıtlar Cloudflare'e gönderilir; sahibi Cloudflare olan SOA ve NS hariç.
+index_settings=Bu domain için Cloudflare ayarları
+index_token=API token
+index_token_set=Kayıtlı token: $1
+index_token_none=Bu domain için henüz token kaydedilmemiş.
+index_token_help=Her domain kendi token'ını taşır, çünkü bir Cloudflare token'ı tek bir hesaba ve onun zone'larına bağlıdır. Bu zone için Zone.DNS düzenleme yetkisi olan bir token oluşturun. Boş bırakırsanız kayıtlı token korunur.
+index_proxy=Web kayıtları proxy'li olsun mu?
+index_proxy_help=Yalnızca web kayıtları için geçerli. Mail ve doğrulama kayıtları hiçbir zaman proxy'lenmez, yoksa mail ve sertifika yenileme bozulur.
+index_status=Zone durumu
+index_syncnow=Şimdi senkronize et
+index_forget=Token'ı unut
+
+col_domain=Domain
+col_token=Token
+col_status=Zone durumu
+status_unknown=Henüz kontrol edilmedi
+status_notoken=Token yok
+yes=Evet
+no=Hayır
+
+save=Kaydet
+save_err=Cloudflare ayarları kaydedilemedi
+save_etoken=Bu bir Cloudflare API token'ına benzemiyor
+save_enosync=Senkron motoru henüz yazılmadı, çalıştırılacak bir şey yok. Ayarlar kaydedildi.

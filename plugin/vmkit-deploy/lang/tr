@@ -1,0 +1,75 @@
+feat_name=VminKit - Git Deploy
+feat_label=Git deploy açılsın mı?
+feat_label2=Git deploy
+feat_losing=Tüm deployment tanımları silinecek
+feat_disname=Git deploy
+feat_echeck='git' komutu kurulu değil
+feat_edepweb=Git deploy için önce web özelliği gerekli:
+feat_module=VminKit - Git Deploy (deployment yönetimi)
+links_link=Git Deploy
+setup_start=Git deploy açılıyor ..
+delete_start=Deployment tanımları siliniyor ..
+
+index=VminKit - Git Deploy
+index_title=Git Deploy
+index_return=domain özetine
+index_edom=Domain bulunamadı
+index_eaccess=Bu domaini yönetme yetkiniz yok
+index_eplugin=Bu eklenti Virtualmin'de etkin değil. System Settings altındaki Features and Plugins sayfasından açın.
+index_edoms=Git deploy açık olan ve erişebildiğiniz bir domain yok.
+index_eoff=$1 için Git deploy açık değil. Edit Virtual Server altından açın.
+index_pickdom=Deployment'larını yönetmek için bir domain seçin:
+index_dom=Domain
+index_count=Deployment
+index_none=Bu domain için henüz deployment tanımlanmamış.
+index_add=Yeni deployment ekle
+
+col_name=Ad
+col_source=Kaynak
+col_repo=Repo
+col_branch=Dal
+col_target=Hedef klasör
+col_mode=Mod
+col_last=Son deploy
+
+src_local=Yerel repo
+src_remote=Uzak repo
+src_local_desc=Bu sunucuda - siz push edersiniz, deploy edilir
+src_remote_desc=Uzak repo - aşağıdaki adresten çekilir
+mode_manual=Elle
+mode_auto=Otomatik
+mode_manual_desc=Yalnızca Deploy'a bastığımda
+mode_auto_desc=Her push'ta
+never=Hiç
+
+edit_title=Deployment düzenle
+edit_title_new=Deployment ekle
+edit_header=Deployment ayrıntıları
+edit_return=deployment listesine
+edit_egone=Deployment artık yok
+edit_name=Ad
+edit_source=Kaynak
+edit_repo=Repo adresi
+edit_repo_help=Yalnızca uzak repo için, ör. https://github.com/kullanici/proje.git ya da git@github.com:kullanici/proje.git
+edit_branch=Dal
+edit_target=Hedef klasör
+edit_target_help=Domainin ana dizinine göre, ör. public_html ya da public_html/app
+edit_mode=Deploy modu
+edit_push=Push adresi
+
+save=Kaydet
+create=Oluştur
+delete=Sil
+save_err=Deployment kaydedilemedi
+save_esource=Geçersiz kaynak
+save_emode=Geçersiz deploy modu
+save_ename=Ad geçersiz karakter içeriyor
+save_erepo=Repo adresi boş olamaz
+save_erepourl=Repo adresi https://, ssh:// ya da git@ ile başlamalı
+save_ebranch=Dal adı geçersiz karakter içeriyor
+save_edup=Başka bir deployment ($1) zaten bu klasörü hedefliyor
+
+err_target_empty=Hedef klasör boş olamaz
+err_target_abs=Hedef klasör domainin ana dizinine göre olmalı
+err_target_dots=Hedef klasör .. içeremez
+err_target_char=Hedef klasör geçersiz karakter içeriyor

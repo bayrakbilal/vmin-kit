@@ -65,7 +65,8 @@ sub feature_setup
 {
 my ($d) = @_;
 &$virtual_server::first_print($text{'setup_start'});
-&save_cf($d, { 'proxy' => 0 });
+# Varsayilan, modul ayarlarindan gelir (Features and Plugins -> Configure).
+&save_cf($d, { 'proxy' => $config{'default_proxy'} ? 1 : 0 });
 &$virtual_server::second_print($text{'setup_done_token'});
 }
 
