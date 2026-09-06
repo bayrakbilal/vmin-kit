@@ -137,15 +137,18 @@ kutusu veriyor. Deploy domain başına, Cloudflare senkronu sunucu geneli.
 Kurulum:
 
 ```bash
-sudo ./install-plugins.sh          # kopyalayarak kurar
-sudo ./install-plugins.sh --dev    # symlink (geliştirme)
+sudo ./install-plugins.sh          # kurar / günceller
 sudo ./install-plugins.sh --remove
 ```
 
-**Geliştirme döngüsü:** Webmin her isteği taze bir Perl process'inde çalıştırır,
-derleme yoktur. `.cgi`, `.pl` ve `lang` düzenlemeleri için sayfayı yenilemek
-yeterli. `install-plugins.sh` yalnızca ilk kurulumda, `module.info` değiştiğinde
-ve modül eklenip çıkarıldığında gerekir.
+Modüller `/usr/share/webmin/` altına **kopyalanır**, symlink kurulmaz —
+symlink olsaydı Webmin'in ve bu script'in yazdıkları doğrudan git deposunu
+kirletirdi.
+
+**Geliştirme döngüsü:** `git pull && sudo ./install-plugins.sh`. Webmin her
+isteği taze bir Perl process'inde çalıştırdığı için derleme yoktur; script
+yalnızca `module.info` değiştiğinde Webmin'i yeniden başlatır, diğer
+durumlarda dosyaları kopyalar ve sayfayı yenilemeniz yeterlidir.
 
 > Şu an **iskelet**: tanımlar kaydediliyor, ekranlar çalışıyor; git işlemleri ve
 > Cloudflare API çağrıları henüz yok.

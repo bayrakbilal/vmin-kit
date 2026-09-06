@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # install-plugins.sh - vmin-kit Webmin modullerini kurar/gunceller.
-#   sudo ./install-plugins.sh          # kopyalayarak kurar (normal kullanim)
-#   sudo ./install-plugins.sh --dev    # symlink kurar (gelistirme)
+#   sudo ./install-plugins.sh          # kurar / gunceller
 #   sudo ./install-plugins.sh --remove # kaldirir
 #
 # NE ZAMAN CALISTIRMAK GEREKIR?
@@ -12,8 +11,11 @@
 #     - module.info degistiginde (onbellek yalnizca /usr/share/webmin
 #       dizininin mtime'ina bakiyor, icindeki dosyaya degil)
 #     - modul eklenip cikarildiginda
-#   gerekir. --dev modunda symlink kuruldugu icin 'git pull' sonrasi bu
-#   script'i tekrar calistirmaya da gerek kalmaz.
+#   gerekir. Yine de her 'git pull' sonrasi calistirmak zararsizdir: dosyalar
+#   kopyalanir ve Webmin YALNIZCA module.info degistiginde yeniden baslatilir.
+#
+# Not: moduller kopyalanir, symlink kurulmaz. Symlink kurulsaydi Webmin'in ve
+# bu script'in yazdiklari dogrudan git deposunu kirletirdi.
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
@@ -22,7 +24,6 @@ require_root
 
 MODE=copy
 case "${1:-}" in
-  --dev)    MODE=link ;;
   --remove) MODE=remove ;;
   "")       ;;
   *) err "Bilinmeyen secenek: $1"; exit 1 ;;
@@ -36,6 +37,7 @@ WEBMIN_ROOT="${WEBMIN_ROOT:-/usr/share/webmin}"
 VS_CONFIG="/etc/webmin/virtual-server/config"
 [ -f "$VS_CONFIG" ] || { err "Virtualmin yapilandirmasi yok: $VS_CONFIG"; exit 1; }
 
+NEED_RESTART=0
 MODULES=()
 for dir in "$ROOT_DIR"/plugin/*/; do
   [ -f "${dir}module.info" ] || continue
@@ -88,20 +90,25 @@ for mod in "${MODULES[@]}"; do
     rm -rf "$dst"
     plugins_remove "$mod"
     acl_revoke "$mod"
+    NEED_RESTART=1
     continue
   fi
 
   log "Kuruluyor: $mod"
-  # Onceki kurulum ne olursa olsun (dizin ya da symlink) temizle.
+  # Webmin yeniden baslatmasi yalnizca module.info degistiginde gerekiyor
+  # (onbellek /usr/share/webmin dizininin mtime'ina bakiyor, icerige degil).
+  old_info=""
+  [ -f "$dst/module.info" ] && old_info="$(md5sum < "$dst/module.info")"
+  [ -e "$dst" ] || NEED_RESTART=1
+
+  # Onceki kurulum ne olursa olsun (dizin ya da eski symlink) temizle.
   rm -rf "$dst"
-  if [ "$MODE" = link ]; then
-    ln -s "$src" "$dst"
-    log "  symlink: $dst -> $src"
-  else
-    cp -a "$src" "$dst"
-  fi
+  cp -a "$src" "$dst"
+  # Yalnizca CGI'ler calistirilabilir olmali; *.pl dosyalari kutuphane.
   chmod 0755 "$dst"/*.cgi 2>/dev/null || true
-  chmod 0755 "$dst"/*.pl  2>/dev/null || true
+
+  new_info="$(md5sum < "$dst/module.info")"
+  [ "$old_info" = "$new_info" ] || NEED_RESTART=1
 
   # Modulun kendi yapilandirma dizini; config dosyasi yoksa varsayilani koy.
   install -d -m 0755 "/etc/webmin/$mod"
@@ -114,12 +121,15 @@ for mod in "${MODULES[@]}"; do
   plugins_add "$mod"
 done
 
-# module.info onbellegi: yalnizca /usr/share/webmin dizininin mtime'ina
-# bakildigi icin icerik degisikliklerinde kendiliginden tazelenmiyor.
-rm -f /etc/webmin/module.infos.cache /var/webmin/module.infos.cache
-
-log "Webmin yeniden baslatiliyor..."
-systemctl restart webmin
+if [ "$NEED_RESTART" = 1 ]; then
+  # module.info onbellegi: yalnizca /usr/share/webmin dizininin mtime'ina
+  # bakildigi icin icerik degisikliklerinde kendiliginden tazelenmiyor.
+  rm -f /etc/webmin/module.infos.cache /var/webmin/module.infos.cache
+  log "module.info degisti -> Webmin yeniden baslatiliyor..."
+  systemctl restart webmin
+else
+  log "module.info degismedi -> Webmin yeniden baslatilmadi (sayfayi yenilemek yeterli)."
+fi
 
 echo
 if [ "$MODE" = remove ]; then
@@ -129,9 +139,4 @@ else
   log "Panelde:"
   log "  Git Deploy  -> Edit Virtual Server'da ozelligi acin, sonra domain menusunde 'Git Deploy'"
   log "  Cloudflare  -> System Settings -> Cloudflare DNS Sync"
-  if [ "$MODE" = link ]; then
-    echo
-    log "Gelistirme modu: kod degisiklikleri icin 'git pull' + sayfa yenileme yeterli."
-    log "module.info degisirse bu script'i tekrar calistirin."
-  fi
 fi
