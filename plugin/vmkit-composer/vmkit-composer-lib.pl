@@ -93,6 +93,30 @@ my ($p) = grep { $_->{'dir'} eq $dir } &list_projects($d);
 return $p;
 }
 
+# stream_command(cmd) -> (basarili?, cikti)
+# Ciktiyi GELDIGI ANDA ekrana basar, ayni zamanda biriktirip dondurur.
+# Cagiran taraf once &ui_print_unbuffered_header ile sayfayi acmis ve <pre>
+# baslatmis olmali. Zaman asimi icin backquote_with_timeout kullanamiyoruz
+# (o komutun bitmesini bekler), onun yerine komutu 'timeout' ile sariyoruz;
+# oldurulen komut 124 ile doner.
+sub stream_command
+{
+my ($cmd) = @_;
+my $to = &has_command("timeout");
+$cmd = quotemeta($to)." ".int($_[1] || 600)." ".$cmd if ($to);
+my $out = '';
+local $| = 1;
+no strict "subs";
+&open_execute_command(STREAMCMD, $cmd." 2>&1", 1, 1);
+while(my $l = <STREAMCMD>) {
+	$out .= $l;
+	print &html_escape($l);
+	}
+close(STREAMCMD);
+use strict "subs";
+return ($? ? 0 : 1, $out);
+}
+
 # run_composer(&domain, &project, action) -> (basarili?, cikti)
 sub run_composer
 {
@@ -110,9 +134,7 @@ my $inner = "cd ".quotemeta($p->{'dir'})." && ".
 	    ($p->{'php'} ? quotemeta($p->{'php'})." " : "").
 	    quotemeta($composer)." ".$sub;
 my $cmd = &command_as_user($d->{'user'}, 1, $inner);
-my ($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 900);
-return (0, $text{'err_timeout'}) if ($timed);
-return ($? ? 0 : 1, $out);
+return &stream_command($cmd, 900);
 }
 
 1;

@@ -226,6 +226,30 @@ my ($d) = @_;
 return "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new".
        " -o ConnectTimeout=10";
 }
+# stream_command(cmd) -> (basarili?, cikti)
+# Ciktiyi GELDIGI ANDA ekrana basar, ayni zamanda biriktirip dondurur.
+# Cagiran taraf once &ui_print_unbuffered_header ile sayfayi acmis ve <pre>
+# baslatmis olmali. Zaman asimi icin backquote_with_timeout kullanamiyoruz
+# (o komutun bitmesini bekler), onun yerine komutu 'timeout' ile sariyoruz;
+# oldurulen komut 124 ile doner.
+sub stream_command
+{
+my ($cmd) = @_;
+my $to = &has_command("timeout");
+$cmd = quotemeta($to)." ".int($_[1] || 600)." ".$cmd if ($to);
+my $out = '';
+local $| = 1;
+no strict "subs";
+&open_execute_command(STREAMCMD, $cmd." 2>&1", 1, 1);
+while(my $l = <STREAMCMD>) {
+	$out .= $l;
+	print &html_escape($l);
+	}
+close(STREAMCMD);
+use strict "subs";
+return ($? ? 0 : 1, $out);
+}
+
 # ---- deploy islemi ------------------------------------------------------
 # Git verisi web kokunun DISINDA durur:
 #     ~/.vmkit/repos/<id>.git      (bare)
@@ -256,6 +280,7 @@ return &read_file_contents(&deploy_log_path($d, $dep));
 
 # run_deploy(&domain, &deploy) -> (basarili?, cikti)
 # Tum git komutlari domainin kendi kullanicisi olarak calisir.
+# Cikti akis halinde basilir; cagiran taraf <pre> acmis olmali.
 sub run_deploy
 {
 my ($d, $dep) = @_;
@@ -296,9 +321,7 @@ push(@steps, "git --git-dir=".quotemeta($repo)." --work-tree=".
 
 my $inner = "set -e; ".join("; ", @steps);
 my $cmd = &command_as_user($d->{'user'}, 1, $inner);
-my ($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 600);
-my $ok = !$timed && !$?;
-$out = $text{'err_timeout'} if ($timed);
+my ($ok, $out) = &stream_command($cmd, 600);
 
 # Log ayri dosyada: key=value bicimi coksatirli degeri tasiyamaz.
 my $logdir = "$module_config_directory/logs";
