@@ -19,7 +19,8 @@ $d || &error($text{'index_edom'});
 		 "", undef, 0, 0);
 
 my $back = "index.cgi?dom=$d->{'id'}";
-$back = "edit_deploy.cgi?dom=$d->{'id'}&new=$in{'new'}&repo=".&urlize($in{'repo'})
+$back = "edit_deploy.cgi?dom=$d->{'id'}&new=$in{'new'}&id=$in{'id'}&repo=".
+	&urlize($in{'repo'})
 	if ($in{'repo'});
 
 my $err = &ensure_domain_key($d);
