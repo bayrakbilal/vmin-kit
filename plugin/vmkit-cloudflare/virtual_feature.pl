@@ -26,7 +26,7 @@ sub settings_links
 return ( { 'link'  => "/$module_name/",
 	   'title' => $text{'settings_title'},
 	   'icon'  => 'network',
-	   'cat'   => 'system' } );
+	   'cat'   => 'setting' } );
 }
 
 1;

@@ -40,7 +40,7 @@ print &ui_table_row($text{'edit_name'},
 print &ui_table_row($text{'edit_source'},
 	&ui_radio("source", $dep->{'source'},
 		  [ [ "remote", $text{'src_remote_desc'} ],
-		    [ "local",  $text{'src_local_desc'} ] ], 1));
+		    [ "local",  $text{'src_local_desc'} ] ]));
 
 print &ui_table_row($text{'edit_repo'},
 	&ui_textbox("repo", $dep->{'repo'}, 50)."<br>".
@@ -58,7 +58,7 @@ print &ui_table_row($text{'edit_target'},
 print &ui_table_row($text{'edit_mode'},
 	&ui_radio("mode", $dep->{'mode'},
 		  [ [ "manual", $text{'mode_manual_desc'} ],
-		    [ "auto",   $text{'mode_auto_desc'} ] ], 1));
+		    [ "auto",   $text{'mode_auto_desc'} ] ]));
 
 if (!$in{'new'} && $dep->{'source'} eq 'local') {
 	print &ui_table_row($text{'edit_push'},

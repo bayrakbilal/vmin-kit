@@ -1,15 +1,16 @@
-feat_name=Git Deploy
+feat_name=VminKit - Git Deploy
 feat_label=Enable Git deploy?
 feat_label2=Git deploy
 feat_losing=All deployment definitions will be deleted
 feat_disname=Git deploy
 feat_echeck=The 'git' command is not installed
 feat_edepweb=Git deploy cannot be enabled unless a website is
-feat_module=vmin-kit Git Deploy (manage deployments)
+feat_module=VminKit - Git Deploy (manage deployments)
+links_link=Git Deploy
 setup_start=Enabling Git deploy ..
 delete_start=Removing deployment definitions ..
 
-index=vmin-kit Git Deploy
+index=VminKit - Git Deploy
 index_title=Git Deploy
 index_return=domain summary
 index_edom=Domain not found

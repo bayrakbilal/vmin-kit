@@ -1,7 +1,7 @@
-feat_name=vmin-kit Cloudflare DNS
-settings_title=Cloudflare DNS Sync
+feat_name=VminKit - Cloudflare DNS
+settings_title=VminKit - Cloudflare DNS
 
-index=vmin-kit Cloudflare DNS
+index=VminKit - Cloudflare DNS
 index_title=Cloudflare DNS Sync
 index_eaccess=Only the master administrator can change these settings
 index_eplugin=This plugin is not enabled in Virtualmin.

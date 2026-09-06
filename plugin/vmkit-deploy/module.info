@@ -1,4 +1,4 @@
-desc=vmin-kit Git Deploy
+desc=VminKit - Git Deploy
 depends=virtual-server
 category=servers
-version=0.1
+version=1.0.0
