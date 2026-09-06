@@ -187,14 +187,8 @@ echo
 ok "Tamamlandi."
 log "Panel : https://${HOSTNAME_FQDN}:10000"
 log "Site  : https://${MAIN_DOMAIN}"
-if is_truthy "$docker"; then
-  log "Portainer : https://${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}/"
-  tok="$(portainer_setup_token || true)"
-  if [ -n "$tok" ]; then
-    log "  setup_token: $tok"
-    log "  (kisa omurlu; suresi dolduysa: sudo ./configure-docker.sh)"
-  else
-    warn "  setup_token okunamadi -> sudo ./configure-docker.sh"
-  fi
-fi
 log "Rapor : $VMINKIT_REPORT"
+
+# Token EN SON uretilir: omru birkac dakika oldugu icin araya baska adimlar
+# girse bile ekranda gorunen degerin taze olmasi gerekiyor.
+if is_truthy "$docker"; then step_portainer_token; fi

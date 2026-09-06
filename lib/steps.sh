@@ -145,10 +145,62 @@ step_ssl(){
 }
 
 # Portainer loglarindan en son setup_token'i okur (yoksa bos doner).
-# Token'in omru kisadir: konteyner ayaga kalktiktan birkac dakika sonra
-# Portainer guvenlik geregi kurulumu kilitler ve yeniden baslatmak gerekir.
+# $1 verilirse yalnizca o andan sonraki loglara bakar - eski, tuketilmis bir
+# token'i yeniymis gibi okumamak icin gerekli.
 portainer_setup_token(){
-  docker logs portainer 2>&1 | grep -oE 'setup_token=[0-9a-f]+' | tail -1 | cut -d= -f2
+  local since="${1:-}"
+  if [ -n "$since" ]; then docker logs --since "$since" portainer 2>&1
+  else                     docker logs portainer 2>&1; fi \
+    | grep -oE 'setup_token=[0-9a-f]+' | tail -1 | cut -d= -f2
+}
+
+# Portainer'da yonetici hesabi olusturulmus mu?
+# Portainer API'si: 409 -> hesap var, 204 -> kurulum bekliyor.
+portainer_configured(){
+  local port="${PORTAINER_PORT:-9000}" code
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
+          "http://127.0.0.1:${port}/api/users/admin/check" 2>/dev/null || true)"
+  [ "$code" = "409" ]
+}
+
+# Portainer'i yeniden baslatip TAZE setup_token dondurur.
+portainer_restart_for_token(){
+  local since tok="" i
+  since="$(date -u -d '-5 seconds' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
+  docker restart portainer >/dev/null 2>&1 || return 1
+  for i in $(seq 1 15); do
+    sleep 2
+    tok="$(portainer_setup_token "$since")"
+    [ -n "$tok" ] && break
+  done
+  printf '%s' "$tok"
+}
+
+# Kurulumun EN SON adimi: token'i burada uretiyoruz ki kac adim eklenirse
+# eklensin ekranda gorunen token taze olsun (omru birkac dakika).
+step_portainer_token(){
+  command -v docker >/dev/null 2>&1 || return 0
+  docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx portainer || return 0
+  local site="${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}"
+
+  echo
+  if portainer_configured; then
+    ok "Portainer : https://${site}/   (yonetici hesabi zaten olusturulmus)"
+    return 0
+  fi
+
+  log "Portainer icin taze setup_token aliniyor (yeniden baslatiliyor)..."
+  local tok; tok="$(portainer_restart_for_token || true)"
+  echo
+  if [ -n "$tok" ]; then
+    ok "Portainer kurulumunu SIMDI tamamlayin - token birkac dakika gecerli:"
+    echo "    Adres       : https://${site}/"
+    echo "    setup_token : $tok"
+    echo
+    log "Sureyi kacirirsaniz: sudo ./configure-docker.sh"
+  else
+    warn "setup_token okunamadi. Deneyin: sudo ./configure-docker.sh"
+  fi
 }
 
 # docker.<domain> alt sunucusu + Portainer'a proxy.
