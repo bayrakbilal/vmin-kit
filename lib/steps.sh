@@ -34,12 +34,16 @@ step_virtualmin(){
   ok "Virtualmin kurulumu bitti."
 }
 
-# Bir Virtualmin ozelliginin acik olup olmadigini soyler: Yes / No / bos.
-# list-features --multiline ciktisi: ozellik adi girintisiz, alanlari girintili.
-vm_feature_enabled(){
-  virtualmin list-features --multiline 2>/dev/null | awk -v w="$1" '
-    /^[^[:space:]]/ { f=$1; next }
-    f==w && /^[[:space:]]*Enabled:/ { print $2; exit }'
+# Domainin ACME (Lets Encrypt) sertifikasi var mi?
+# Etikete guvenilmez: list-domains ciktisindaki satir adi Virtualmin surumune
+# gore degisiyor ("Lets Encrypt cert issued" / "SSL provider cert issued").
+# O yuzden once dosya sistemine, sonra dar bir ifadeye bakiyoruz.
+domain_has_acme_cert(){
+  local d="$1"
+  [ -s "/etc/letsencrypt/live/$d/cert.pem" ] && return 0
+  virtualmin list-domains --domain "$d" --multiline 2>/dev/null \
+    | grep -qi 'cert issued' && return 0
+  return 1
 }
 
 # PostgreSQL Virtualmin kurulumuyla GELMEZ; ayrica kurulup ozellik olarak acilir.
@@ -52,37 +56,12 @@ step_postgres(){
     ok "PostgreSQL zaten kurulu."
   fi
   systemctl enable --now postgresql 2>/dev/null || warn "postgresql servisi baslatilamadi."
-
-  if [ "$(vm_feature_enabled postgres)" = Yes ]; then
-    ok "PostgreSQL ozelligi Virtualmin'de zaten acik."
-    return
-  fi
-
-  # Ozellik ancak Webmin'in postgresql modulu "available" oldugunda acilabiliyor
-  # (feature-postgres.pl -> check_module_postgres -> foreign_available).
-  # Modulu Virtualmin'in kendi yapilandirma eklentisi kurar; --include bundle
-  # olmadan calisir, yani yalnizca PostgreSQL yapilandirilir.
-  if command -v virtualmin-config-system >/dev/null 2>&1; then
-    log "Webmin PostgreSQL modulu yapilandiriliyor..."
-    virtualmin-config-system --include PostgreSQL || warn "PostgreSQL yapilandirmasi hata verdi."
-  else
-    warn "virtualmin-config-system bulunamadi; modul yapilandirmasi atlandi."
-  fi
-
-  local out
-  if out="$(virtualmin set-global-feature --enable-feature postgres 2>&1)"; then
-    ok "PostgreSQL kuruldu ve Virtualmin ozelligi acildi."
-    return
-  fi
-  # Komut hata dondurse bile ozellik acilmis olabilir (or. "zaten acik").
-  # Karar verirken cikis kodunu degil, gercek durumu esas al.
-  if [ "$(vm_feature_enabled postgres)" = Yes ]; then
-    ok "PostgreSQL ozelligi acik."
-    return
-  fi
-  warn "PostgreSQL kuruldu, ancak Virtualmin ozelligi acilamadi:"
-  printf '%s\n' "$out" | sed 's/^/      /'
-  warn "Panelden: System Settings -> Features and Plugins -> PostgreSQL"
+  # Ozelligi ayrica acmaya gerek yok: Virtualmin kurulu PostgreSQL'i kendisi
+  # goruyor ve ilk oturum sihirbazinda veritabani secenekleri arasinda sunuyor.
+  # (set-global-feature denemesi ayrica ise yaramiyor; taze kurulumda clamd
+  # henuz ayakta olmadigi icin Virtualmin'in genel yapilandirma kontrolune
+  # takilip komutu reddediyor.)
+  ok "PostgreSQL kuruldu. Virtualmin ilk oturum sihirbazinda secilebilir olacak."
 }
 
 step_dns_template(){
@@ -152,8 +131,7 @@ step_ssl(){
   # create-domain, otomatik ACME acikken sertifikayi zaten aliyor. Tekrar istemek
   # ayni isim seti icin ikinci bir sertifika uretir ve saglayici kotasini yer
   # (Lets Encrypt: ayni isimler icin haftada 5 sertifika).
-  if virtualmin list-domains --domain "$MAIN_DOMAIN" --multiline 2>/dev/null \
-     | grep -q 'SSL provider cert issued:'; then
+  if domain_has_acme_cert "$MAIN_DOMAIN"; then
     ok "SSL sertifikasi zaten alinmis (atlaniyor)."
     return
   fi
