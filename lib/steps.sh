@@ -63,6 +63,19 @@ step_postgres(){
   systemctl enable --now postgresql 2>/dev/null || warn "postgresql servisi baslatilamadi."
 }
 
+# Composer Virtualmin kurulumuyla GELMEZ; vmkit-composer eklentisinin
+# gereksinimidir ve o eklenti composer yoksa acilmaz.
+step_composer(){
+  if command -v composer >/dev/null 2>&1; then
+    ok "Composer zaten kurulu."
+    return
+  fi
+  log "Composer kuruluyor..."
+  apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get install -y composer
+  ok "Composer kuruldu."
+}
+
 step_dns_template(){
   local cfg="/etc/webmin/virtual-server/config"
   if [ ! -f "$cfg" ]; then err "Virtualmin config yok; dns-template atlaniyor."; return 1; fi
@@ -335,6 +348,7 @@ step_report(){
       echo "HOST_PREFIX=${HOST_PREFIX:-s}"
       echo "ADMIN_EMAIL=${ADMIN_EMAIL:-}"
       echo "POSTGRES=${POSTGRES:-1}"
+      echo "COMPOSER=${COMPOSER:-1}"
       echo "docker=${docker:-0}"
       echo "PORTAINER_IMAGE=${PORTAINER_IMAGE:-portainer/portainer-ce:latest}"
       echo "PORTAINER_PORT=${PORTAINER_PORT:-9000}"

@@ -1,0 +1,39 @@
+feat_name=VminKit - Composer
+feat_label=Composer açılsın mı?
+feat_label2=Composer
+feat_losing=Hiçbir şey silinmez; vendor klasörleri yerinde kalır
+feat_disname=Composer
+feat_echeck='composer' komutu kurulu değil
+feat_module=VminKit - Composer (bu domain için composer çalıştır)
+links_link=Composer
+setup_start=Composer açılıyor ..
+delete_start=Composer kapatılıyor ..
+
+index=VminKit - Composer
+index_title=Composer
+index_return=domain özetine
+index_edom=Domain bulunamadı
+index_eaccess=Bu domaini yönetme yetkiniz yok
+index_eplugin=Bu eklenti Virtualmin'de etkin değil. System Settings altındaki Features and Plugins sayfasından açın.
+index_edoms=Composer açık olan ve erişebildiğiniz bir domain yok.
+index_eoff=$1 için Composer açık değil. Edit Virtual Server altından açın.
+index_pickdom=Composer projelerini yönetmek için bir domain seçin:
+index_dom=Domain
+index_none=$1 altında composer.json bulunamadı.
+
+col_dir=Klasör
+col_php=PHP sürümü
+php_default=Sistem varsayılanı
+act_install=Install
+act_update=Update
+act_dump=Dump autoload
+
+run_title=$2 içinde composer $1
+run_return=proje listesine
+run_ok=Başarıyla tamamlandı.
+run_failed=Composer hata bildirdi.
+run_edir=Bu klasör, bu domaine ait bir Composer projesi değil
+
+err_nocomposer='composer' komutu kurulu değil
+err_action=Bilinmeyen Composer işlemi
+err_timeout=Composer zamanında bitmedi

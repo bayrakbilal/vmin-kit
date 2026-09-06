@@ -42,6 +42,7 @@ onu kopyalayıp `MAIN_DOMAIN`'i değiştirmeniz yeterlidir.
 | `hostname` | Hostname'i `s.<domain>` yapar + `/etc/hosts` kaydı. **Virtualmin'den önce** — yoksa varsayılan site, SSL isimlendirmesi ve mail kimliği yanlış oturur. |
 | `virtualmin` | Resmi installer ile kurar (kuruluysa atlar). |
 | `postgres` | PostgreSQL kurar ve Virtualmin özelliğini açar — Virtualmin kurulumuyla gelmiyor. *(isteğe bağlı)* |
+| `composer` | Composer kurar (`vmkit-composer` eklentisinin gereksinimi). *(isteğe bağlı)* |
 | `dns-template` | Yeni domainler için DNS varsayılanları (`bind_master`, `dns_ns`, `dns_prins`, `bind_sub`). |
 | `main-domain` | Ana domaini **sade** oluşturur: web + SSL + DNS. Mail ve veritabanı **kapalı**. |
 | `host-dns` | Ana domainin zone'una hostname (`s.<domain>`) için A kaydı ekler. |
@@ -128,6 +129,7 @@ Konteyneri yeniden başlatır, yeni token'ı okur ve adresle birlikte yazar.
 | Modül | Panelde nerede |
 |---|---|
 | `vmkit-deploy` | Edit Virtual Server'da onay kutusu; açıkken domain menüsünde **Git Deploy** |
+| `vmkit-composer` | Edit Virtual Server'da onay kutusu; açıkken domain menüsünde **Composer** |
 | `vmkit-cloudflare` | Edit Virtual Server'da onay kutusu; açıkken domain menüsünde **Cloudflare DNS** |
 
 İkisi de **domain başına** feature. Ayrı modüller olmalarının sebebi: bir Webmin
@@ -155,6 +157,10 @@ kirletirdi.
 isteği taze bir Perl process'inde çalıştırdığı için derleme yoktur; script
 yalnızca `module.info` değiştiğinde Webmin'i yeniden başlatır, diğer
 durumlarda dosyaları kopyalar ve sayfayı yenilemeniz yeterlidir.
+
+**Composer:** domainin ana dizini altında `composer.json` içeren klasörleri
+kendiliğinden bulur ve her birini **kendi PHP sürümüyle** çalıştırır (Virtualmin
+klasör başına PHP sürümü tutabiliyor). İşlemler: install, update, dump-autoload.
 
 **Git Deploy:** kaynak her zaman **uzak repodur** — sunucuda repo barındırmıyoruz.
 Repo adresi girilip *Kontrol et* denince `git ls-remote` ile sorgulanır; dallar

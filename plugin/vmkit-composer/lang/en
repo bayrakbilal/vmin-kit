@@ -1,0 +1,39 @@
+feat_name=VminKit - Composer
+feat_label=Enable Composer?
+feat_label2=Composer
+feat_losing=Nothing will be deleted; the vendor directories stay
+feat_disname=Composer
+feat_echeck=The 'composer' command is not installed
+feat_module=VminKit - Composer (run composer for this domain)
+links_link=Composer
+setup_start=Enabling Composer ..
+delete_start=Disabling Composer ..
+
+index=VminKit - Composer
+index_title=Composer
+index_return=domain summary
+index_edom=Domain not found
+index_eaccess=You are not allowed to manage this domain
+index_eplugin=This plugin is not enabled in Virtualmin. Turn it on under System Settings, Features and Plugins.
+index_edoms=No domains with Composer enabled are available to you.
+index_eoff=Composer is not enabled for $1. Turn it on under Edit Virtual Server.
+index_pickdom=Select a domain to manage its Composer projects:
+index_dom=Domain
+index_none=No composer.json was found under $1.
+
+col_dir=Directory
+col_php=PHP version
+php_default=System default
+act_install=Install
+act_update=Update
+act_dump=Dump autoload
+
+run_title=Composer $1 in $2
+run_return=project list
+run_ok=Finished successfully.
+run_failed=Composer reported an error.
+run_edir=That directory is not a Composer project of this domain
+
+err_nocomposer=The 'composer' command is not installed
+err_action=Unknown Composer action
+err_timeout=Composer did not finish in time

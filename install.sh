@@ -76,6 +76,7 @@ HOST_PREFIX="${HOST_PREFIX:-s}"
 HOSTNAME_FQDN="${HOSTNAME_FQDN:-${HOST_PREFIX}.${MAIN_DOMAIN}}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-}"
 POSTGRES="${POSTGRES:-1}"
+COMPOSER="${COMPOSER:-1}"
 # Docker ve Portainer tek bayrak: Portainer, Docker olmadan anlamsiz ve
 # Docker'i Portainer'siz kurmak istemedigimiz icin ikisi birlikte gider.
 docker="${docker:-1}"
@@ -129,6 +130,10 @@ if is_truthy "$POSTGRES"; then
   if command -v psql >/dev/null 2>&1; then log "  - PostgreSQL  : kurulu (atlanacak)"
   else                                     log "  - PostgreSQL  : KURULACAK"; fi
 fi
+if is_truthy "$COMPOSER"; then
+  if command -v composer >/dev/null 2>&1; then log "  - Composer    : kurulu (atlanacak)"
+  else                                         log "  - Composer    : KURULACAK"; fi
+fi
 log "  - DNS sablonu : NS1=${NS1}  NS2=${NS2}   (bu sunucunun NS cifti)"
 log "  - Ana domain  : $MAIN_DOMAIN  (web + SSL + DNS; mail ve veritabani KAPALI)"
 log "  - SSL         : $MAIN_DOMAIN icin Lets Encrypt"
@@ -175,6 +180,7 @@ echo
 step_hostname
 step_virtualmin
 if is_truthy "$POSTGRES"; then step_postgres; fi
+if is_truthy "$COMPOSER"; then step_composer; fi
 step_dns_template
 step_main_domain
 step_host_dns
