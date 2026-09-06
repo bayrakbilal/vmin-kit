@@ -5,8 +5,7 @@
 #   docker, portainer, PORTAINER_*
 # Hepsi idempotent: ikinci kez calistirmak zarar vermez.
 
-VMPATCH_PASS_FILE="/root/.vmpatch-domain-pass"
-VMPATCH_REPORT="/root/vmpatch-rapor.txt"
+VMPATCH_REPORT="$ROOT_DIR/vmpatch-rapor.txt"
 
 step_hostname(){
   local cur; cur="$(hostname -f 2>/dev/null || hostname)"
@@ -90,6 +89,8 @@ step_main_domain(){
   if virtualmin list-domains --name-only 2>/dev/null | grep -qx "$MAIN_DOMAIN"; then
     ok "Ana domain zaten var: $MAIN_DOMAIN (atlaniyor)."; return
   fi
+  # Sifre rastgele uretilir ve HICBIR YERE yazilmaz. Kullanilmasi gerekirse
+  # (Webmin girisi, FTP) panelden degistirilir; saklanmayan sir sizmaz.
   local pw; pw="$(gen_pass)"
   log "Ana domain olusturuluyor: $MAIN_DOMAIN  (web + SSL + DNS; mail ve veritabani kapali)"
   virtualmin create-domain \
@@ -97,8 +98,8 @@ step_main_domain(){
     --pass   "$pw" \
     --desc   "$MAIN_DOMAIN" \
     --unix --dir --web --ssl --dns --webmin
-  ( umask 077; printf '%s\n' "$pw" > "$VMPATCH_PASS_FILE" )
-  ok "Ana domain olusturuldu. Sifre: $VMPATCH_PASS_FILE"
+  unset pw
+  ok "Ana domain olusturuldu."
 }
 
 step_ssl(){
@@ -177,7 +178,10 @@ step_report(){
     echo "Portainer    : $pt"
     echo
     echo "Panel        : https://${HOSTNAME_FQDN}:10000"
-    echo "Domain sifre : $VMPATCH_PASS_FILE"
+    echo
+    echo "Domain sahibi ($MAIN_DOMAIN) sifresi rastgele uretildi ve saklanmadi."
+    echo "Webmin girisi ya da FTP gerekirse panelden yeni bir sifre belirleyin:"
+    echo "  Virtualmin -> Edit Virtual Server -> Password"
     echo
     echo "Ana domain SADE olusturuldu: web + SSL + DNS."
     echo "Mail ve veritabani KAPALI - gerektiginde panelden acilir:"

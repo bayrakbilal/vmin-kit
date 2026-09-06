@@ -47,7 +47,7 @@ onu kopyalayıp `MAIN_DOMAIN`'i değiştirmeniz yeterlidir.
 | `ssl` | Ana domain için Let's Encrypt sertifikası + otomatik yenileme. |
 | `docker` | Docker Engine (resmi Debian deposu). *(isteğe bağlı)* |
 | `portainer` | Portainer CE, varsayılan olarak sadece localhost'a bağlı. *(isteğe bağlı)* |
-| `report` | `/root/vmpatch-rapor.txt` + ikinci sunucu için `config.env` üretir. |
+| `report` | Araç klasörüne `vmpatch-rapor.txt` + ikinci sunucu için `config.env` üretir. |
 
 Tüm adımlar **idempotent**: ikinci kez çalıştırmak zarar vermez, kurulu olanı atlar.
 
@@ -84,8 +84,10 @@ lib/steps.sh         # adım fonksiyonları (install.sh açık sırayla çağır
 ## Kurulum sonrası
 
 - Panel: `https://s.<domain>:10000`
-- Ana domain sahibinin şifresi: `/root/.vmpatch-domain-pass`
-- Rapor: `/root/vmpatch-rapor.txt`
+- Rapor: araç klasöründe `vmpatch-rapor.txt`
+- Ana domain sahibinin şifresi rastgele üretilir ve **saklanmaz**. Webmin girişi
+  veya FTP gerekirse panelden yeni bir şifre belirleyin
+  (*Edit Virtual Server → Password*).
 
 ## Yol haritası
 
