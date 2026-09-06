@@ -144,9 +144,7 @@ return (undef, undef, $err) if ($err);
 
 # BatchMode: parola sorulursa beklemek yerine hemen hata versin.
 my $inner = "GIT_TERMINAL_PROMPT=0 ".
-	    "GIT_SSH_COMMAND=".quotemeta(
-		"ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new ".
-		"-o ConnectTimeout=10")." ".
+	    "GIT_SSH_COMMAND=".quotemeta(&git_ssh_command($d))." ".
 	    "git ls-remote --symref -- ".quotemeta($url);
 my $cmd = &command_as_user($d->{'user'}, 1, $inner);
 my ($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 25);
@@ -165,5 +163,59 @@ foreach my $l (split(/\r?\n/, $out)) {
 return (undef, undef, $text{'err_nobranches'}) if (!@branches);
 $default ||= $branches[0];
 return ($default, \@branches, undef);
+}
+# ---- domainin SSH anahtari ----------------------------------------------
+# Domain basina TEK anahtar, standart konumda: ~/.ssh/id_ed25519
+# Bu anahtarin acik kismi GitHub/Gitea'da HESABA eklenir (Settings -> SSH
+# keys), tek bir repoya "deploy key" olarak degil. Boylece o hesabin
+# erisebildigi butun ozel repolar bu domain icin calisir.
+#
+# Not: deploy key yolu da mumkun ama GitHub bir deploy anahtarini yalnizca tek
+# bir repoda kabul ediyor; ikinci ozel repo eklendiginde tikanir.
+sub domain_key_path
+{
+my ($d) = @_;
+return $d->{'home'}."/.ssh/id_ed25519";
+}
+
+# domain_key_pub(&domain) -> acik anahtar metni (yoksa undef)
+sub domain_key_pub
+{
+my ($d) = @_;
+my $pub = &domain_key_path($d).".pub";
+return undef if (!-r $pub);
+my $txt = &read_file_contents($pub);
+$txt =~ s/\s+$//;
+return $txt;
+}
+
+# ensure_domain_key(&domain) -> hata mesaji ya da undef
+# Anahtari domainin kendi kullanicisi olarak uretir; sahiplik ve izinler
+# bastan dogru olsun diye root olarak uretip sonra chown yapmiyoruz.
+sub ensure_domain_key
+{
+my ($d) = @_;
+return undef if (&domain_key_pub($d));
+my $path = &domain_key_path($d);
+my $sshdir = $d->{'home'}."/.ssh";
+my $inner = "mkdir -p ".quotemeta($sshdir)." && ".
+	    "chmod 700 ".quotemeta($sshdir)." && ".
+	    "ssh-keygen -q -t ed25519 -N '' -f ".quotemeta($path).
+	    " -C ".quotemeta("vmkit ".$d->{'dom'});
+my $cmd = &command_as_user($d->{'user'}, 1, $inner);
+my ($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 30);
+return $text{'err_timeout'} if ($timed);
+return $out if ($?);
+return &domain_key_pub($d) ? undef : ($out || $text{'key_efail'});
+}
+
+# git_ssh_command(&domain)
+# Anahtar standart konumda oldugu icin -i vermeye gerek yok; ssh kendisi
+# buluyor. BatchMode: parola sorulursa beklemek yerine hemen hata versin.
+sub git_ssh_command
+{
+my ($d) = @_;
+return "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new".
+       " -o ConnectTimeout=10";
 }
 1;

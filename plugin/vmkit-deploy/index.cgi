@@ -76,6 +76,8 @@ else {
 
 print &ui_link("edit_deploy.cgi?dom=$d->{'id'}&new=1", $text{'index_add'}),
       "<br>\n";
+print &ui_link("sshkey.cgi?dom=$d->{'id'}", $text{'index_sshkey'}),
+      "<br>\n";
 
 
 &ui_print_footer("/virtual-server/summary_domain.cgi?dom=$d->{'id'}",

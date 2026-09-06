@@ -61,6 +61,10 @@ if ($rerr) {
 	print "<p><b>$text{'edit_echeck'}</b></p>\n";
 	print "<pre style='white-space:pre-wrap'>",&html_escape($rerr),"</pre>\n";
 	print "<p><font size=-1>$text{'edit_echeck_help'}</font></p>\n";
+	# Ozel repo ise domainin SSH anahtari GitHub/Gitea HESABINA eklenmeli.
+	print "<p>",&ui_link("sshkey.cgi?dom=$d->{'id'}&new=$in{'new'}&repo=".
+			     &urlize($dep->{'repo'}), $text{'edit_showkey'}),
+	      "</p>\n";
 	}
 
 # ---- 2. asama: repo dogrulandiysa gerisi ----
