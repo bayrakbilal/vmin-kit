@@ -1,0 +1,7 @@
+# Sunucuya özel değerler ve ileride API token'ları burada durur
+config.env
+*.log
+
+# yerel çalışma dosyaları (ekran görüntüleri vb.)
+*.png
+*.jpg
