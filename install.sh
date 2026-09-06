@@ -102,19 +102,19 @@ if [ ${#NS_NAMES[@]} -gt 0 ]; then
   done
 fi
 
-# NS1/NS2: BIND modunda kendi ns1/ns2, harici modda gercekte otoriter olanlar.
-# Boylece yerel zone gercekle tutarli kalir.
-if [ "$DNS_MODE" = bind ]; then
-  NS1="${NS1:-ns1.${MAIN_DOMAIN}}"
-  NS2="${NS2:-ns2.${MAIN_DOMAIN}}"
-elif [ ${#NS_NAMES[@]} -gt 0 ]; then
-  NS1="${NS1:-${NS_NAMES[0]}}"
-  NS2="${NS2:-${NS_NAMES[1]:-${NS_NAMES[0]}}}"
-fi
+# NS1/NS2 her zaman bu sunucunun kendi nameserver ciftidir - DNS modundan
+# bagimsiz. Yerel BIND zone'u "NS yonetimi bizde" modeline gore uretilir;
+# Cloudflare senkronunda NS/SOA kayitlari gonderilmez, geri kalan her sey
+# aynen gider. Boylece iki mod arasinda tek fark delegasyonun nerede oldugudur.
+NS1="${NS1:-ns1.${MAIN_DOMAIN}}"
+NS2="${NS2:-ns2.${MAIN_DOMAIN}}"
+
+# Gercekte otoriter olan sunucular - sadece bilgi ve rapor icin.
+AUTH_NS="${NS_NAMES[*]:-bilinmiyor}"
 
 case "$DNS_MODE" in
   bind)    log "  Mod: BIND - NS kayitlari bu sunucuyu gosteriyor (sunucu otoriter)." ;;
-  harici)  log "  Mod: HARICI DNS - otoriter: ${NS1:-?}" ;;
+  harici)  log "  Mod: HARICI DNS - otoriter: $AUTH_NS" ;;
   *)       warn "  Mod: belirlenemedi (NS kaydi okunamadi)." ;;
 esac
 echo
@@ -123,8 +123,8 @@ echo
 log "Yapilacaklar:"
 log "  - Hostname    : $HOSTNAME_FQDN"
 if [ "$VM" = yes ]; then log "  - Virtualmin  : kurulu (atlanacak)"; else log "  - Virtualmin  : KURULACAK"; fi
-if is_truthy "$POSTGRES"; then log "  - PostgreSQL  : kurulacak (--extra + --include)"; fi
-log "  - DNS sablonu : NS1=${NS1:-?}  NS2=${NS2:-?}"
+if is_truthy "$POSTGRES"; then log "  - PostgreSQL  : kurulacak (Virtualmin sonrasi, ayri adim)"; fi
+log "  - DNS sablonu : NS1=${NS1}  NS2=${NS2}   (bu sunucunun NS cifti)"
 log "  - Ana domain  : $MAIN_DOMAIN  (web + SSL + DNS; mail ve veritabani KAPALI)"
 log "  - SSL         : $MAIN_DOMAIN icin Lets Encrypt"
 if is_truthy "$docker";    then log "  - Docker"; fi
@@ -170,6 +170,7 @@ fi
 echo
 step_hostname
 step_virtualmin
+if is_truthy "$POSTGRES"; then step_postgres; fi
 step_dns_template
 step_main_domain
 step_ssl

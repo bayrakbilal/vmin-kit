@@ -40,7 +40,8 @@ onu kopyalayıp `MAIN_DOMAIN`'i değiştirmeniz yeterlidir.
 | Adım | Ne yapar |
 |------|----------|
 | `hostname` | Hostname'i `s.<domain>` yapar + `/etc/hosts` kaydı. **Virtualmin'den önce** — yoksa varsayılan site, SSL isimlendirmesi ve mail kimliği yanlış oturur. |
-| `virtualmin` | Resmi installer ile kurar (kuruluysa atlar). `POSTGRES=1` ise PostgreSQL de eklenir. |
+| `virtualmin` | Resmi installer ile kurar (kuruluysa atlar). |
+| `postgres` | PostgreSQL kurar ve Virtualmin özelliğini açar — Virtualmin kurulumuyla gelmiyor. *(isteğe bağlı)* |
 | `dns-template` | Yeni domainler için DNS varsayılanları (`bind_master`, `dns_ns`, `dns_prins`, `bind_sub`). |
 | `main-domain` | Ana domaini **sade** oluşturur: web + SSL + DNS. Mail ve veritabanı **kapalı**. |
 | `ssl` | Ana domain için Let's Encrypt sertifikası + otomatik yenileme. |
@@ -64,9 +65,12 @@ Araç, domainin NS kayıtlarına bakıp modu **kendisi tespit eder**:
 - **BIND** — NS kayıtları bu sunucuyu gösteriyor, sunucu otoriter. Registrar tarafında
   `ns1`/`ns2` için glue kaydı gerekir; rapor bunu hatırlatır.
 
-Her iki modda da Virtualmin'in DNS özelliği **açık kalır**: yerel zone, Virtualmin'in
+Her iki modda da Virtualmin'in DNS özelliği **açık kalır** ve zone her zaman
+**"NS yönetimi bizde"** modeline göre üretilir: nameserver çifti `ns1.<domain>` /
+`ns2.<domain>`, modun ne olduğuna bakılmaksızın. Yerel zone, Virtualmin'in
 kayıtları (www, MX, SPF, DKIM, alt domain A kayıtları) doğru üretip güncellediği
-çalışma alanıdır.
+çalışma alanıdır; harici modda yayınlanan kopya dışarıdadır ve senkronda NS/SOA
+kayıtları gönderilmez, geri kalan her şey aynen gider.
 
 ## Yapı
 

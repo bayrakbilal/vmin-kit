@@ -26,17 +26,32 @@ step_virtualmin(){
   log "Virtualmin resmi installer indiriliyor..."
   curl -fsSL https://software.virtualmin.com/gpl/scripts/virtualmin-install.sh -o /root/virtualmin-install.sh
   chmod +x /root/virtualmin-install.sh
+  # Dikkat: software.virtualmin.com'un servis ettigi installer, kaynak
+  # depodaki surumden eskidir; --extra / --include / --type gibi bayraklar
+  # orada YOK. Yalnizca her surumde bulunan bayraklar kullanilir.
   local args=(--force --hostname "$HOSTNAME_FQDN")
-  # PostgreSQL varsayilan kurulumda GELMIYOR. Iki bayrak birlikte gerekli:
-  #   --extra   : paketleri stack kurulumundan once kurar
-  #   --include : yapilandirma asamasinda PostgreSQL modulunu calistirir
-  #               (PostgreSQL.pm paket kurmuyor, yalnizca yapilandiriyor)
-  if is_truthy "${POSTGRES:-1}"; then
-    args+=(--extra postgresql,postgresql-contrib --include PostgreSQL)
-  fi
   log "Calistiriliyor (uzun surer): virtualmin-install.sh ${args[*]}"
   sh /root/virtualmin-install.sh "${args[@]}"
   ok "Virtualmin kurulumu bitti."
+}
+
+# PostgreSQL Virtualmin kurulumuyla GELMEZ; ayrica kurulup ozellik olarak acilir.
+step_postgres(){
+  if ! command -v psql >/dev/null 2>&1; then
+    log "PostgreSQL kuruluyor..."
+    apt-get update -qq
+    DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-contrib
+  else
+    ok "PostgreSQL zaten kurulu."
+  fi
+  systemctl enable --now postgresql 2>/dev/null || warn "postgresql servisi baslatilamadi."
+  # Virtualmin tarafinda ozellik olarak etkinlestir (Features and Plugins).
+  if virtualmin set-global-feature --enable-feature postgres >/dev/null 2>&1; then
+    ok "PostgreSQL kuruldu ve Virtualmin ozelligi acildi."
+  else
+    warn "PostgreSQL kuruldu, ancak Virtualmin ozelligi otomatik acilamadi."
+    warn "Panelden: System Settings -> Features and Plugins -> PostgreSQL"
+  fi
 }
 
 step_dns_template(){
@@ -133,7 +148,9 @@ step_report(){
     echo "Ana domain   : $MAIN_DOMAIN"
     echo "Hostname     : $HOSTNAME_FQDN"
     echo "Sunucu IP    : ${ip:-bilinmiyor}"
-    echo "DNS modu     : ${DNS_MODE:-bilinmiyor}   (NS1=${NS1:-} NS2=${NS2:-})"
+    echo "DNS modu     : ${DNS_MODE:-bilinmiyor}"
+    echo "Sunucu NS    : ${NS1:-} / ${NS2:-}   (zone sablonunda kullanilan cift)"
+    echo "Otoriter NS  : ${AUTH_NS:-bilinmiyor}   (domainin gercekte delege edildigi yer)"
     echo "PostgreSQL   : $pg"
     echo "Docker       : $dk"
     echo "Portainer    : $pt"
@@ -149,8 +166,10 @@ step_report(){
       echo "Yapilacak (BIND modu): registrar tarafinda ${NS1:-ns1} / ${NS2:-ns2} icin"
       echo "glue kaydi -> ${ip:-<sunucu-ip>}"
     else
-      echo "DNS harici saglayicida (${NS1:-bilinmiyor})."
-      echo "Yeni domain/alt domain eklerken A kaydini orada olusturmayi unutmayin."
+      echo "DNS harici saglayicida: ${AUTH_NS:-bilinmiyor}"
+      echo "Yerel BIND zone'u yine de uretilir ve Virtualmin tarafindan guncellenir;"
+      echo "yayinlanan kopya harici saglayicidadir. Yeni domain/alt domain eklerken"
+      echo "A kaydini orada olusturmayi unutmayin."
     fi
   } > "$VMPATCH_REPORT"
   chmod 600 "$VMPATCH_REPORT"
