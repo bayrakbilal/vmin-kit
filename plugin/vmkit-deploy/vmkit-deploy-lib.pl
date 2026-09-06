@@ -119,11 +119,51 @@ my ($d, $dep) = @_;
 return "$d->{'home'}/$dep->{'target'}";
 }
 
-# Yerel repo modunda kullaniciya verilecek push adresi (iskelet).
-sub deploy_push_url
+# validate_repo_url(url)
+# Semadan hemen sonra alfanumerik bekliyoruz: bu, '-' ile baslayip git'e
+# secenek gibi gecen ya da 'ext::<komut>' gibi calistirilabilir URL'leri eler.
+sub validate_repo_url
 {
-my ($d, $dep) = @_;
-return "$d->{'user'}\@$d->{'dom'}:repos/$dep->{'id'}.git";
+my ($url) = @_;
+return $text{'save_erepo'} if ($url !~ /\S/);
+return $text{'save_erepourl'}
+	if ($url !~ /^(https:\/\/|http:\/\/|ssh:\/\/|git\@)[A-Za-z0-9]/);
+return undef;
 }
 
+# remote_branches(&domain, url)
+# Uzak repoyu 'git ls-remote' ile sorgular - klonlamaz, yalnizca ref listesini
+# alir. Komut DOMAININ KENDI KULLANICISI olarak calisir ki ozel repolarda o
+# kullanicinin SSH anahtari kullanilsin.
+# Doner: (varsayilan-dal, \@dallar, hata)
+sub remote_branches
+{
+my ($d, $url) = @_;
+my $err = &validate_repo_url($url);
+return (undef, undef, $err) if ($err);
+
+# BatchMode: parola sorulursa beklemek yerine hemen hata versin.
+my $inner = "GIT_TERMINAL_PROMPT=0 ".
+	    "GIT_SSH_COMMAND=".quotemeta(
+		"ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new ".
+		"-o ConnectTimeout=10")." ".
+	    "git ls-remote --symref -- ".quotemeta($url);
+my $cmd = &command_as_user($d->{'user'}, 1, $inner);
+my ($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 25);
+return (undef, undef, $text{'err_timeout'}) if ($timed);
+return (undef, undef, $out) if ($?);
+
+my ($default, @branches);
+foreach my $l (split(/\r?\n/, $out)) {
+	if ($l =~ /^ref:\s+refs\/heads\/(\S+)\s+HEAD$/) {
+		$default = $1;
+		}
+	elsif ($l =~ /^\S+\s+refs\/heads\/(.+)$/) {
+		push(@branches, $1);
+		}
+	}
+return (undef, undef, $text{'err_nobranches'}) if (!@branches);
+$default ||= $branches[0];
+return ($default, \@branches, undef);
+}
 1;

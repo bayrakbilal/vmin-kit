@@ -56,9 +56,7 @@ if (@deps) {
 		push(@table, [
 			&ui_link("edit_deploy.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
 				 $dep->{'name'} || $dep->{'id'}),
-			$dep->{'source'} eq 'local' ? $text{'src_local'}
-						    : $text{'src_remote'},
-			$dep->{'source'} eq 'local' ? "-" : $dep->{'repo'},
+			$dep->{'repo'},
 			$dep->{'branch'},
 			$dep->{'target'},
 			$dep->{'mode'} eq 'auto' ? $text{'mode_auto'}
@@ -66,7 +64,7 @@ if (@deps) {
 			$dep->{'last_status'} || $text{'never'},
 			]);
 		}
-	print &ui_columns_table([ $text{'col_name'}, $text{'col_source'},
+	print &ui_columns_table([ $text{'col_name'},
 				  $text{'col_repo'}, $text{'col_branch'},
 				  $text{'col_target'}, $text{'col_mode'},
 				  $text{'col_last'} ],

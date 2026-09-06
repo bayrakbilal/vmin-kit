@@ -156,8 +156,13 @@ isteği taze bir Perl process'inde çalıştırdığı için derleme yoktur; scr
 yalnızca `module.info` değiştiğinde Webmin'i yeniden başlatır, diğer
 durumlarda dosyaları kopyalar ve sayfayı yenilemeniz yeterlidir.
 
-> Şu an **iskelet**: tanımlar kaydediliyor, ekranlar çalışıyor; git işlemleri ve
-> Cloudflare API çağrıları henüz yok.
+**Git Deploy:** kaynak her zaman **uzak repodur** — sunucuda repo barındırmıyoruz.
+Repo adresi girilip *Kontrol et* denince `git ls-remote` ile sorgulanır; dallar
+listeden seçilir, ulaşılamayan bir repo hiç kaydedilmez. Bir domainde birden çok
+deployment olabilir; her biri kendi hedef klasörüne çalışır.
+
+> Şu an **iskelet**: tanımlar kaydediliyor, repo doğrulaması çalışıyor; asıl
+> deploy işlemi ve Cloudflare senkronu henüz yok.
 
 ## Yol haritası
 

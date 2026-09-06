@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # Deployment kaydet / sil.
-# ISKELET: tanim kaydediliyor, git islemi henuz yapilmiyor.
+# ISKELET: tanim kaydediliyor, git deploy islemi henuz yapilmiyor.
 use strict;
 use warnings;
 our (%text, %in);
@@ -31,18 +31,8 @@ if ($in{'delete'}) {
 	}
 
 # ---- dogrulama ----
-$in{'source'} =~ /^(local|remote)$/ || &error($text{'save_esource'});
-$in{'mode'}   =~ /^(manual|auto)$/  || &error($text{'save_emode'});
-
+$in{'mode'} =~ /^(manual|auto)$/  || &error($text{'save_emode'});
 $in{'name'} =~ /^[A-Za-z0-9._\- ]*$/ || &error($text{'save_ename'});
-
-if ($in{'source'} eq 'remote') {
-	$in{'repo'} =~ /\S/ || &error($text{'save_erepo'});
-	$in{'repo'} =~ /^(https?:\/\/|git\@|ssh:\/\/)\S+$/
-		|| &error($text{'save_erepourl'});
-	}
-
-$in{'branch'} =~ /^[A-Za-z0-9._\-\/]+$/ || &error($text{'save_ebranch'});
 
 # Hedef klasor domainin home'unun disina cikamaz.
 my $terr = &validate_target($d, $in{'target'});
@@ -56,10 +46,16 @@ foreach my $other (&list_deploys($d)) {
 		}
 	}
 
+# Repo gercekten ulasilabilir mi ve dal orada var mi? Formda kontrol edilmis
+# olsa da burada tekrar bakiyoruz: form ile kaydet arasinda erisim degismis
+# olabilir ve calismayan bir tanimi kaydetmek istemiyoruz.
+my ($defbranch, $branches, $rerr) = &remote_branches($d, $in{'repo'});
+&error(&text('save_ereporeach', "<pre>".&html_escape($rerr)."</pre>")) if ($rerr);
+&indexof($in{'branch'}, @$branches) >= 0 || &error($text{'save_ebranchgone'});
+
 # ---- kaydet ----
 $dep->{'name'}   = $in{'name'};
-$dep->{'source'} = $in{'source'};
-$dep->{'repo'}   = $in{'source'} eq 'remote' ? $in{'repo'} : '';
+$dep->{'repo'}   = $in{'repo'};
 $dep->{'branch'} = $in{'branch'};
 $dep->{'target'} = $in{'target'};
 $dep->{'mode'}   = $in{'mode'};

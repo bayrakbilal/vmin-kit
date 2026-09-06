@@ -1,5 +1,9 @@
 #!/usr/bin/perl
-# Deployment ekleme / duzenleme formu.
+# Deployment ekleme / duzenleme.
+#
+# Iki asamali: once repo adresi girilir ve "Kontrol et" ile uzak repo
+# sorgulanir. Ulasilabiliyorsa dallar listeden secilir, ulasilamiyorsa git'in
+# hatasi gosterilir ve kayit yapilmaz - calismayan bir repo hic eklenmesin.
 use strict;
 use warnings;
 our (%text, %in, %config, $module_name);
@@ -13,8 +17,7 @@ $d || &error($text{'index_edom'});
 
 my $dep;
 if ($in{'new'}) {
-	$dep = { 'source' => 'remote',
-		 'branch' => $config{'default_branch'} || 'main',
+	$dep = { 'branch' => '',
 		 'target' => 'public_html',
 		 'mode'   => 'manual' };
 	}
@@ -23,51 +26,80 @@ else {
 	$dep || &error($text{'edit_egone'});
 	}
 
+# Kontrol sonrasi forma geri donerken kullanicinin girdiklerini koru.
+foreach my $f ('name', 'repo', 'branch', 'target', 'mode') {
+	$dep->{$f} = $in{$f} if (defined($in{$f}) && $in{$f} ne '');
+	}
+
 &ui_print_header(&virtual_server::domain_in($d),
 		 $in{'new'} ? $text{'edit_title_new'} : $text{'edit_title'},
 		 "", undef, 0, 0);
 
-print &ui_form_start("save_deploy.cgi", "post");
+# Repo adresi varsa dallari sorgula (klonlamaz, yalnizca ls-remote).
+my ($defbranch, $branches, $rerr);
+if ($dep->{'repo'}) {
+	($defbranch, $branches, $rerr) = &remote_branches($d, $dep->{'repo'});
+	$dep->{'branch'} ||= $defbranch;
+	}
+
+# ---- 1. asama: repo adresi ----
+print &ui_form_start("edit_deploy.cgi", "post");
 print &ui_hidden("dom", $d->{'id'});
 print &ui_hidden("new", $in{'new'});
 print &ui_hidden("id", $dep->{'id'});
-print &ui_table_start($text{'edit_header'}, "width=100%", 2);
-
-print &ui_table_row($text{'edit_name'},
-	&ui_textbox("name", $dep->{'name'}, 30));
-
-# Kaynak: sunucuda tuttugumuz repo mu, uzaktaki repo mu?
-print &ui_table_row($text{'edit_source'},
-	&ui_radio("source", $dep->{'source'},
-		  [ [ "remote", $text{'src_remote_desc'} ],
-		    [ "local",  $text{'src_local_desc'} ] ]));
-
+foreach my $f ('name', 'target', 'mode') {
+	print &ui_hidden($f, $dep->{$f});
+	}
+print &ui_table_start($text{'edit_repo_header'}, "width=100%", 2);
 print &ui_table_row($text{'edit_repo'},
-	&ui_textbox("repo", $dep->{'repo'}, 50)."<br>".
+	&ui_textbox("repo", $dep->{'repo'}, 60)."<br>".
 	"<font size=-1>$text{'edit_repo_help'}</font>");
+print &ui_table_end();
+print &ui_form_end([ [ undef, $text{'edit_check'} ] ]);
 
-print &ui_table_row($text{'edit_branch'},
-	&ui_textbox("branch", $dep->{'branch'}, 20));
-
-# Hedef klasor domainin home'una gore. Iki repo ayni domainde farkli
-# klasorlerde calisabilsin diye serbest birakiyoruz.
-print &ui_table_row($text{'edit_target'},
-	"<tt>$d->{'home'}/</tt> ".&ui_textbox("target", $dep->{'target'}, 30).
-	"<br><font size=-1>$text{'edit_target_help'}</font>");
-
-print &ui_table_row($text{'edit_mode'},
-	&ui_radio("mode", $dep->{'mode'},
-		  [ [ "manual", $text{'mode_manual_desc'} ],
-		    [ "auto",   $text{'mode_auto_desc'} ] ]));
-
-if (!$in{'new'} && $dep->{'source'} eq 'local') {
-	print &ui_table_row($text{'edit_push'},
-		"<tt>".&html_escape(&deploy_push_url($d, $dep))."</tt>");
+if ($rerr) {
+	print "<p><b>$text{'edit_echeck'}</b></p>\n";
+	print "<pre style='white-space:pre-wrap'>",&html_escape($rerr),"</pre>\n";
+	print "<p><font size=-1>$text{'edit_echeck_help'}</font></p>\n";
 	}
 
-print &ui_table_end();
-print &ui_form_end($in{'new'} ? [ [ undef, $text{'create'} ] ]
-			      : [ [ undef, $text{'save'} ],
-				  [ "delete", $text{'delete'} ] ]);
+# ---- 2. asama: repo dogrulandiysa gerisi ----
+if ($branches) {
+	print "<hr>\n";
+	print &ui_form_start("save_deploy.cgi", "post");
+	print &ui_hidden("dom", $d->{'id'});
+	print &ui_hidden("new", $in{'new'});
+	print &ui_hidden("id", $dep->{'id'});
+	print &ui_hidden("repo", $dep->{'repo'});
+	print &ui_table_start($text{'edit_header'}, "width=100%", 2);
+
+	print &ui_table_row($text{'edit_name'},
+		&ui_textbox("name", $dep->{'name'}, 30));
+
+	print &ui_table_row($text{'edit_branch'},
+		&ui_select("branch", $dep->{'branch'}, $branches, 1, 0, 0).
+		($defbranch ? "<br><font size=-1>".
+			      &text('edit_branch_default', $defbranch).
+			      "</font>" : ""));
+
+	# Hedef klasor domainin home'una gore. Ayni domainde iki repo iki ayri
+	# klasorde calisabilsin diye serbest.
+	print &ui_table_row($text{'edit_target'},
+		"<tt>$d->{'home'}/</tt> ".&ui_textbox("target", $dep->{'target'}, 30).
+		"<br><font size=-1>$text{'edit_target_help'}</font>");
+
+	print &ui_table_row($text{'edit_mode'},
+		&ui_radio("mode", $dep->{'mode'},
+			  [ [ "manual", $text{'mode_manual_desc'} ],
+			    [ "auto",   $text{'mode_auto_desc'} ] ]));
+
+	print &ui_table_end();
+	print &ui_form_end($in{'new'} ? [ [ undef, $text{'create'} ] ]
+				      : [ [ undef, $text{'save'} ],
+					  [ "delete", $text{'delete'} ] ]);
+	}
+elsif (!$rerr && !$dep->{'repo'}) {
+	print "<p><i>$text{'edit_needcheck'}</i></p>\n";
+	}
 
 &ui_print_footer("index.cgi?dom=$d->{'id'}", $text{'edit_return'});
