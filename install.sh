@@ -76,8 +76,10 @@ HOST_PREFIX="${HOST_PREFIX:-s}"
 HOSTNAME_FQDN="${HOSTNAME_FQDN:-${HOST_PREFIX}.${MAIN_DOMAIN}}"
 ADMIN_EMAIL="${ADMIN_EMAIL:-}"
 POSTGRES="${POSTGRES:-1}"
+# Docker ve Portainer tek bayrak: Portainer, Docker olmadan anlamsiz ve
+# Docker'i Portainer'siz kurmak istemedigimiz icin ikisi birlikte gider.
 docker="${docker:-1}"
-portainer="${portainer:-1}"
+portainer="$docker"
 
 # ---- 3) DNS kontrolu + mod tespiti ----
 ensure_pkg dig bind9-dnsutils dnsutils || { err "dig kurulamadi (bind9-dnsutils)."; exit 1; }
@@ -127,8 +129,10 @@ if is_truthy "$POSTGRES"; then log "  - PostgreSQL  : kurulacak (Virtualmin sonr
 log "  - DNS sablonu : NS1=${NS1}  NS2=${NS2}   (bu sunucunun NS cifti)"
 log "  - Ana domain  : $MAIN_DOMAIN  (web + SSL + DNS; mail ve veritabani KAPALI)"
 log "  - SSL         : $MAIN_DOMAIN icin Lets Encrypt"
-if is_truthy "$docker";    then log "  - Docker"; fi
-if is_truthy "$portainer"; then log "  - Portainer"; fi
+if is_truthy "$docker"; then
+  log "  - Docker + Portainer"
+  log "  - ${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN} -> Portainer proxy"
+fi
 echo
 
 # ---- dogrulama ----
@@ -137,9 +141,6 @@ case "$MAIN_DOMAIN" in
   *.*) ;;
   *) errors+=("MAIN_DOMAIN gecerli bir domain degil: $MAIN_DOMAIN");;
 esac
-if is_truthy "$portainer" && ! is_truthy "$docker" && [ "$DOCKER" = no ]; then
-  errors+=("portainer acik ama docker kapali ve kurulu degil")
-fi
 if ! is_truthy "${SKIP_DNS_CHECK:-0}"; then
   if [ ${#MAIN_IPS[@]} -eq 0 ] || ! ip_in_list "$SRV_IP" "${MAIN_IPS[@]}"; then
     errors+=("$MAIN_DOMAIN -> ${MAIN_IPS[*]:-cozumlemiyor} ; beklenen: $SRV_IP  (A kaydini duzeltin)")
@@ -175,12 +176,25 @@ step_dns_template
 step_main_domain
 step_host_dns
 step_ssl
-if is_truthy "$docker";    then step_docker;    fi
-if is_truthy "$portainer"; then step_portainer; fi
+if is_truthy "$docker"; then
+  step_docker
+  step_portainer
+  step_docker_site
+fi
 step_report
 
 echo
 ok "Tamamlandi."
 log "Panel : https://${HOSTNAME_FQDN}:10000"
 log "Site  : https://${MAIN_DOMAIN}"
+if is_truthy "$docker"; then
+  log "Portainer : https://${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}/"
+  tok="$(portainer_setup_token || true)"
+  if [ -n "$tok" ]; then
+    log "  setup_token: $tok"
+    log "  (kisa omurlu; suresi dolduysa: sudo ./configure-docker.sh)"
+  else
+    warn "  setup_token okunamadi -> sudo ./configure-docker.sh"
+  fi
+fi
 log "Rapor : $VMINKIT_REPORT"

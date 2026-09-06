@@ -46,8 +46,7 @@ onu kopyalayıp `MAIN_DOMAIN`'i değiştirmeniz yeterlidir.
 | `main-domain` | Ana domaini **sade** oluşturur: web + SSL + DNS. Mail ve veritabanı **kapalı**. |
 | `host-dns` | Ana domainin zone'una hostname (`s.<domain>`) için A kaydı ekler. |
 | `ssl` | Ana domain için Let's Encrypt sertifikası + otomatik yenileme. |
-| `docker` | Docker Engine (resmi Debian deposu). *(isteğe bağlı)* |
-| `portainer` | Portainer CE, varsayılan olarak sadece localhost'a bağlı. *(isteğe bağlı)* |
+| `docker` | Docker Engine + Portainer CE + `docker.<domain>` proxy sitesi. Tek bayrak (`docker=1`); üçü birlikte gelir. *(isteğe bağlı)* |
 | `report` | Araç klasörüne `vmin-kit-rapor.txt` + ikinci sunucu için `config.env` üretir. |
 
 Tüm adımlar **idempotent**: ikinci kez çalıştırmak zarar vermez, kurulu olanı atlar.
@@ -81,6 +80,7 @@ config.env.example   # gözetimsiz çalıştırma için hazır cevaplar
 lib/common.sh        # yardımcılar (log, ask, set_kv, detect_ip, resolve_a/ns, ensure_pkg)
 lib/steps.sh         # adım fonksiyonları (install.sh açık sırayla çağırır)
 renew-ssl.sh         # hostname sanal sunucusu için SSL al/yenile
+configure-docker.sh  # Portainer kurulum ekranını yeniden açar (yeni setup_token)
 ```
 
 ## `renew-ssl.sh` — hostname sertifikası
@@ -96,6 +96,22 @@ sudo ./renew-ssl.sh
 Hostname sanal sunucusu için gerçek sertifikayı alır ve otomatik yenilemeyi açar.
 Ana domain için ayrıca bir şey gerekmez — `./install.sh` tekrar çalıştırıldığında
 sertifikası olmayan ana domain için zaten istekte bulunur.
+
+## Portainer
+
+`docker=1` ise kurulum şunları yapar: Docker Engine, Portainer CE (yalnızca
+`127.0.0.1:9000`'e bağlı) ve `docker.<domain>` alt sunucusu — kökünden
+Portainer'a websocket destekli proxy, kendi SSL sertifikasıyla.
+
+Portainer ilk açılışta bir **setup_token** ister ve bu token kısa ömürlüdür;
+birkaç dakika içinde yönetici hesabı oluşturulmazsa kurulum kilitlenir.
+Kurulum çıktısında token yazılır. Kaçırırsanız:
+
+```bash
+sudo ./configure-docker.sh
+```
+
+Konteyneri yeniden başlatır, yeni token'ı okur ve adresle birlikte yazar.
 
 ## Kurulum sonrası
 

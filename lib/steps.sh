@@ -144,6 +144,53 @@ step_ssl(){
   fi
 }
 
+# Portainer loglarindan en son setup_token'i okur (yoksa bos doner).
+# Token'in omru kisadir: konteyner ayaga kalktiktan birkac dakika sonra
+# Portainer guvenlik geregi kurulumu kilitler ve yeniden baslatmak gerekir.
+portainer_setup_token(){
+  docker logs portainer 2>&1 | grep -oE 'setup_token=[0-9a-f]+' | tail -1 | cut -d= -f2
+}
+
+# docker.<domain> alt sunucusu + Portainer'a proxy.
+# Alt sunucu (--parent) kendi Unix kullanicisini olusturmaz; --break-ssl-cert
+# ile ana domainin sertifikasina baglanmak yerine kendi sertifikasini alir
+# (ana domainin sertifikasi bu ismi kapsamiyor).
+step_docker_site(){
+  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; docker sitesi atlaniyor."; return 1; }
+  local site="${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}"
+  local port="${PORTAINER_PORT:-9000}"
+  local url="http://127.0.0.1:${port}/"
+
+  if virtualmin list-domains --name-only 2>/dev/null | grep -qxF "$site"; then
+    ok "Alt sunucu zaten var: $site"
+  else
+    log "Alt sunucu olusturuluyor: $site (ana domain: $MAIN_DOMAIN)"
+    if ! virtualmin create-domain \
+           --domain "$site" \
+           --parent "$MAIN_DOMAIN" \
+           --desc   "Portainer (vmin-kit)" \
+           --dir --web --ssl --break-ssl-cert; then
+      err "$site olusturulamadi; proxy adimi atlaniyor."
+      return 1
+    fi
+    ok "Alt sunucu olusturuldu: $site"
+  fi
+
+  # Proxy zaten tanimli mi? (vhost dosyasinda hedef URL'yi ariyoruz)
+  local vhost="/etc/apache2/sites-available/${site}.conf"
+  if [ -f "$vhost" ] && grep -q "127.0.0.1:${port}" "$vhost"; then
+    ok "Proxy zaten tanimli: / -> $url"
+  else
+    log "Proxy ekleniyor: / -> $url  (websocket destegiyle)"
+    if virtualmin create-proxy --domain "$site" --path / --url "$url" --websockets; then
+      ok "Proxy eklendi."
+    else
+      warn "Proxy eklenemedi. Elle:"
+      warn "  virtualmin create-proxy --domain $site --path / --url $url --websockets"
+    fi
+  fi
+}
+
 step_docker(){
   if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then ok "Docker zaten kurulu (atlaniyor)."; return; fi
   local pkg
@@ -201,6 +248,11 @@ step_report(){
     echo "Portainer    : $pt"
     echo
     echo "Panel        : https://${HOSTNAME_FQDN}:10000"
+    if is_truthy "${docker:-0}"; then
+      echo "Portainer    : https://${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}/"
+      echo "               Ilk giriste setup_token istenir. Token kisa omurludur;"
+      echo "               suresi dolduysa: sudo ./configure-docker.sh"
+    fi
     echo
     echo "Domain sahibi ($MAIN_DOMAIN) sifresi rastgele uretildi ve saklanmadi."
     echo "Webmin girisi ya da FTP gerekirse panelden yeni bir sifre belirleyin:"
@@ -233,7 +285,6 @@ step_report(){
       echo "ADMIN_EMAIL=${ADMIN_EMAIL:-}"
       echo "POSTGRES=${POSTGRES:-1}"
       echo "docker=${docker:-0}"
-      echo "portainer=${portainer:-0}"
       echo "PORTAINER_IMAGE=${PORTAINER_IMAGE:-portainer/portainer-ce:latest}"
       echo "PORTAINER_PORT=${PORTAINER_PORT:-9000}"
       echo "PORTAINER_BIND_LOCAL=${PORTAINER_BIND_LOCAL:-yes}"
