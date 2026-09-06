@@ -277,7 +277,7 @@ my @steps;
 # reddeder. Bare halde --work-tree ile checkout zaten calisiyor.
 push(@steps, "if [ ! -d $R ]; then ".
 	     "mkdir -p ".quotemeta($d->{'home'}."/.vmkit/repos")." && ".
-	     "$env git clone --quiet --bare -- ".quotemeta($url)." $R; ".
+	     "$env git clone --bare -- ".quotemeta($url)." $R; ".
 	     "fi");
 push(@steps, "git --git-dir=$R remote set-url origin -- ".quotemeta($url));
 
@@ -294,7 +294,7 @@ push(@steps, 'if [ -z "$OLDREF" ]; then echo; echo '.
 	     'else echo; echo '.quotemeta($text{'log_newcommits'}).'; '.
 	     'git --git-dir='.$R.' log --oneline --no-decorate "$OLDREF..$NEWREF"; '.
 	     'echo; echo '.quotemeta($text{'log_changed'}).'; '.
-	     'git --git-dir='.$R.' diff --name-status "$OLDREF" "$NEWREF"; fi');
+	     'git --git-dir='.$R.' diff --stat "$OLDREF" "$NEWREF"; fi');
 
 push(@steps, "mkdir -p $T");
 # checkout -f: calisma kopyasi bu dalla ayni hale gelir. IZLENEN dosyalardan
