@@ -80,7 +80,22 @@ install.sh           # tek giriş: durum → cevaplar → DNS kontrol → doğru
 config.env.example   # gözetimsiz çalıştırma için hazır cevaplar
 lib/common.sh        # yardımcılar (log, ask, set_kv, detect_ip, resolve_a/ns, ensure_pkg)
 lib/steps.sh         # adım fonksiyonları (install.sh açık sırayla çağırır)
+renew-ssl.sh         # hostname sanal sunucusu için SSL al/yenile
 ```
+
+## `renew-ssl.sh` — hostname sertifikası
+
+Kurulum sırasında domain henüz çözümlemiyorsa (örneğin NS'ler bu sunucuya
+delege edilmeden önce) Virtualmin sertifika alamaz, self-signed ile devam eder.
+DNS oturduktan sonra:
+
+```bash
+sudo ./renew-ssl.sh
+```
+
+Hostname sanal sunucusu için gerçek sertifikayı alır ve otomatik yenilemeyi açar.
+Ana domain için ayrıca bir şey gerekmez — `./install.sh` tekrar çalıştırıldığında
+sertifikası olmayan ana domain için zaten istekte bulunur.
 
 ## Kurulum sonrası
 
