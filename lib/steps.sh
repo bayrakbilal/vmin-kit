@@ -167,12 +167,16 @@ portainer_setup_token(){
 }
 
 # Portainer'da yonetici hesabi olusturulmus mu?
-# Portainer API'si: 409 -> hesap var, 204 -> kurulum bekliyor.
+# Portainer'in kendi kaynagina gore /api/users/admin/check:
+#   204 -> yonetici hesabi VAR
+#   404 -> hesap YOK, kurulum bekliyor
+# Baska bir cevap (servis henuz ayakta degil, yol degismis) "kurulmamis"
+# sayilir; en kotu ihtimalle gereksiz bir yeniden baslatma olur.
 portainer_configured(){
   local port="${PORTAINER_PORT:-9000}" code
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
           "http://127.0.0.1:${port}/api/users/admin/check" 2>/dev/null || true)"
-  [ "$code" = "409" ]
+  [ "$code" = "204" ]
 }
 
 # Portainer'i yeniden baslatip TAZE setup_token dondurur.
