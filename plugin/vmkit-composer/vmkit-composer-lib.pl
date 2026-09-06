@@ -104,10 +104,15 @@ sub stream_command
 my ($cmd, $secs) = @_;
 my $to = &has_command("timeout");
 $cmd = quotemeta($to)." ".int($secs || 600)." ".$cmd if ($to);
+# Webmin'in calisan kalibiyla ayni bicim (bkz. backquote_with_timeout):
+# komutu parantezle, translate_command'dan gecir ve STDIN'i /dev/null'a bagla.
+# STDIN acik birakilirsa su/composer CGI'nin girdisini devralip takilabiliyor
+# ve cikti alinamiyor.
+my $real = &translate_command($cmd);
 my $out = '';
 local $| = 1;
 no strict "subs";
-&open_execute_command(STREAMCMD, $cmd." 2>&1", 1, 1);
+&open_execute_command(STREAMCMD, "($real) </dev/null 2>&1", 1, 1);
 while(my $l = <STREAMCMD>) {
 	$out .= $l;
 	print &html_escape($l);
