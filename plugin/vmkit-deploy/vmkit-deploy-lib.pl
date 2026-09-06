@@ -234,9 +234,9 @@ return "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new".
 # oldurulen komut 124 ile doner.
 sub stream_command
 {
-my ($cmd) = @_;
+my ($cmd, $secs) = @_;
 my $to = &has_command("timeout");
-$cmd = quotemeta($to)." ".int($_[1] || 600)." ".$cmd if ($to);
+$cmd = quotemeta($to)." ".int($secs || 600)." ".$cmd if ($to);
 my $out = '';
 local $| = 1;
 no strict "subs";
@@ -246,8 +246,15 @@ while(my $l = <STREAMCMD>) {
 	print &html_escape($l);
 	}
 close(STREAMCMD);
+my $st = $?;
 use strict "subs";
-return ($? ? 0 : 1, $out);
+# 'timeout' oldurdugu komutu 124 ile bildirir - genel hata yerine sureyi soyle.
+if ($to && ($st >> 8) == 124) {
+	my $msg = "\n".$text{'err_timeout'}."\n";
+	print &html_escape($msg);
+	return (0, $out.$msg);
+	}
+return ($st ? 0 : 1, $out);
 }
 
 # ---- deploy islemi ------------------------------------------------------
