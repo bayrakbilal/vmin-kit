@@ -121,6 +121,35 @@ Konteyneri yeniden başlatır, yeni token'ı okur ve adresle birlikte yazar.
   veya FTP gerekirse panelden yeni bir şifre belirleyin
   (*Edit Virtual Server → Password*).
 
+## Plugin'ler (iskelet)
+
+`plugin/` altında iki Webmin modülü var:
+
+| Modül | Kapsam | Panelde nerede |
+|---|---|---|
+| `vmkit-deploy` | **Domain başına** feature | Edit Virtual Server'da onay kutusu; açıkken domain menüsünde **Git Deploy** |
+| `vmkit-cloudflare` | **Sunucu geneli** (feature değil) | System Settings → **Cloudflare DNS Sync** |
+
+Ayrı olmalarının sebebi: bir Webmin modülü tek bir feature tanımlayabiliyor ve
+Virtualmin yalnızca `feature_setup` tanımlayan modüllere domain başına onay
+kutusu veriyor. Deploy domain başına, Cloudflare senkronu sunucu geneli.
+
+Kurulum:
+
+```bash
+sudo ./install-plugins.sh          # kopyalayarak kurar
+sudo ./install-plugins.sh --dev    # symlink (geliştirme)
+sudo ./install-plugins.sh --remove
+```
+
+**Geliştirme döngüsü:** Webmin her isteği taze bir Perl process'inde çalıştırır,
+derleme yoktur. `.cgi`, `.pl` ve `lang` düzenlemeleri için sayfayı yenilemek
+yeterli. `install-plugins.sh` yalnızca ilk kurulumda, `module.info` değiştiğinde
+ve modül eklenip çıkarıldığında gerekir.
+
+> Şu an **iskelet**: tanımlar kaydediliyor, ekranlar çalışıyor; git işlemleri ve
+> Cloudflare API çağrıları henüz yok.
+
 ## Yol haritası
 
 Kurulum tarafı tamamlandıktan sonra asıl iş **Virtualmin plugin'i**: panelde

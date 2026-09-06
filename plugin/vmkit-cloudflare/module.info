@@ -1,0 +1,4 @@
+desc=vmin-kit Cloudflare DNS
+depends=virtual-server
+category=networking
+version=0.1

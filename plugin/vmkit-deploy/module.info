@@ -1,0 +1,4 @@
+desc=vmin-kit Git Deploy
+depends=virtual-server
+category=servers
+version=0.1

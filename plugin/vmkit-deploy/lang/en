@@ -1,0 +1,75 @@
+feat_name=Git Deploy
+feat_label=Enable Git deploy?
+feat_label2=Git deploy
+feat_losing=All deployment definitions will be deleted
+feat_disname=Git deploy
+feat_echeck=The 'git' command is not installed
+feat_edepweb=Git deploy cannot be enabled unless a website is
+feat_module=vmin-kit Git Deploy (manage deployments)
+setup_start=Enabling Git deploy ..
+delete_start=Removing deployment definitions ..
+
+index=vmin-kit Git Deploy
+index_title=Git Deploy
+index_return=domain summary
+index_edom=Domain not found
+index_eaccess=You are not allowed to manage this domain
+index_eplugin=This plugin is not enabled in Virtualmin. Turn it on under System Settings, Features and Plugins.
+index_edoms=No domains with Git deploy enabled are available to you.
+index_eoff=Git deploy is not enabled for $1. Turn it on under Edit Virtual Server.
+index_pickdom=Select a domain to manage its deployments:
+index_dom=Domain
+index_count=Deployments
+index_none=No deployments have been defined for this domain yet.
+index_add=Add a new deployment
+index_skeleton=SKELETON: definitions are saved, but no git operation is performed yet.
+
+col_name=Name
+col_source=Source
+col_repo=Repository
+col_branch=Branch
+col_target=Target directory
+col_mode=Mode
+col_last=Last deploy
+
+src_local=Local repo
+src_remote=Remote repo
+src_local_desc=On this server - you push to it, it deploys
+src_remote_desc=Remote repository - pulled from the address below
+mode_manual=Manual
+mode_auto=Automatic
+mode_manual_desc=Only when I click Deploy
+mode_auto_desc=On every push
+never=Never
+
+edit_title=Edit deployment
+edit_title_new=Add deployment
+edit_header=Deployment details
+edit_return=deployment list
+edit_egone=Deployment no longer exists
+edit_name=Name
+edit_source=Source
+edit_repo=Repository address
+edit_repo_help=Only for a remote repository, e.g. https://github.com/user/project.git or git@github.com:user/project.git
+edit_branch=Branch
+edit_target=Target directory
+edit_target_help=Relative to the domain's home directory, e.g. public_html or public_html/app
+edit_mode=Deploy mode
+edit_push=Push to
+
+save=Save
+create=Create
+delete=Delete
+save_err=Failed to save deployment
+save_esource=Invalid source
+save_emode=Invalid deploy mode
+save_ename=Name contains invalid characters
+save_erepo=Missing repository address
+save_erepourl=Repository address must start with https://, ssh:// or git@
+save_ebranch=Branch name contains invalid characters
+save_edup=Another deployment ($1) already targets this directory
+
+err_target_empty=Missing target directory
+err_target_abs=Target directory must be relative to the domain's home directory
+err_target_dots=Target directory cannot contain ..
+err_target_char=Target directory contains invalid characters

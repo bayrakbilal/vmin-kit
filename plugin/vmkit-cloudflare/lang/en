@@ -1,0 +1,26 @@
+feat_name=vmin-kit Cloudflare DNS
+settings_title=Cloudflare DNS Sync
+
+index=vmin-kit Cloudflare DNS
+index_title=Cloudflare DNS Sync
+index_eaccess=Only the master administrator can change these settings
+index_eplugin=This plugin is not enabled in Virtualmin.
+index_intro=The local BIND zone stays the model that Virtualmin keeps up to date; Cloudflare holds the published copy. Records are pushed to Cloudflare, except SOA and NS which Cloudflare owns.
+index_settings=Settings
+index_token=API token
+index_token_set=Current token: $1
+index_token_none=No token has been saved yet.
+index_token_help=Create a token with Zone.DNS edit permission for the zones you want to manage. Leave blank to keep the saved token.
+index_proxy=Proxy new web records?
+index_proxy_help=Applies to the website records only. Mail and validation records are never proxied, otherwise mail and certificate renewal break.
+index_domains=Domains
+index_nodoms=No domains with DNS enabled.
+index_skeleton=SKELETON: settings are saved, but no synchronisation runs yet.
+
+col_domain=Domain
+col_status=Zone status
+status_unknown=Not checked yet
+
+save=Save
+save_err=Failed to save settings
+save_etoken=That does not look like a Cloudflare API token
