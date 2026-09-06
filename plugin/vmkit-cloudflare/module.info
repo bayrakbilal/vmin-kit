@@ -1,4 +1,5 @@
-desc=Cloudflare DNS
+desc=VminKit - Cloudflare DNS
 depends=virtual-server
 category=servers
 version=1.0.0
+hidden=1
