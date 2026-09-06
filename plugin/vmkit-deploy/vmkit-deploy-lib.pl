@@ -282,11 +282,13 @@ push(@steps, "$env git --git-dir=".quotemeta($repo).
 	     " fetch --quiet --prune origin ".
 	     quotemeta("+refs/heads/*:refs/heads/*"));
 push(@steps, "mkdir -p ".quotemeta($target));
-# checkout -f yalnizca repodaki dosyalari yazar. Repodan SILINMIS dosyalar
-# diskte kalir - bu bilerek boyle: yuklemeler, .env gibi repoda olmayan
-# dosyalar silinmesin.
+# checkout -f: calisma kopyasi bu dalla ayni hale gelir. IZLENEN dosyalardan
+# repoda silinmis olanlar buradan da silinir; IZLENMEYEN dosyalara (yuklemeler,
+# .env) dokunulmaz - onlari yalnizca 'git clean' silerdi, kullanmiyoruz.
+# Yol belirtmiyoruz ('-- .' yok) ki HEAD de dala tasinsin; aksi halde asagidaki
+# 'log -1' baska bir dalin commit'ini gosterirdi.
 push(@steps, "git --git-dir=".quotemeta($repo)." --work-tree=".
-	     quotemeta($target)." checkout -f ".quotemeta($branch)." -- .");
+	     quotemeta($target)." checkout -f ".quotemeta($branch));
 push(@steps, "git --git-dir=".quotemeta($repo)." --work-tree=".
 	     quotemeta($target)." log -1 --pretty=".
 	     quotemeta("format:%h %an %s"));
