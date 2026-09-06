@@ -1,4 +1,4 @@
-# VirtualminPatch
+# vmin-kit
 
 **Debian 12** üzerinde Virtualmin (GPL) tabanlı bir hosting sunucusunu tek komutla
 kuran taşınabilir araç. Kurulum bittiğinde ana domain hazır, SSL'li ve yayında olur.
@@ -25,7 +25,7 @@ gerektiğini yazar.
 
 ```bash
 git clone <repo-url>
-cd VirtualminPatch
+cd vmin-kit
 sudo ./install.sh
 ```
 
@@ -44,10 +44,11 @@ onu kopyalayıp `MAIN_DOMAIN`'i değiştirmeniz yeterlidir.
 | `postgres` | PostgreSQL kurar ve Virtualmin özelliğini açar — Virtualmin kurulumuyla gelmiyor. *(isteğe bağlı)* |
 | `dns-template` | Yeni domainler için DNS varsayılanları (`bind_master`, `dns_ns`, `dns_prins`, `bind_sub`). |
 | `main-domain` | Ana domaini **sade** oluşturur: web + SSL + DNS. Mail ve veritabanı **kapalı**. |
+| `host-dns` | Ana domainin zone'una hostname (`s.<domain>`) için A kaydı ekler. |
 | `ssl` | Ana domain için Let's Encrypt sertifikası + otomatik yenileme. |
 | `docker` | Docker Engine (resmi Debian deposu). *(isteğe bağlı)* |
 | `portainer` | Portainer CE, varsayılan olarak sadece localhost'a bağlı. *(isteğe bağlı)* |
-| `report` | Araç klasörüne `vmpatch-rapor.txt` + ikinci sunucu için `config.env` üretir. |
+| `report` | Araç klasörüne `vmin-kit-rapor.txt` + ikinci sunucu için `config.env` üretir. |
 
 Tüm adımlar **idempotent**: ikinci kez çalıştırmak zarar vermez, kurulu olanı atlar.
 
@@ -84,7 +85,7 @@ lib/steps.sh         # adım fonksiyonları (install.sh açık sırayla çağır
 ## Kurulum sonrası
 
 - Panel: `https://s.<domain>:10000`
-- Rapor: araç klasöründe `vmpatch-rapor.txt`
+- Rapor: araç klasöründe `vmin-kit-rapor.txt`
 - Ana domain sahibinin şifresi rastgele üretilir ve **saklanmaz**. Webmin girişi
   veya FTP gerekirse panelden yeni bir şifre belirleyin
   (*Edit Virtual Server → Password*).

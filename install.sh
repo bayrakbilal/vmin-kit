@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# install.sh - VirtualminPatch tek giris noktasi.
+# install.sh - vmin-kit tek giris noktasi.
 #   sudo ./install.sh
 #
 # Amac: bu araci calistiran kisinin kurulum adimlarini HATIRLAMAK zorunda
@@ -20,7 +20,7 @@ source "$ROOT_DIR/lib/common.sh"
 source "$ROOT_DIR/lib/steps.sh"
 require_root
 
-echo "==================== VirtualminPatch ===================="
+echo "==================== vmin-kit ===================="
 
 # ---- 0) isletim sistemi ----
 OS_ID=""; OS_VER=""
@@ -173,6 +173,7 @@ step_virtualmin
 if is_truthy "$POSTGRES"; then step_postgres; fi
 step_dns_template
 step_main_domain
+step_host_dns
 step_ssl
 if is_truthy "$docker";    then step_docker;    fi
 if is_truthy "$portainer"; then step_portainer; fi
@@ -182,4 +183,4 @@ echo
 ok "Tamamlandi."
 log "Panel : https://${HOSTNAME_FQDN}:10000"
 log "Site  : https://${MAIN_DOMAIN}"
-log "Rapor : $VMPATCH_REPORT"
+log "Rapor : $VMINKIT_REPORT"

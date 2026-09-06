@@ -5,7 +5,7 @@
 #   docker, portainer, PORTAINER_*
 # Hepsi idempotent: ikinci kez calistirmak zarar vermez.
 
-VMPATCH_REPORT="$ROOT_DIR/vmpatch-rapor.txt"
+VMINKIT_REPORT="$ROOT_DIR/vmin-kit-rapor.txt"
 
 step_hostname(){
   local cur; cur="$(hostname -f 2>/dev/null || hostname)"
@@ -70,7 +70,7 @@ step_dns_template(){
   local cfg="/etc/webmin/virtual-server/config"
   if [ ! -f "$cfg" ]; then err "Virtualmin config yok; dns-template atlaniyor."; return 1; fi
   if [ -z "${NS1:-}" ] || [ -z "${NS2:-}" ]; then warn "NS1/NS2 bos; dns-template atlaniyor."; return 0; fi
-  [ -f "${cfg}.vmpatch.bak" ] || cp -a "$cfg" "${cfg}.vmpatch.bak"
+  [ -f "${cfg}.vmin-kit.bak" ] || cp -a "$cfg" "${cfg}.vmin-kit.bak"
   # Not: dns_default_ip4/ip6 (8.8.8.8) BIND recursive forwarder degeridir
   # (A-kaydi IP'si degil); ona dokunulmaz.
   set_kv "$cfg" bind_master "$NS1"
@@ -100,6 +100,32 @@ step_main_domain(){
     --unix --dir --web --ssl --dns --webmin
   unset pw
   ok "Ana domain olusturuldu."
+}
+
+# Hostname (or: s.ornek.com) ana domainin zone'unda A kaydi olarak yer almali.
+# Virtualmin bunu kendiliginden eklemiyor. Harici DNS modunda yayinlanan kopya
+# disarida oldugu icin etkisi yok, ama yerel zone bizim "model"imiz: dogru olmali
+# ki ileride Cloudflare senkronu dogru kaydi gonderebilsin. BIND modunda ise
+# delegasyon geldiginde panelin adresinin cozumlenmesi buna bagli.
+step_host_dns(){
+  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; hostname DNS kaydi atlaniyor."; return 1; }
+  case "$HOSTNAME_FQDN" in
+    *".$MAIN_DOMAIN") ;;
+    *) log "Hostname ana domainin alt alani degil; DNS kaydi atlaniyor."; return;;
+  esac
+  local ip; ip="$(detect_ip)"
+  if virtualmin get-dns --domain "$MAIN_DOMAIN" --name-only 2>/dev/null \
+     | sed 's/\.$//' | grep -qixF "$HOSTNAME_FQDN"; then
+    ok "Zone'da $HOSTNAME_FQDN kaydi zaten var."
+    return
+  fi
+  log "Zone'a hostname A kaydi ekleniyor: $HOSTNAME_FQDN -> $ip"
+  if virtualmin modify-dns --domain "$MAIN_DOMAIN" --add-record "${HOSTNAME_FQDN}. A ${ip}"; then
+    ok "Hostname A kaydi eklendi."
+  else
+    warn "Eklenemedi. Elle eklemek icin:"
+    warn "  virtualmin modify-dns --domain $MAIN_DOMAIN --add-record \"${HOSTNAME_FQDN}. A ${ip}\""
+  fi
 }
 
 step_ssl(){
@@ -165,7 +191,7 @@ step_report(){
   if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx portainer; then pt=calisiyor; else pt=yok; fi
 
   {
-    echo "VirtualminPatch kurulum raporu - $(date '+%Y-%m-%d %H:%M:%S %z')"
+    echo "vmin-kit kurulum raporu - $(date '+%Y-%m-%d %H:%M:%S %z')"
     echo "======================================================="
     echo "Ana domain   : $MAIN_DOMAIN"
     echo "Hostname     : $HOSTNAME_FQDN"
@@ -196,14 +222,14 @@ step_report(){
       echo "yayinlanan kopya harici saglayicidadir. Yeni domain/alt domain eklerken"
       echo "A kaydini orada olusturmayi unutmayin."
     fi
-  } > "$VMPATCH_REPORT"
-  chmod 600 "$VMPATCH_REPORT"
-  ok "Rapor: $VMPATCH_REPORT"
+  } > "$VMINKIT_REPORT"
+  chmod 600 "$VMINKIT_REPORT"
+  ok "Rapor: $VMINKIT_REPORT"
 
   # Ikinci sunucu icin hazir cevaplar: bir daha hicbir sey hatirlamak gerekmesin.
   if [ ! -f "$ROOT_DIR/config.env" ]; then
     {
-      echo "# VirtualminPatch - bu kurulumdan uretildi ($(date '+%Y-%m-%d'))."
+      echo "# vmin-kit - bu kurulumdan uretildi ($(date '+%Y-%m-%d'))."
       echo "# Ikinci sunucuda: kopyala, MAIN_DOMAIN'i degistir, ./install.sh"
       echo "MAIN_DOMAIN=$MAIN_DOMAIN"
       echo "HOST_PREFIX=${HOST_PREFIX:-s}"

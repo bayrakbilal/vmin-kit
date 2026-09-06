@@ -3,7 +3,7 @@ config.env
 *.log
 
 # kurulum ciktisi
-vmpatch-rapor.txt
+vmin-kit-rapor.txt
 
 # yerel çalışma dosyaları (ekran görüntüleri vb.)
 *.png
