@@ -125,7 +125,10 @@ echo
 log "Yapilacaklar:"
 log "  - Hostname    : $HOSTNAME_FQDN"
 if [ "$VM" = yes ]; then log "  - Virtualmin  : kurulu (atlanacak)"; else log "  - Virtualmin  : KURULACAK"; fi
-if is_truthy "$POSTGRES"; then log "  - PostgreSQL  : kurulacak (Virtualmin sonrasi, ayri adim)"; fi
+if is_truthy "$POSTGRES"; then
+  if command -v psql >/dev/null 2>&1; then log "  - PostgreSQL  : kurulu (atlanacak)"
+  else                                     log "  - PostgreSQL  : KURULACAK"; fi
+fi
 log "  - DNS sablonu : NS1=${NS1}  NS2=${NS2}   (bu sunucunun NS cifti)"
 log "  - Ana domain  : $MAIN_DOMAIN  (web + SSL + DNS; mail ve veritabani KAPALI)"
 log "  - SSL         : $MAIN_DOMAIN icin Lets Encrypt"

@@ -46,22 +46,21 @@ domain_has_acme_cert(){
   return 1
 }
 
-# PostgreSQL Virtualmin kurulumuyla GELMEZ; ayrica kurulup ozellik olarak acilir.
+# PostgreSQL Virtualmin kurulumuyla GELMEZ; paketi ayrica kuruyoruz.
 step_postgres(){
-  if ! command -v psql >/dev/null 2>&1; then
+  if command -v psql >/dev/null 2>&1; then
+    ok "PostgreSQL zaten kurulu."
+  else
     log "PostgreSQL kuruluyor..."
     apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-contrib
-  else
-    ok "PostgreSQL zaten kurulu."
+    ok "PostgreSQL kuruldu. Virtualmin ilk oturum sihirbazinda secilebilir olacak."
   fi
-  systemctl enable --now postgresql 2>/dev/null || warn "postgresql servisi baslatilamadi."
   # Ozelligi ayrica acmaya gerek yok: Virtualmin kurulu PostgreSQL'i kendisi
   # goruyor ve ilk oturum sihirbazinda veritabani secenekleri arasinda sunuyor.
-  # (set-global-feature denemesi ayrica ise yaramiyor; taze kurulumda clamd
-  # henuz ayakta olmadigi icin Virtualmin'in genel yapilandirma kontrolune
-  # takilip komutu reddediyor.)
-  ok "PostgreSQL kuruldu. Virtualmin ilk oturum sihirbazinda secilebilir olacak."
+  # (set-global-feature denemesi ise yaramiyor; taze kurulumda clamd henuz
+  # ayakta olmadigi icin Virtualmin'in genel yapilandirma kontrolune takiliyor.)
+  systemctl enable --now postgresql 2>/dev/null || warn "postgresql servisi baslatilamadi."
 }
 
 step_dns_template(){
