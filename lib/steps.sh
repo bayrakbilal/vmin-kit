@@ -45,11 +45,24 @@ step_postgres(){
     ok "PostgreSQL zaten kurulu."
   fi
   systemctl enable --now postgresql 2>/dev/null || warn "postgresql servisi baslatilamadi."
-  # Virtualmin tarafinda ozellik olarak etkinlestir (Features and Plugins).
-  if virtualmin set-global-feature --enable-feature postgres >/dev/null 2>&1; then
+
+  # Ozellik ancak Webmin'in postgresql modulu "available" oldugunda acilabiliyor
+  # (feature-postgres.pl -> check_module_postgres -> foreign_available).
+  # Modulu Virtualmin'in kendi yapilandirma eklentisi kurar; --include bundle
+  # olmadan calisir, yani yalnizca PostgreSQL yapilandirilir.
+  if command -v virtualmin-config-system >/dev/null 2>&1; then
+    log "Webmin PostgreSQL modulu yapilandiriliyor..."
+    virtualmin-config-system --include PostgreSQL || warn "PostgreSQL yapilandirmasi hata verdi."
+  else
+    warn "virtualmin-config-system bulunamadi; modul yapilandirmasi atlandi."
+  fi
+
+  local out
+  if out="$(virtualmin set-global-feature --enable-feature postgres 2>&1)"; then
     ok "PostgreSQL kuruldu ve Virtualmin ozelligi acildi."
   else
-    warn "PostgreSQL kuruldu, ancak Virtualmin ozelligi otomatik acilamadi."
+    warn "PostgreSQL kuruldu, ancak Virtualmin ozelligi acilamadi:"
+    printf '%s\n' "$out" | sed 's/^/      /'
     warn "Panelden: System Settings -> Features and Plugins -> PostgreSQL"
   fi
 }
@@ -90,6 +103,14 @@ step_main_domain(){
 
 step_ssl(){
   command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; SSL atlaniyor."; return 1; }
+  # create-domain, otomatik ACME acikken sertifikayi zaten aliyor. Tekrar istemek
+  # ayni isim seti icin ikinci bir sertifika uretir ve saglayici kotasini yer
+  # (Lets Encrypt: ayni isimler icin haftada 5 sertifika).
+  if virtualmin list-domains --domain "$MAIN_DOMAIN" --multiline 2>/dev/null \
+     | grep -q 'SSL provider cert issued:'; then
+    ok "SSL sertifikasi zaten alinmis (atlaniyor)."
+    return
+  fi
   log "Sertifika isteniyor (ACME/Lets Encrypt): $MAIN_DOMAIN"
   if virtualmin generate-letsencrypt-cert --domain "$MAIN_DOMAIN" --default-hosts --renew; then
     ok "SSL alindi, otomatik yenileme acik."
