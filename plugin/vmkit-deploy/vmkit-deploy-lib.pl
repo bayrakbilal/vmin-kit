@@ -71,10 +71,18 @@ return $dep;
 }
 
 # delete_deploy(&domain, &deploy)
+# Yalnizca tanimi, bare repoyu ve logu siler. HEDEF KLASORE DOKUNMAZ:
+# deploy edilmis site icerigi, yuklemeler ve .env yerinde kalir.
 sub delete_deploy
 {
 my ($d, $dep) = @_;
 my $file = $dep->{'file'} || &deploys_dir()."/$d->{'id'}-$dep->{'id'}";
+my $repo = &deploy_repo_path($d, $dep);
+if ($dep->{'id'} && -d $repo) {
+	my $cmd = &command_as_user($d->{'user'}, 1, "rm -rf ".quotemeta($repo));
+	&backquote_with_timeout("$cmd 2>&1", 60);
+	}
+unlink(&deploy_log_path($d, $dep));
 &lock_file($file);
 unlink($file);
 &unlock_file($file);
@@ -218,4 +226,90 @@ my ($d) = @_;
 return "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new".
        " -o ConnectTimeout=10";
 }
+# ---- deploy islemi ------------------------------------------------------
+# Git verisi web kokunun DISINDA durur:
+#     ~/.vmkit/repos/<id>.git      (bare)
+#         |  git --work-tree=<hedef> checkout -f <dal>
+#         v
+#     ~/public_html/...            (yalnizca dosyalar, .git yok)
+#
+# Hedefe dogrudan klonlasaydik public_html/.git olusur ve yanlis bir Apache
+# ayarinda repo gecmisi internete acilirdi. Ayrica '~/.git' adini bilerek
+# kullanmiyoruz: ev dizini git tarafindan calisma kopyasi sanilirdi.
+sub deploy_repo_path
+{
+my ($d, $dep) = @_;
+return $d->{'home'}."/.vmkit/repos/".$dep->{'id'}.".git";
+}
+
+sub deploy_log_path
+{
+my ($d, $dep) = @_;
+return "$module_config_directory/logs/$d->{'id'}-$dep->{'id'}.log";
+}
+
+sub deploy_log_read
+{
+my ($d, $dep) = @_;
+return &read_file_contents(&deploy_log_path($d, $dep));
+}
+
+# run_deploy(&domain, &deploy) -> (basarili?, cikti)
+# Tum git komutlari domainin kendi kullanicisi olarak calisir.
+sub run_deploy
+{
+my ($d, $dep) = @_;
+my $repo   = &deploy_repo_path($d, $dep);
+my $target = &deploy_target_dir($d, $dep);
+my $url    = $dep->{'repo'};
+my $branch = $dep->{'branch'};
+
+my $env = "GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND=".
+	  quotemeta(&git_ssh_command($d));
+
+my @steps;
+# Ilk deploy'da bare klon, sonrakilerde fetch. core.bare=false yapiyoruz ki
+# --work-tree ile checkout calissin.
+push(@steps, "if [ ! -d ".quotemeta($repo)." ]; then ".
+	     "mkdir -p ".quotemeta($d->{'home'}."/.vmkit/repos")." && ".
+	     "$env git clone --quiet --bare -- ".quotemeta($url)." ".
+	     quotemeta($repo)." && ".
+	     "git --git-dir=".quotemeta($repo)." config core.bare false; ".
+	     "fi");
+push(@steps, "git --git-dir=".quotemeta($repo).
+	     " remote set-url origin -- ".quotemeta($url));
+push(@steps, "$env git --git-dir=".quotemeta($repo).
+	     " fetch --quiet --prune origin ".
+	     quotemeta("+refs/heads/*:refs/heads/*"));
+push(@steps, "mkdir -p ".quotemeta($target));
+# checkout -f yalnizca repodaki dosyalari yazar. Repodan SILINMIS dosyalar
+# diskte kalir - bu bilerek boyle: yuklemeler, .env gibi repoda olmayan
+# dosyalar silinmesin.
+push(@steps, "git --git-dir=".quotemeta($repo)." --work-tree=".
+	     quotemeta($target)." checkout -f ".quotemeta($branch)." -- .");
+push(@steps, "git --git-dir=".quotemeta($repo)." --work-tree=".
+	     quotemeta($target)." log -1 --pretty=".
+	     quotemeta("format:%h %an %s"));
+
+my $inner = "set -e; ".join("; ", @steps);
+my $cmd = &command_as_user($d->{'user'}, 1, $inner);
+my ($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 600);
+my $ok = !$timed && !$?;
+$out = $text{'err_timeout'} if ($timed);
+
+# Log ayri dosyada: key=value bicimi coksatirli degeri tasiyamaz.
+my $logdir = "$module_config_directory/logs";
+-d $logdir || &make_dir($logdir, 0700, 1);
+my $stamp = &make_date(time());
+&open_tempfile(LOG, ">".&deploy_log_path($d, $dep));
+&print_tempfile(LOG, "[$stamp] ".($ok ? "OK" : "FAILED")."\n\n".$out."\n");
+&close_tempfile(LOG);
+
+$dep->{'last_time'}   = time();
+$dep->{'last_status'} = $ok ? "ok" : "failed";
+&save_deploy($d, $dep);
+
+return ($ok, $out);
+}
+
 1;
