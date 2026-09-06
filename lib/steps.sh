@@ -34,6 +34,14 @@ step_virtualmin(){
   ok "Virtualmin kurulumu bitti."
 }
 
+# Bir Virtualmin ozelliginin acik olup olmadigini soyler: Yes / No / bos.
+# list-features --multiline ciktisi: ozellik adi girintisiz, alanlari girintili.
+vm_feature_enabled(){
+  virtualmin list-features --multiline 2>/dev/null | awk -v w="$1" '
+    /^[^[:space:]]/ { f=$1; next }
+    f==w && /^[[:space:]]*Enabled:/ { print $2; exit }'
+}
+
 # PostgreSQL Virtualmin kurulumuyla GELMEZ; ayrica kurulup ozellik olarak acilir.
 step_postgres(){
   if ! command -v psql >/dev/null 2>&1; then
@@ -44,6 +52,11 @@ step_postgres(){
     ok "PostgreSQL zaten kurulu."
   fi
   systemctl enable --now postgresql 2>/dev/null || warn "postgresql servisi baslatilamadi."
+
+  if [ "$(vm_feature_enabled postgres)" = Yes ]; then
+    ok "PostgreSQL ozelligi Virtualmin'de zaten acik."
+    return
+  fi
 
   # Ozellik ancak Webmin'in postgresql modulu "available" oldugunda acilabiliyor
   # (feature-postgres.pl -> check_module_postgres -> foreign_available).
@@ -59,11 +72,17 @@ step_postgres(){
   local out
   if out="$(virtualmin set-global-feature --enable-feature postgres 2>&1)"; then
     ok "PostgreSQL kuruldu ve Virtualmin ozelligi acildi."
-  else
-    warn "PostgreSQL kuruldu, ancak Virtualmin ozelligi acilamadi:"
-    printf '%s\n' "$out" | sed 's/^/      /'
-    warn "Panelden: System Settings -> Features and Plugins -> PostgreSQL"
+    return
   fi
+  # Komut hata dondurse bile ozellik acilmis olabilir (or. "zaten acik").
+  # Karar verirken cikis kodunu degil, gercek durumu esas al.
+  if [ "$(vm_feature_enabled postgres)" = Yes ]; then
+    ok "PostgreSQL ozelligi acik."
+    return
+  fi
+  warn "PostgreSQL kuruldu, ancak Virtualmin ozelligi acilamadi:"
+  printf '%s\n' "$out" | sed 's/^/      /'
+  warn "Panelden: System Settings -> Features and Plugins -> PostgreSQL"
 }
 
 step_dns_template(){
