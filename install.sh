@@ -85,6 +85,7 @@ POSTGRES="${POSTGRES:-1}"
 COMPOSER="${COMPOSER:-1}"
 NO_ADMIN_REDIRECT="${NO_ADMIN_REDIRECT:-1}"
 NO_WEBMAIL_REDIRECT="${NO_WEBMAIL_REDIRECT:-1}"
+MAIL="${MAIL:-1}"
 # Docker ve Portainer tek bayrak: Portainer, Docker olmadan anlamsiz ve
 # Docker'i Portainer'siz kurmak istemedigimiz icin ikisi birlikte gider.
 DOCKER="${DOCKER:-1}"
@@ -142,7 +143,7 @@ if is_truthy "$COMPOSER"; then
   else                                         log "  - Composer    : KURULACAK"; fi
 fi
 log "  - DNS sablonu : NS1=${NS1}  NS2=${NS2}   (bu sunucunun NS cifti)"
-log "  - Ana domain  : $MAIN_DOMAIN  (web + SSL + DNS; mail ve veritabani KAPALI)"
+log "  - Ana domain  : $MAIN_DOMAIN  (web + SSL + DNS$(is_truthy "$MAIL" && echo " + POSTA"); veritabani KAPALI)"
 log "  - SSL         : $MAIN_DOMAIN icin Lets Encrypt"
 if is_truthy "$NO_ADMIN_REDIRECT"; then
   log "  - admin.<domain> -> panel yonlendirmesi: KAPATILACAK"

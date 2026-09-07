@@ -49,7 +49,7 @@ verilebilir: `MAIN_DOMAIN=ornek.com sudo -E ./install.sh`.
 | `composer` | Composer kurar (`vmkit-composer` eklentisinin gereksinimi). *(isteğe bağlı)* |
 | `dns-template` | Yeni domainler için DNS varsayılanları (`bind_master`, `dns_ns`, `dns_prins`, `bind_sub`). |
 | `panel-redirects` | Virtualmin'in her domaine eklediği iki kısayolu kapatır: `admin.<domain>` → panel (`:10000`) ve `webmail.<domain>` → Usermin (`:20000`). Bayraklar: `NO_ADMIN_REDIRECT`, `NO_WEBMAIL_REDIRECT` (ikisi de varsayılan 1). Her anahtar hem DNS kaydını hem Apache yönlendirmesini kapatıyor; **domain oluşmadan önce** çalışmalı, sonradan kapatmak var olanları temizlemiyor. |
-| `main-domain` | Ana domaini **sade** oluşturur: web + SSL + DNS. Mail ve veritabanı **kapalı**. |
+| `main-domain` | Ana domaini oluşturur: web + SSL + DNS (+ `MAIL=1` ise posta). Veritabanı **kapalı**. |
 | `host-dns` | Ana domainin zone'una hostname (`s.<domain>`) için A kaydı ekler. |
 | `ssl` | Ana domain için Let's Encrypt sertifikası + otomatik yenileme. |
 | `plugins` | Eklentileri `.wbm.gz` olarak paketleyip Webmin'in `install-module.pl`'i ile kurar, Virtualmin'in `plugins=` listesine ekler. Hangileri: `PLUGIN_*` bayrakları. |
@@ -58,11 +58,21 @@ verilebilir: `MAIN_DOMAIN=ornek.com sudo -E ./install.sh`.
 
 Tüm adımlar **idempotent**: ikinci kez çalıştırmak zarar vermez, kurulu olanı atlar.
 
-### Ana domain neden "sade"?
+### Ana domainde ne açık?
 
-Mail ve veritabanı **domain başına onay kutusu**. İhtiyaç olduğunda
-**Virtualmin → Edit Virtual Server → Enabled features** üzerinden açılır, kapatılır.
-Kurulumu sade tutmak hiçbir kapıyı kapatmıyor.
+Web + SSL + DNS her zaman; posta `MAIL=1` ile (varsayılan açık). **Veritabanı
+kapalı** — domain başına onay kutusu, ihtiyaç olduğunda **Virtualmin → Edit
+Virtual Server → Enabled features** üzerinden açılır.
+
+Posta açıldığında Virtualmin zone'a `mail.<domain>` A kaydı ve MX ekler.
+Ayrıca domain sahibi unix kullanıcısı o anda bir posta kutusuna dönüşür:
+adresi `<kullanıcı>@<domain>` olur (`blnk.tr` için `blnk@blnk.tr`). Ayrı bir
+hesap açılmaz, var olan hesap adres kazanır. Şifresi kurulumda rastgele
+üretilip **atıldığı** için kutuyu kullanmadan önce panelden bir şifre
+belirlemek gerekir: **Edit Virtual Server → Password**.
+
+`webmail.<domain>` kısayolu posta açık olsa bile kapalıdır
+(`NO_WEBMAIL_REDIRECT=1`); Usermin'e panel adresinden girilir.
 
 ## DNS modları
 

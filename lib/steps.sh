@@ -133,9 +133,16 @@ step_panel_redirects(){
   done
 }
 
-# Ana domaini SADE olusturur: web + SSL + DNS.
-# Mail ve veritabani BILEREK kapali - ikisi de domain basina onay kutusu,
-# istendigi an panelden acilir (Edit Virtual Server -> Enabled features).
+# Ana domaini olusturur: web + SSL + DNS (+ MAIL=1 ise posta).
+#
+# Veritabani BILEREK kapali - domain basina onay kutusu, istendigi an panelden
+# acilir (Edit Virtual Server -> Enabled features).
+#
+# Posta acildiginda Virtualmin zone'a mail.<domain> A kaydi ve MX ekler; ayrica
+# domain sahibi unix kullanicisi o anda bir posta kutusuna donusur: adresi
+# <kullanici>@<domain> olur. Ayri bir hesap acilmiyor, var olan hesap adres
+# kazaniyor. Sifresi rastgele uretilip atildigi icin kutuyu kullanmadan once
+# panelden bir sifre belirlemek gerekir.
 step_main_domain(){
   command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; ana domain atlaniyor."; return 1; }
   if virtualmin list-domains --name-only 2>/dev/null | grep -qx "$MAIN_DOMAIN"; then
@@ -144,12 +151,17 @@ step_main_domain(){
   # Sifre rastgele uretilir ve HICBIR YERE yazilmaz. Kullanilmasi gerekirse
   # (Webmin girisi, FTP) panelden degistirilir; saklanmayan sir sizmaz.
   local pw; pw="$(gen_pass)"
-  log "Ana domain olusturuluyor: $MAIN_DOMAIN  (web + SSL + DNS; mail ve veritabani kapali)"
+  # Ozellikler acikca veriliyor: create-domain yalnizca sayilanlari aciyor,
+  # sablon varsayilanlarina bakmiyor.
+  local feats=(--unix --dir --web --ssl --dns --webmin)
+  local what="web + SSL + DNS"
+  if is_truthy "${MAIL:-1}"; then feats+=(--mail); what="$what + posta"; fi
+  log "Ana domain olusturuluyor: $MAIN_DOMAIN  ($what; veritabani kapali)"
   virtualmin create-domain \
     --domain "$MAIN_DOMAIN" \
     --pass   "$pw" \
     --desc   "$MAIN_DOMAIN" \
-    --unix --dir --web --ssl --dns --webmin
+    "${feats[@]}"
   unset pw
   ok "Ana domain olusturuldu."
 }
@@ -453,9 +465,16 @@ step_report(){
     echo "Webmin girisi ya da FTP gerekirse panelden yeni bir sifre belirleyin:"
     echo "  Virtualmin -> Edit Virtual Server -> Password"
     echo
-    echo "Ana domain SADE olusturuldu: web + SSL + DNS."
-    echo "Mail ve veritabani KAPALI - gerektiginde panelden acilir:"
-    echo "  Virtualmin -> Edit Virtual Server -> Enabled features"
+    if is_truthy "${MAIL:-1}"; then
+      echo "Ana domain: web + SSL + DNS + POSTA. Veritabani kapali."
+      echo "Posta acik: ${MAIN_DOMAIN%%.*}@${MAIN_DOMAIN} adresi hazir. Bu ayri"
+      echo "bir hesap degil, domain sahibi kullanicinin kendisidir; kullanmadan"
+      echo "once yukaridaki nottaki gibi bir sifre belirleyin."
+    else
+      echo "Ana domain SADE olusturuldu: web + SSL + DNS."
+      echo "Mail ve veritabani KAPALI - gerektiginde panelden acilir:"
+      echo "  Virtualmin -> Edit Virtual Server -> Enabled features"
+    fi
     echo
     if [ "${DNS_MODE:-}" = bind ]; then
       echo "Yapilacak (BIND modu): registrar tarafinda ${NS1:-ns1} / ${NS2:-ns2} icin"
