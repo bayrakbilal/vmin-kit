@@ -81,6 +81,28 @@ plugins_remove(){
   set_kv "$VS_CONFIG" plugins "$new"
 }
 
+# Cloudflare senkron zamanlayicisi. Eklenti kurulunca birlikte gelir; birimler
+# repodaki systemd/ klasorunden kopyalanir.
+install_sync_units(){
+  local src="$ROOT_DIR/systemd"
+  [ -d "$src" ] || return 0
+  # Modul kurulu degilse zamanlayiciyi da kurma.
+  if [ ! -d "$WEBMIN_ROOT/vmkit-cloudflare" ]; then
+    [ -f /etc/systemd/system/vmkit-cloudflare-sync.timer ] || return 0
+  fi
+  local changed=0 f
+  for f in "$src"/vmkit-cloudflare-sync.*; do
+    local dst="/etc/systemd/system/$(basename "$f")"
+    if ! cmp -s "$f" "$dst"; then cp "$f" "$dst"; changed=1; fi
+  done
+  if [ "$changed" = 1 ]; then
+    systemctl daemon-reload
+    log "  systemd birimleri guncellendi"
+  fi
+  systemctl enable --now vmkit-cloudflare-sync.timer >/dev/null 2>&1 \
+    || warn "  vmkit-cloudflare-sync.timer etkinlestirilemedi"
+}
+
 for mod in "${MODULES[@]}"; do
   src="$ROOT_DIR/plugin/$mod"
   dst="$WEBMIN_ROOT/$mod"
@@ -90,6 +112,11 @@ for mod in "${MODULES[@]}"; do
     rm -rf "$dst"
     plugins_remove "$mod"
     acl_revoke "$mod"
+    if [ "$mod" = vmkit-cloudflare ]; then
+      systemctl disable --now vmkit-cloudflare-sync.timer >/dev/null 2>&1 || true
+      rm -f /etc/systemd/system/vmkit-cloudflare-sync.timer             /etc/systemd/system/vmkit-cloudflare-sync.service
+      systemctl daemon-reload
+    fi
     NEED_RESTART=1
     continue
   fi
@@ -139,6 +166,8 @@ if clear_links_cache; then
 else
   warn "Menu onbellegi temizlenemedi; degisiklik gorunmezse domaini kaydedin."
 fi
+
+[ "$MODE" = remove ] || install_sync_units
 
 if [ "$NEED_RESTART" = 1 ]; then
   # module.info onbellegi: yalnizca /usr/share/webmin dizininin mtime'ina

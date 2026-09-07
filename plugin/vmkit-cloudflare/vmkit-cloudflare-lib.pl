@@ -590,4 +590,47 @@ $cf->{'last_time'} = time();
 return ($ok, undef);
 }
 
+# zone_mtime(&domain) -> zone dosyasinin son degisiklik zamani (yoksa 0)
+# Senkronu tetikleyen sinyal bu. Her DNS degisikliginde Virtualmin SOA
+# serial'ini artirip dosyayi yeniden yaziyor, dolayisiyla mtime degistiyse
+# gercekten bir sey degismistir.
+sub zone_mtime
+{
+my ($d) = @_;
+my $file = eval { &virtual_server::get_domain_dns_file($d) };
+return 0 if ($@ || !$file);
+# BIND chroot altinda calisiyorsa gercek yol farkli olabilir.
+$file = &virtual_server::bind_chroot_file($file)
+	if (defined(&virtual_server::bind_chroot_file));
+my @st = stat($file);
+return @st ? $st[9] : 0;
+}
+
+# needs_sync(&domain) -> zone son senkrondan sonra degismis mi
+sub needs_sync
+{
+my ($d) = @_;
+my $cf = &get_cf($d);
+return 0 if (!$cf->{'token'});
+my $m = &zone_mtime($d);
+return 0 if (!$m);
+return ($cf->{'synced_mtime'} || 0) < $m ? 1 : 0;
+}
+
+# mark_synced(&domain)
+sub mark_synced
+{
+my ($d) = @_;
+my $cf = &get_cf($d);
+$cf->{'synced_mtime'} = &zone_mtime($d);
+&save_cf($d, $cf);
+}
+
+# sync_domains() -> senkronu acik ve token'i olan domainler
+sub sync_domains
+{
+return grep { $_->{'vmkit-cloudflare'} && &get_cf($_)->{'token'} }
+	    &virtual_server::list_domains();
+}
+
 1;

@@ -158,6 +158,14 @@ isteği taze bir Perl process'inde çalıştırdığı için derleme yoktur; scr
 yalnızca `module.info` değiştiğinde Webmin'i yeniden başlatır, diğer
 durumlarda dosyaları kopyalar ve sayfayı yenilemeniz yeterlidir.
 
+**Cloudflare DNS:** yerel BIND zone'u model, Cloudflare yayınlanan kopya.
+Yalnızca `vmkit` etiketli kayıtlara dokunulur — elle eklenenler, tüneller ve
+Email Routing kayıtları hiç etkilenmez. Karşılaştırma sayfası ne olacağını
+önce gösterir; kapsam dışı kayıtlar için içe aktar / sahiplen / sil düğmeleri
+vardır. Senkron elle çalıştırılabilir; ayrıca `vmkit-cloudflare-sync.timer`
+zone dosyası değiştiyse otomatik çalışır (değişmediyse hiçbir API çağrısı
+yapmaz).
+
 **Composer:** domainin ana dizini altında `composer.json` içeren klasörleri
 kendiliğinden bulur ve her birini **kendi PHP sürümüyle** çalıştırır (Virtualmin
 klasör başına PHP sürümü tutabiliyor). İşlemler: install, update, dump-autoload.

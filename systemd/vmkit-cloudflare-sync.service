@@ -1,0 +1,12 @@
+[Unit]
+Description=VminKit - Cloudflare DNS senkronu
+After=network-online.target bind9.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Zone degismediyse script hicbir API cagrisi yapmadan cikar.
+ExecStart=/usr/share/webmin/vmkit-cloudflare/sync-all.pl
+# Art arda gelen zone yazimlarinda tek bir tur calissin diye kisa bekleme.
+ExecStartPre=/bin/sleep 5
+Nice=10
