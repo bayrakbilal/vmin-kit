@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # renew-ssl.sh - hostname sanal sunucusu icin Lets Encrypt sertifikasi al/yenile.
-#   sudo ./renew-ssl.sh            -> hostname'i config.env'den ya da sistemden alir
+#   sudo ./renew-ssl.sh            -> hostname'i sistemden alir
 #   sudo ./renew-ssl.sh s.ornek.com
 #
 # Ne zaman lazim:
@@ -19,14 +19,9 @@ require_root
 command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin kurulu degil."; exit 1; }
 
 # ---- hangi hostname ----
+# Parametre verilmediyse sistemin kendi hostname'i. Kurulum hostname'i zaten
+# HOST_PREFIX.MAIN_DOMAIN olarak ayarliyor, dolayisiyla dogru ad burasi.
 HOST="${1:-}"
-if [ -z "$HOST" ] && [ -f "$ROOT_DIR/config.env" ]; then
-  # shellcheck source=/dev/null
-  source "$ROOT_DIR/config.env"
-  if [ -n "${HOSTNAME_FQDN:-}" ]; then HOST="$HOSTNAME_FQDN"
-  elif [ -n "${MAIN_DOMAIN:-}" ]; then HOST="${HOST_PREFIX:-s}.${MAIN_DOMAIN}"
-  fi
-fi
 [ -n "$HOST" ] || HOST="$(hostname -f 2>/dev/null || hostname)"
 
 log "Hedef: $HOST"

@@ -7,7 +7,7 @@
 #
 # Akis:
 #   1) Sistem durumu
-#   2) Cevaplar   : config.env varsa oku (gozetimsiz), yoksa domaini sor
+#   2) Ayarlar    : config.env (depoda, tercihlerin yeri) + ana domaini sor
 #   3) DNS kontrol: domain ve hostname bu sunucuya cozumluyor mu + DNS modu
 #   4) Ozet + dogrulama (sorun varsa HICBIR SEY calistirilmaz)
 #   5) Adimlar    : acik sirayla
@@ -36,30 +36,39 @@ if [ "$OS_ID" != debian ] || [ "$OS_VER" != 12 ]; then
 fi
 
 # ---- 1) sistem durumu ----
-VM=no;        if command -v virtualmin >/dev/null 2>&1; then VM=yes; fi
-DOCKER=no;    if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then DOCKER=yes; fi
-PORTAINER=no; if command -v docker >/dev/null 2>&1 && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx portainer; then PORTAINER=yes; fi
+# HAS_* = sistemde ZATEN ne var. Ayar degiskenleriyle (POSTGRES, DOCKER ...)
+# karismasin diye ayri onek tasiyorlar.
+HAS_VIRTUALMIN=no; if command -v virtualmin >/dev/null 2>&1; then HAS_VIRTUALMIN=yes; fi
+HAS_DOCKER=no;     if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then HAS_DOCKER=yes; fi
+HAS_PORTAINER=no;  if command -v docker >/dev/null 2>&1 && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx portainer; then HAS_PORTAINER=yes; fi
 CUR_HOST="$(hostname -f 2>/dev/null || hostname)"
 SRV_IP="$(detect_ip)"
 
 log "Sistem durumu:"
 log "  Hostname  : $CUR_HOST"
 log "  IP        : ${SRV_IP:-bilinmiyor}"
-log "  Virtualmin: $VM"
-log "  Docker    : $DOCKER"
-log "  Portainer : $PORTAINER"
+log "  Virtualmin: $HAS_VIRTUALMIN"
+log "  Docker    : $HAS_DOCKER"
+log "  Portainer : $HAS_PORTAINER"
 echo
 
 [ -n "$SRV_IP" ] || { err "Sunucu IP'si tespit edilemedi. config.env icinde SERVER_IP= verin."; exit 1; }
 
-# ---- 2) cevaplar ----
+# ---- 2) ayarlar + ana domain ----
+# Ayarlar config.env'den gelir. O dosya DEPODA durur ve tercihlerin yeridir:
+# degistir, commit'le; sonraki sunucu ayni sekilde kurulur.
+#
+# Ana domain orada TUTULMAZ, her calistirmada sorulur - her sunucuda farkli
+# olan tek deger odur. Betikten calistirmak icin ortam degiskeni verilebilir:
+#   MAIN_DOMAIN=ornek.com ./install.sh
 if [ -f "$ROOT_DIR/config.env" ]; then
-  MODE=config
   # shellcheck source=/dev/null
   source "$ROOT_DIR/config.env"
-  log "config.env bulundu -> gozetimsiz mod."
 else
-  MODE=interactive
+  warn "config.env bulunamadi; her ayar icin varsayilan kullanilacak."
+fi
+
+if [ -z "${MAIN_DOMAIN:-}" ]; then
   log "Once sunu dogrulayin: ana domain ve hostname icin A kayitlari"
   log "bu sunucunun IP'sine (${SRV_IP}) isaret etmeli. Kontrol edecegim."
   echo
@@ -70,17 +79,14 @@ else
   done
 fi
 
-MAIN_DOMAIN="${MAIN_DOMAIN:-}"
-[ -n "$MAIN_DOMAIN" ] || { err "MAIN_DOMAIN bos (zorunlu)."; exit 1; }
 HOST_PREFIX="${HOST_PREFIX:-s}"
 HOSTNAME_FQDN="${HOSTNAME_FQDN:-${HOST_PREFIX}.${MAIN_DOMAIN}}"
-ADMIN_EMAIL="${ADMIN_EMAIL:-}"
 POSTGRES="${POSTGRES:-1}"
 COMPOSER="${COMPOSER:-1}"
+NO_ADMIN_REDIRECT="${NO_ADMIN_REDIRECT:-1}"
 # Docker ve Portainer tek bayrak: Portainer, Docker olmadan anlamsiz ve
 # Docker'i Portainer'siz kurmak istemedigimiz icin ikisi birlikte gider.
-docker="${docker:-1}"
-portainer="$docker"
+DOCKER="${DOCKER:-1}"
 
 # ---- 3) DNS kontrolu + mod tespiti ----
 ensure_pkg dig bind9-dnsutils dnsutils || { err "dig kurulamadi (bind9-dnsutils)."; exit 1; }
@@ -109,8 +115,8 @@ fi
 # bagimsiz. Yerel BIND zone'u "NS yonetimi bizde" modeline gore uretilir;
 # Cloudflare senkronunda NS/SOA kayitlari gonderilmez, geri kalan her sey
 # aynen gider. Boylece iki mod arasinda tek fark delegasyonun nerede oldugudur.
-NS1="${NS1:-ns1.${MAIN_DOMAIN}}"
-NS2="${NS2:-ns2.${MAIN_DOMAIN}}"
+NS1="${NS1_PREFIX:-ns1}.${MAIN_DOMAIN}"
+NS2="${NS2_PREFIX:-ns2}.${MAIN_DOMAIN}"
 
 # Gercekte otoriter olan sunucular - sadece bilgi ve rapor icin.
 AUTH_NS="${NS_NAMES[*]:-bilinmiyor}"
@@ -125,7 +131,7 @@ echo
 # ---- 4) ozet ----
 log "Yapilacaklar:"
 log "  - Hostname    : $HOSTNAME_FQDN"
-if [ "$VM" = yes ]; then log "  - Virtualmin  : kurulu (atlanacak)"; else log "  - Virtualmin  : KURULACAK"; fi
+if [ "$HAS_VIRTUALMIN" = yes ]; then log "  - Virtualmin  : kurulu (atlanacak)"; else log "  - Virtualmin  : KURULACAK"; fi
 if is_truthy "$POSTGRES"; then
   if command -v psql >/dev/null 2>&1; then log "  - PostgreSQL  : kurulu (atlanacak)"
   else                                     log "  - PostgreSQL  : KURULACAK"; fi
@@ -137,7 +143,10 @@ fi
 log "  - DNS sablonu : NS1=${NS1}  NS2=${NS2}   (bu sunucunun NS cifti)"
 log "  - Ana domain  : $MAIN_DOMAIN  (web + SSL + DNS; mail ve veritabani KAPALI)"
 log "  - SSL         : $MAIN_DOMAIN icin Lets Encrypt"
-if is_truthy "$docker"; then
+if is_truthy "$NO_ADMIN_REDIRECT"; then
+  log "  - admin.<domain> panel yonlendirmesi: KAPATILACAK"
+fi
+if is_truthy "$DOCKER"; then
   log "  - Docker + Portainer"
   log "  - ${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN} -> Portainer proxy"
 fi
@@ -171,8 +180,11 @@ if [ ${#errors[@]} -gt 0 ]; then
 fi
 
 # ---- onay ----
-if [ "$MODE" = interactive ]; then
-  if ! ask_yn "Baslayalim mi?" E; then warn "Iptal edildi."; exit 0; fi
+# Ozet her zaman gosterilir ve onay her zaman istenir: yanlis bir ayar
+# gorursen iptal edip config.env'i duzeltir, yeniden calistirirsin.
+if ! ask_yn "Bu ayarlarla devam edeyim mi?" E; then
+  warn "Iptal edildi. Ayarlar burada: $ROOT_DIR/config.env"
+  exit 0
 fi
 
 # ---- ADIMLAR: SIRA BURADA, ACIKCA ----
@@ -182,11 +194,11 @@ step_virtualmin
 if is_truthy "$POSTGRES"; then step_postgres; fi
 if is_truthy "$COMPOSER"; then step_composer; fi
 step_dns_template
-step_admin_redirect
+if is_truthy "$NO_ADMIN_REDIRECT"; then step_admin_redirect; fi
 step_main_domain
 step_host_dns
 step_ssl
-if is_truthy "$docker"; then
+if is_truthy "$DOCKER"; then
   step_docker
   step_portainer
   step_docker_site
@@ -201,4 +213,4 @@ log "Rapor : $VMINKIT_REPORT"
 
 # Token EN SON uretilir: omru birkac dakika oldugu icin araya baska adimlar
 # girse bile ekranda gorunen degerin taze olmasi gerekiyor.
-if is_truthy "$docker"; then step_portainer_token; fi
+if is_truthy "$DOCKER"; then step_portainer_token; fi

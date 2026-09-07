@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Adim fonksiyonlari. install.sh bunlari ACIK SIRAYLA cagirir.
 # Gerekli degiskenler install.sh tarafindan set edilir / config.env'den gelir:
-#   MAIN_DOMAIN, HOSTNAME_FQDN, NS1, NS2, DNS_MODE, ADMIN_EMAIL, POSTGRES,
+#   MAIN_DOMAIN, HOSTNAME_FQDN, NS1, NS2, DNS_MODE, POSTGRES,
 #   docker, portainer, PORTAINER_*
 # Hepsi idempotent: ikinci kez calistirmak zarar vermez.
 
@@ -349,7 +349,7 @@ step_report(){
     echo "Portainer    : $pt"
     echo
     echo "Panel        : https://${HOSTNAME_FQDN}:10000"
-    if is_truthy "${docker:-0}"; then
+    if is_truthy "${DOCKER:-0}"; then
       echo "Portainer    : https://${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}/"
       echo "               Ilk giriste setup_token istenir. Token kisa omurludur;"
       echo "               suresi dolduysa: sudo ./configure-docker.sh"
@@ -376,21 +376,7 @@ step_report(){
   chmod 600 "$VMINKIT_REPORT"
   ok "Rapor: $VMINKIT_REPORT"
 
-  # Ikinci sunucu icin hazir cevaplar: bir daha hicbir sey hatirlamak gerekmesin.
-  if [ ! -f "$ROOT_DIR/config.env" ]; then
-    {
-      echo "# vmin-kit - bu kurulumdan uretildi ($(date '+%Y-%m-%d'))."
-      echo "# Ikinci sunucuda: kopyala, MAIN_DOMAIN'i degistir, ./install.sh"
-      echo "MAIN_DOMAIN=$MAIN_DOMAIN"
-      echo "HOST_PREFIX=${HOST_PREFIX:-s}"
-      echo "ADMIN_EMAIL=${ADMIN_EMAIL:-}"
-      echo "POSTGRES=${POSTGRES:-1}"
-      echo "COMPOSER=${COMPOSER:-1}"
-      echo "docker=${docker:-0}"
-      echo "PORTAINER_IMAGE=${PORTAINER_IMAGE:-portainer/portainer-ce:latest}"
-      echo "PORTAINER_PORT=${PORTAINER_PORT:-9000}"
-      echo "PORTAINER_BIND_LOCAL=${PORTAINER_BIND_LOCAL:-yes}"
-    } > "$ROOT_DIR/config.env"
-    ok "config.env uretildi (ikinci sunucu icin hazir cevaplar)."
-  fi
+  # Ikinci sunucu icin ayrica bir cevap dosyasi URETMIYORUZ: ayarlar zaten
+  # depodaki config.env icinde duruyor. Yeni sunucuda depoyu cekip ana
+  # domaini yazmak yeterli.
 }

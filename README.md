@@ -29,11 +29,15 @@ cd vmin-kit
 sudo ./install.sh
 ```
 
-Tek soru sorulur: **ana domain**. Gerisi varsayılan ya da tespit.
+Tek soru sorulur: **ana domain**. Ardından kullanılacak ayarların özeti gösterilir
+ve onay istenir; yanlış bir şey görürseniz iptal edip `config.env`'i düzeltir,
+yeniden çalıştırırsınız.
 
-Gözetimsiz çalıştırmak için `config.env` hazırlayın (`config.env.example`'a bakın).
-Kurulum başarıyla bittiğinde araç zaten bir `config.env` üretir; ikinci sunucuda
-onu kopyalayıp `MAIN_DOMAIN`'i değiştirmeniz yeterlidir.
+Diğer her şey `config.env`'den gelir. O dosya **depoda durur** ve tercihlerin
+yeridir: değiştirin, commit'leyin — sonraki sunucu depoyu çektiğinde aynı şekilde
+kurulur, hatırlanacak bir şey kalmaz. Ana domain orada tutulmaz; her sunucuda
+farklı olan tek değer odur. Betikten çalıştırmak için ortam değişkeni olarak
+verilebilir: `MAIN_DOMAIN=ornek.com sudo -E ./install.sh`.
 
 ## Ne yapar
 
@@ -44,12 +48,12 @@ onu kopyalayıp `MAIN_DOMAIN`'i değiştirmeniz yeterlidir.
 | `postgres` | PostgreSQL kurar ve Virtualmin özelliğini açar — Virtualmin kurulumuyla gelmiyor. *(isteğe bağlı)* |
 | `composer` | Composer kurar (`vmkit-composer` eklentisinin gereksinimi). *(isteğe bağlı)* |
 | `dns-template` | Yeni domainler için DNS varsayılanları (`bind_master`, `dns_ns`, `dns_prins`, `bind_sub`). |
-| `admin-redirect` | Yeni domainlere eklenen `admin.<domain>` → panel (`:10000`) yönlendirmesini kapatır (`web_admin=0`). Tek ayar hem DNS kaydını hem Apache yönlendirmesini kapatıyor; **domain oluşmadan önce** çalışmalı, sonradan kapatmak var olanları temizlemiyor. `webmail.<domain>` bilerek açık bırakıldı. |
+| `admin-redirect` | *(`NO_ADMIN_REDIRECT=1` ise)* Yeni domainlere eklenen `admin.<domain>` → panel (`:10000`) yönlendirmesini kapatır (`web_admin=0`). Tek ayar hem DNS kaydını hem Apache yönlendirmesini kapatıyor; **domain oluşmadan önce** çalışmalı, sonradan kapatmak var olanları temizlemiyor. `webmail.<domain>` bilerek açık bırakıldı. |
 | `main-domain` | Ana domaini **sade** oluşturur: web + SSL + DNS. Mail ve veritabanı **kapalı**. |
 | `host-dns` | Ana domainin zone'una hostname (`s.<domain>`) için A kaydı ekler. |
 | `ssl` | Ana domain için Let's Encrypt sertifikası + otomatik yenileme. |
-| `docker` | Docker Engine + Portainer CE + `docker.<domain>` proxy sitesi. Tek bayrak (`docker=1`); üçü birlikte gelir. *(isteğe bağlı)* |
-| `report` | Araç klasörüne `vmin-kit-rapor.txt` + ikinci sunucu için `config.env` üretir. |
+| `docker` | Docker Engine + Portainer CE + `docker.<domain>` proxy sitesi. Tek bayrak (`DOCKER=1`); üçü birlikte gelir. *(isteğe bağlı)* |
+| `report` | Araç klasörüne `vmin-kit-rapor.txt` üretir: ne yapıldı, panel adresi, sırada ne var. |
 
 Tüm adımlar **idempotent**: ikinci kez çalıştırmak zarar vermez, kurulu olanı atlar.
 
@@ -77,8 +81,8 @@ kayıtları gönderilmez, geri kalan her şey aynen gider.
 ## Yapı
 
 ```
-install.sh           # tek giriş: durum → cevaplar → DNS kontrol → doğrula → sırayla uygula
-config.env.example   # gözetimsiz çalıştırma için hazır cevaplar
+install.sh           # tek giriş: durum → ayarlar+domain → DNS kontrol → onay → sırayla uygula
+config.env           # varsayılan ayarlar (depoda; ana domain burada tutulmaz)
 lib/common.sh        # yardımcılar (log, ask, set_kv, detect_ip, resolve_a/ns, ensure_pkg)
 lib/steps.sh         # adım fonksiyonları (install.sh açık sırayla çağırır)
 renew-ssl.sh         # hostname sanal sunucusu için SSL al/yenile
@@ -101,7 +105,7 @@ sertifikası olmayan ana domain için zaten istekte bulunur.
 
 ## Portainer
 
-`docker=1` ise kurulum şunları yapar: Docker Engine, Portainer CE (yalnızca
+`DOCKER=1` ise kurulum şunları yapar: Docker Engine, Portainer CE (yalnızca
 `127.0.0.1:9000`'e bağlı) ve `docker.<domain>` alt sunucusu — kökünden
 Portainer'a websocket destekli proxy, kendi SSL sertifikasıyla.
 

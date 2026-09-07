@@ -1,5 +1,6 @@
-# Sunucuya özel değerler ve ileride API token'ları burada durur
-config.env
+# Not: config.env artık depoda izleniyor — varsayılan ayarlar orada durur,
+# ana domain orada tutulmaz. Sunucuya özel bir değer gerekirse ortam
+# değişkeni olarak verilir (ör. SERVER_IP=... ./install.sh).
 *.log
 
 # kurulum ciktisi

@@ -22,7 +22,8 @@ docker ps -a --format '{{.Names}}' | grep -qx portainer || {
   exit 1
 }
 
-# Adres: config.env varsa oradan, yoksa sistem hostname'inin ana domaininden.
+# Ana domain sistem hostname'inden gelir (kurulum onu HOST_PREFIX.MAIN_DOMAIN
+# yapiyor). config.env yalnizca onek ve Portainer ayarlari icin okunur.
 if [ -f "$ROOT_DIR/config.env" ]; then
   # shellcheck source=/dev/null
   source "$ROOT_DIR/config.env"
