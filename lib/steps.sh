@@ -219,6 +219,68 @@ step_domain_defaults(){
   fi
 }
 
+# DKIM: giden postalari imzala.
+#
+# Sunucu geneli, tek seferlik bir kurulum - sablon ayari degil. Anahtari
+# uretir, OpenDKIM'i yapilandirir, imzalanacak domain haritasini yazar ve
+# DKIM acikken olusan her domaine <secici>._domainkey TXT kaydini ekler
+# (feature-mail.pl bunu $config{dkim_enabled} bakarak yapiyor). Bu yuzden ilk
+# domainden ONCE calisiyor.
+#
+# Panelde ayni is: Email Settings -> DomainKeys Identified Mail. Burada
+# enable_dkim.cgi'nin yaptigi adimlarin aynisini yapiyoruz:
+#   selector  varsayilan YYYYAA (get_default_dkim_selector)
+#   sign=1    giden postayi imzala
+#   verify=1  gelen postanin imzasini dogrula
+#   alldns=0  yalnizca DNS ve posta acik olan domainler
+#   2048 bit  panelin varsayilan anahtar boyu
+#
+# check_dkim() sistem uygun degilse (paket yok gibi) sebebini soyluyor; o
+# durumda kurulumu durdurmuyoruz, atlayip devam ediyoruz.
+step_dkim(){
+  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; DKIM atlaniyor."; return 1; }
+  local out
+  out="$(perl -e '
+    $ENV{WEBMIN_CONFIG} ||= q(/etc/webmin); $ENV{WEBMIN_VAR} ||= q(/var/webmin);
+    push(@INC, q(/usr/share/webmin)); $main::no_acl_check++;
+    chdir(q(/usr/share/webmin/virtual-server));
+    $0 = q(/usr/share/webmin/virtual-server/vmkit-dkim.pl);
+    require q(./virtual-server-lib.pl);
+    my $err = &check_dkim();
+    if ($err) { print qq(VMKIT-DKIM:SKIP $err\n); exit(0); }
+    my $dkim = &get_dkim_config() || { };
+    if ($dkim->{enabled}) { print qq(VMKIT-DKIM:ALREADY $dkim->{selector}\n); exit(0); }
+    $dkim->{selector} ||= &get_default_dkim_selector();
+    $dkim->{enabled} = 1;
+    $dkim->{sign}    = 1;
+    $dkim->{verify}  = 1;
+    $dkim->{alldns}  = 0;
+    $dkim->{extra} ||= [ ];
+    &set_all_text_print();
+    my $ok = &enable_dkim($dkim, 0, 2048);
+    if (!$ok) { print qq(VMKIT-DKIM:FAILED\n); exit(1); }
+    $config{dkim_enabled} = 1;
+    &lock_file($module_config_file);
+    &save_module_config();
+    &unlock_file($module_config_file);
+    &run_post_actions();
+    print qq(VMKIT-DKIM:OK $dkim->{selector}\n);
+  ' 2>&1)"
+
+  printf '%s\n' "$out" | grep -v '^VMKIT-DKIM:' | sed 's/^/    /'
+  # Isaret satirini SATIR bazinda ayikliyoruz; ${out##...} kullanilsaydi
+  # isaretten sonraki tum ciktiyi alirdi.
+  local mark val
+  mark="$(printf '%s\n' "$out" | grep '^VMKIT-DKIM:' | head -1)"
+  val="${mark#VMKIT-DKIM:* }"
+  case "$mark" in
+    "VMKIT-DKIM:ALREADY"*) ok "DKIM zaten acik (secici: $val)." ;;
+    "VMKIT-DKIM:SKIP"*)    warn "DKIM acilamadi, atlaniyor: $val" ;;
+    "VMKIT-DKIM:OK"*)      ok "DKIM acildi (secici: $val)." ;;
+    *)                     err "DKIM acilamadi."; return 1 ;;
+  esac
+}
+
 # Ana domaini VIRTUALMIN'IN KENDI VARSAYILANLARIYLA olusturur
 # (--default-features): panelden "Create Virtual Server" dediginde ne
 # aciliyorsa aynisi. Boylece ana domain ozel bir durum olmuyor, sonradan
