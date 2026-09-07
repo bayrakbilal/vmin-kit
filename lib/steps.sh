@@ -375,9 +375,11 @@ step_portainer_token(){
 # sertifikasiyla cikar. docker./webmin./usermin. ucu de bu kalibi kullaniyor.
 #
 # Ozellikler bilerek en az: --dir (web sitesi icin sart), --web (vhost),
-# --ssl (https), --parent (alt sunucu; ayri Unix kullanicisi acilmaz, DNS
-# kayitlari ana domainin zone'una yazilir). --break-ssl-cert ile ana domainin
-# sertifikasina baglanmak yerine kendi sertifikasini alir.
+# --ssl (https), --dns (alt alanin A kaydi; bind_sub=yes oldugu icin ayri zone
+# acilmaz, kayit ana domainin zone'una girer - olmadan alt alan hic
+# cozumlenmez), --parent (alt sunucu; ayri Unix kullanicisi acilmaz).
+# --break-ssl-cert ile ana domainin sertifikasina baglanmak yerine kendi
+# sertifikasini alir.
 #
 ensure_proxy_site(){
   local prefix="$1" url="$2" desc="$3" phost="${4:-}"
@@ -392,7 +394,7 @@ ensure_proxy_site(){
            --domain "$site" \
            --parent "$MAIN_DOMAIN" \
            --desc   "$desc" \
-           --dir --web --ssl --break-ssl-cert; then
+           --dir --web --ssl --dns --break-ssl-cert; then
       err "$site olusturulamadi."
       return 1
     fi
@@ -475,7 +477,7 @@ step_webmail(){
            --domain "$site" \
            --parent "$MAIN_DOMAIN" \
            --desc   "Roundcube (vmin-kit)" \
-           --dir --web --ssl --mysql --break-ssl-cert; then
+           --dir --web --ssl --dns --mysql --break-ssl-cert; then
       err "$site olusturulamadi; Roundcube atlaniyor."
       return 1
     fi
@@ -539,8 +541,11 @@ step_webmail(){
 #   --dir    web sitesi icin sart (check_depends_web home dizini istiyor)
 #   --web    vekil vhost'unun kendisi
 #   --ssl    https://docker.<domain> icin
-#   --parent alt sunucu: ayri Unix kullanicisi acilmaz, DNS kayitlari ana
-#            domainin zone'una yazilir
+#   --dns    alt alanin A kaydi. bind_sub=yes oldugu icin ayri zone acilmaz,
+#            kayit ana domainin zone'una yazilir (f-dns.pl: dns_submode).
+#            Olmadan alt alan hic cozumlenmez - Cloudflare'de joker kayit
+#            varsa gizlenir ama BIND modunda dogrudan kirilir.
+#   --parent alt sunucu: ayri Unix kullanicisi acilmaz
 # --break-ssl-cert ile ana domainin sertifikasina baglanmak yerine kendi
 # sertifikasini alir (ana domainin sertifikasi bu ismi kapsamiyor).
 step_docker_site(){

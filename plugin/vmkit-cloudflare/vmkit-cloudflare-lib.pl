@@ -228,12 +228,19 @@ my ($d) = @_;
 my %ok = map { $_, 1 } &synced_types();
 my @rv;
 foreach my $r (&virtual_server::get_domain_dns_records($d)) {
-	next if (!$ok{uc($r->{'type'})});
+	# Webmin'in bind8 cozumleyicisi bazi TXT kayitlarini ANLAMLARINA gore
+	# etiketliyor: SPF ve DMARC diye ayri tip donuyor. Zone dosyasinda ikisi
+	# de TXT ve Cloudflare'de de TXT olmalari gerekiyor - Cloudflare'de SPF
+	# ya da DMARC diye bir kayit tipi yok. Cevirmezsek bu iki kayit hic
+	# senkronlanmiyor (tip listesinde olmadiklari icin sessizce eleniyorlar).
+	my $type = uc($r->{'type'});
+	$type = "TXT" if ($type eq "SPF" || $type eq "DMARC");
+	next if (!$ok{$type});
 	my $name = $r->{'name'};
 	$name =~ s/\.$//;
 	next if (&skip_name(&record_label($d, $name)));
 	push(@rv, { 'name'  => lc($name),
-		    'type'  => uc($r->{'type'}),
+		    'type'  => $type,
 		    'value' => join(" ", @{$r->{'values'}}),
 		    'ttl'   => $r->{'ttl'} });
 	}
