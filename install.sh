@@ -146,6 +146,7 @@ if is_truthy "$COMPOSER"; then
 fi
 log "  - DNS sablonu : NS1=${NS1}  NS2=${NS2}   (bu sunucunun NS cifti)"
 log "  - Ana domain  : $MAIN_DOMAIN  (Virtualmin varsayilan ozellikleriyle)"
+log "  - Posta       : ${ADMIN_MAILBOX:-admin}@${MAIN_DOMAIN} kutusu; rol adresleri oraya, sahibin kutusu kapali"
 log "  - SSL         : $MAIN_DOMAIN icin Lets Encrypt"
 if is_truthy "$NO_ADMIN_REDIRECT"; then
   log "  - admin.<domain> -> panel yonlendirmesi: KAPATILACAK"
@@ -226,6 +227,7 @@ step_domain_defaults
 # senkron servisinin izleyecegi zone dizini bu asamada mevcut.
 step_plugins
 step_main_domain
+step_admin_mailbox
 step_host_dns
 step_ssl
 if is_truthy "$PANEL_PROXY"; then step_panel_sites; fi
