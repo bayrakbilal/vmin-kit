@@ -480,12 +480,12 @@ lock_panel_port(){
   local name="$1" conf="$2" svc="$3" prefix="$4"
   [ -f "$conf" ] || { log "  $name kurulu degil, atlaniyor."; return 0; }
 
-  local bound
-  bound="$(awk -F= '/^bind=/{print $2; exit}' "$conf")"
+  if [ "$(awk -F= '/^bind=/{print $2; exit}' "$conf")" = "127.0.0.1" ]; then
+    ok "$name zaten yalnizca 127.0.0.1 dinliyor."
+    return 0
+  fi
 
-  # Zaten kilitliyse vekili dogrulamayi atlamiyoruz ama ayarlari yine de
-  # gozden geciriyoruz: onceki bir calistirmadan kalan yanlis deger duzelsin.
-  if [ "$bound" != "127.0.0.1" ] && ! proxy_site_works "$prefix"; then
+  if ! proxy_site_works "$prefix"; then
     warn "$name kilitlenmedi: ${prefix}.${MAIN_DOMAIN} vekili dogrulanamadi."
     warn "  Vekil calistiktan sonra elle: $conf icine bind=127.0.0.1 ekleyip"
     warn "  systemctl restart $svc"
@@ -494,10 +494,6 @@ lock_panel_port(){
 
   [ -f "${conf}.vmin-kit.bak" ] || cp -a "$conf" "${conf}.vmin-kit.bak"
   set_kv "$conf" bind "127.0.0.1"
-  set_kv "$conf" ssl "1"
-  # Arayuz 10000'de dinlemeye devam ediyor; urettigi yonlendirmelerde port
-  # sizmasin diye 443 diyoruz (miniserv-lib.pl redirect_port).
-  set_kv "$conf" redirect_port "443"
   systemctl restart "$svc" >/dev/null 2>&1 || warn "  $svc yeniden baslatilamadi."
   ok "$name yalnizca 127.0.0.1 dinliyor -> https://${prefix}.${MAIN_DOMAIN}/"
 }

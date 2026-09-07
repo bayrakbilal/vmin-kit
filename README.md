@@ -100,9 +100,8 @@ kendi sertifikasıyla çıkar:
 | `docker.<ana-domain>` | `127.0.0.1:9000` (Portainer) |
 
 Üçü de aynı kalıp (`ensure_proxy_site`): alt sunucu + `create-proxy --websockets`.
-Webmin ve Usermin **kendi SSL'lerinde kalır**, vekil onlara `https://127.0.0.1:<port>`
-ile gider; böylece panel kendini güvenli sayar ve ürettiği bağlantılar `https`
-olur. Ürettikleri adreslerde port sızmasın diye `redirect_port=443` ayarlanır.
+Webmin ve Usermin kendi SSL'lerinde kalır, vekil onlara `https://127.0.0.1:<port>`
+ile gider.
 
 İki ek ayar gerekiyor:
 - `ProxyPreserveHost On` (`modify-web --proxy-host`) — `Host` başlığı doğru gitsin.
