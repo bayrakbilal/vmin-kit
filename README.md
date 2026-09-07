@@ -52,6 +52,7 @@ verilebilir: `MAIN_DOMAIN=ornek.com sudo -E ./install.sh`.
 | `main-domain` | Ana domaini **sade** oluşturur: web + SSL + DNS. Mail ve veritabanı **kapalı**. |
 | `host-dns` | Ana domainin zone'una hostname (`s.<domain>`) için A kaydı ekler. |
 | `ssl` | Ana domain için Let's Encrypt sertifikası + otomatik yenileme. |
+| `plugins` | Eklentileri `.wbm.gz` olarak paketleyip Webmin'in `install-module.pl`'i ile kurar, Virtualmin'in `plugins=` listesine ekler. Hangileri: `PLUGIN_*` bayrakları. |
 | `docker` | Docker Engine + Portainer CE + `docker.<domain>` proxy sitesi. Tek bayrak (`DOCKER=1`); üçü birlikte gelir. *(isteğe bağlı)* |
 | `report` | Araç klasörüne `vmin-kit-rapor.txt` üretir: ne yapıldı, panel adresi, sırada ne var. |
 
@@ -83,8 +84,11 @@ kayıtları gönderilmez, geri kalan her şey aynen gider.
 ```
 install.sh           # tek giriş: durum → ayarlar+domain → DNS kontrol → onay → sırayla uygula
 config.env           # varsayılan ayarlar (depoda; ana domain burada tutulmaz)
-lib/common.sh        # yardımcılar (log, ask, set_kv, detect_ip, resolve_a/ns, ensure_pkg)
+lib/common.sh        # yardımcılar (log, ask, set_kv, detect_ip, resolve_a/ns, webmin/plugins)
 lib/steps.sh         # adım fonksiyonları (install.sh açık sırayla çağırır)
+plugin/              # Webmin modüllerinin kaynağı (düzenlenen yer)
+build-plugins.sh     # plugin/ → dist/<modül>.wbm.gz  (dist/ depoda tutulmaz)
+update-plugins.sh    # GELİŞTİRME döngüsü: dosyaları doğrudan /usr/share/webmin'e kopyalar
 renew-ssl.sh         # hostname sanal sunucusu için SSL al/yenile
 configure-docker.sh  # Portainer kurulum ekranını yeniden açar (yeni setup_token)
 ```
@@ -147,18 +151,24 @@ hesaplarda olabilir.
 **Yetki:** root bütün domainleri yönetir; domain sahibi kendi hesabıyla girip
 yalnızca kendi domaininin ayarlarını görür (`feature_webmin` + `can_edit_domain`).
 
-Kurulum:
+**Kurulum — `install.sh` hallediyor.** `step_plugins` modülleri kurulum anında
+kaynaktan `.wbm.gz` olarak paketler (`build-plugins.sh`) ve Webmin'in kendi
+`install-module.pl`'i ile kurar. Bu standart yol; dosyaları yerine koymak,
+`webmin.acl`, `/etc/webmin/<modül>/config` (mevcut değerleri koruyarak
+birleştirir), önbellek temizliği ve `postinstall.pl` hepsi ona ait.
+Virtualmin'in `plugins=` listesine ekleme onda yok, onu `install.sh` yapıyor.
 
-```bash
-sudo ./install-plugins.sh          # kurar / günceller
-sudo ./install-plugins.sh --remove
-```
+Hangilerinin kurulacağı `config.env`'den: `PLUGIN_DEPLOY`, `PLUGIN_COMPOSER`,
+`PLUGIN_CLOUDFLARE` (varsayılan 1). **0 yapmak kurulu olanı sökmez**, yalnızca
+kurmaz — kaldırmak için `sudo ./update-plugins.sh --remove`.
 
-Modüller `/usr/share/webmin/` altına **kopyalanır**, symlink kurulmaz —
-symlink olsaydı Webmin'in ve bu script'in yazdıkları doğrudan git deposunu
-kirletirdi.
+Paketler depoda tutulmaz, her zaman kaynaktan üretilir; `dist/` altında durur.
+Elle paketlemek için: `./build-plugins.sh` (ya da tek modül adıyla).
 
-**Geliştirme döngüsü:** `git pull && sudo ./install-plugins.sh`. Webmin her
+**Geliştirme döngüsü:** `git pull && sudo ./update-plugins.sh`. Bu script
+paketlemeyi atlayıp dosyaları doğrudan `/usr/share/webmin/` altına **kopyalar**
+(symlink değil — symlink olsaydı Webmin'in yazdıkları git deposunu kirletirdi).
+Webmin her
 isteği taze bir Perl process'inde çalıştırdığı için derleme yoktur; script
 yalnızca `module.info` değiştiğinde Webmin'i yeniden başlatır, diğer
 durumlarda dosyaları kopyalar ve sayfayı yenilemeniz yeterlidir.

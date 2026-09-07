@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# install-plugins.sh - vmin-kit Webmin modullerini kurar/gunceller.
-#   sudo ./install-plugins.sh          # kurar / gunceller
-#   sudo ./install-plugins.sh --remove # kaldirir
+# update-plugins.sh - GELISTIRME dongusu: plugin/ altindaki modulleri dogrudan
+# /usr/share/webmin'e kopyalar.
+#   sudo ./update-plugins.sh          # kurar / gunceller
+#   sudo ./update-plugins.sh --remove # kaldirir
+#
+# TEMIZ KURULUMDA BU SCRIPT KULLANILMAZ. install.sh eklentileri .wbm.gz olarak
+# paketleyip Webmin'in kendi install-module.pl'i ile kurar (step_plugins).
+# Burasi test/gelistirme icin: paketleme adimini atlayip dosyalari dogrudan
+# yerine koyar, boylece "duzenle - yenile" dongusu hizli kalir.
 #
 # NE ZAMAN CALISTIRMAK GEREKIR?
 #   Webmin her istegi taze bir Perl process'inde calistirir; derleme yoktur.
@@ -17,14 +23,9 @@
 # Not: moduller kopyalanir, symlink kurulmaz. Symlink kurulsaydi Webmin'in ve
 # bu script'in yazdiklari dogrudan git deposunu kirletirdi.
 #
-# Modulun postinstall.pl / uninstall.pl kancalari da calistirilir. Webmin
-# modul kurarken bunlari kendisi cagirir; bu script o yolu kullanmadigi icin
-# elle cagiriyoruz. vmkit-cloudflare kendi systemd birimlerini orada kuruyor.
-#
-# YAPILACAK: bu script Webmin'in install-module.pl'inin isini taklit ediyor
-# (dosyalari kopyalayip webmin.acl ile plugins= satirini elle duzenliyor).
-# Eklentiler oturunca moduller .wbm.gz olarak paketlenip standart yoldan
-# kurulacak; bu script de paketleri kuran ince bir sarmalayiciya donusecek.
+# Modulun postinstall.pl / uninstall.pl kancalari da calistirilir - Webmin
+# normalde bunlari kendisi cagirir, bu script o yolu kullanmadigi icin elle
+# cagiriyoruz. vmkit-cloudflare kendi systemd birimlerini orada kuruyor.
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
@@ -38,13 +39,9 @@ case "${1:-}" in
   *) err "Bilinmeyen secenek: $1"; exit 1 ;;
 esac
 
-# Webmin kok dizini (Debian'da /usr/share/webmin)
-WEBMIN_ROOT="$(awk -F= '/^root=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null || true)"
-WEBMIN_ROOT="${WEBMIN_ROOT:-/usr/share/webmin}"
+WEBMIN_ROOT="$(webmin_root)"
 [ -d "$WEBMIN_ROOT" ] || { err "Webmin bulunamadi: $WEBMIN_ROOT"; exit 1; }
-
-VS_CONFIG="/etc/webmin/virtual-server/config"
-[ -f "$VS_CONFIG" ] || { err "Virtualmin yapilandirmasi yok: $VS_CONFIG"; exit 1; }
+[ -f /etc/webmin/virtual-server/config ] || { err "Virtualmin yapilandirmasi yok."; exit 1; }
 
 NEED_RESTART=0
 MODULES=()
@@ -53,42 +50,6 @@ for dir in "$ROOT_DIR"/plugin/*/; do
   MODULES+=("$(basename "$dir")")
 done
 [ ${#MODULES[@]} -gt 0 ] || { err "plugin/ altinda modul bulunamadi."; exit 1; }
-
-# webmin.acl: root'un erisebildigi moduller listesi. Modul burada yoksa
-# panelde hic gorunmez.
-acl_grant(){
-  local mod="$1" acl="/etc/webmin/webmin.acl"
-  [ -f "$acl" ] || return 0
-  [ -f "${acl}.vmin-kit.bak" ] || cp -a "$acl" "${acl}.vmin-kit.bak"
-  if awk -v m="$mod" '/^root:/ { for(i=2;i<=NF;i++) if($i==m) found=1 } END { exit !found }' "$acl"; then
-    return 0
-  fi
-  sed -i "s|^root:.*|& ${mod}|" "$acl"
-  log "  webmin.acl: root'a $mod erisimi verildi"
-}
-
-acl_revoke(){
-  local mod="$1" acl="/etc/webmin/webmin.acl"
-  [ -f "$acl" ] || return 0
-  sed -i "s|^\(root:.*\)\b${mod}\b|\1|" "$acl"
-}
-
-# Virtualmin plugin listesi: /etc/webmin/virtual-server/config icinde
-# bosluklarla ayrilmis 'plugins=' satiri.
-plugins_add(){
-  local mod="$1" cur
-  cur="$(awk -F= '/^plugins=/{sub(/^plugins=/,""); print; exit}' "$VS_CONFIG" || true)"
-  case " $cur " in *" $mod "*) return 0 ;; esac
-  set_kv "$VS_CONFIG" plugins "$(echo "$cur $mod" | xargs)"
-  log "  Virtualmin plugin listesine eklendi: $mod"
-}
-
-plugins_remove(){
-  local mod="$1" cur new
-  cur="$(awk -F= '/^plugins=/{sub(/^plugins=/,""); print; exit}' "$VS_CONFIG" || true)"
-  new="$(echo "$cur" | tr ' ' '\n' | grep -vxF "$mod" | xargs || true)"
-  set_kv "$VS_CONFIG" plugins "$new"
-}
 
 # Webmin'in modul kurulum kancalari. Normalde install_module.pl bunlari
 # cagirir; bu script dosyalari elle kopyaladigi icin ayni isi biz yapiyoruz.
@@ -155,19 +116,6 @@ for mod in "${MODULES[@]}"; do
   run_module_hook "$mod" postinstall.pl module_install
 done
 
-# Domain menusu baglantilari domain basina onbellekleniyor ve yalnizca domain
-# kaydedilince tazeleniyor. Modul guncellemesinden sonra temizlemezsek yeni
-# etiketler/ikonlar panelde gorunmez.
-clear_links_cache(){
-  perl -e '
-    $ENV{WEBMIN_CONFIG} ||= "/etc/webmin"; $ENV{WEBMIN_VAR} ||= "/var/webmin";
-    push(@INC, "/usr/share/webmin"); $main::no_acl_check++;
-    chdir("/usr/share/webmin/virtual-server");
-    $0 = "/usr/share/webmin/virtual-server/clear.pl";
-    require "./virtual-server-lib.pl";
-    &clear_links_cache();
-  ' 2>/dev/null
-}
 if clear_links_cache; then
   log "Domain menu onbellegi temizlendi."
 else

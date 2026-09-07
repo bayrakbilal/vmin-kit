@@ -327,6 +327,89 @@ step_portainer(){
   ok "Portainer calisiyor -> $pub"
 }
 
+# Eklentiler: paketleri uretip Webmin'in KENDI kurulum yoluyla kur.
+#
+# install-module.pl (Webmin ile gelir) su isleri yapiyor: arsivi acip modulu
+# yerine koymak (eskisini silerek), module.info'daki bagimliligi dogrulamak,
+# webmin.acl'e erisim vermek, copyconfig.pl ile /etc/webmin/<modul>/config'i
+# kurup MEVCUT degerleri koruyarak birlestirmek, module.infos.cache'leri
+# temizlemek ve postinstall.pl -> module_install() calistirmak. Cloudflare
+# eklentisi systemd birimlerini iste orada kuruyor.
+#
+# Yapmadigi tek sey Virtualmin'in 'plugins=' listesine eklemek - o Virtualmin'e
+# ozgu bir ayar (gercek Virtualmin eklentileri de kendini eklemiyor, panelden
+# tikleniyor). Onu biz yapiyoruz.
+#
+# Bayraklar config.env'den: PLUGIN_DEPLOY, PLUGIN_COMPOSER, PLUGIN_CLOUDFLARE
+# (varsayilan 1). 0 = KURMA demek; kurulu olani SOKMEZ - calisan bir eklentiyi
+# bir bayrak degisti diye sessizce kaldirmak istemiyoruz. Kaldirmak icin:
+#   sudo ./update-plugins.sh --remove
+plugin_flag(){   # vmkit-deploy -> PLUGIN_DEPLOY
+  printf 'PLUGIN_%s' "$(printf '%s' "${1#vmkit-}" | tr '[:lower:]-' '[:upper:]_')"
+}
+
+plugin_enabled(){
+  local var; var="$(plugin_flag "$1")"
+  is_truthy "${!var:-1}"
+}
+
+# Ozet ekraninda gosterilecek liste.
+plugin_list_enabled(){
+  local dir mod out=""
+  for dir in "$ROOT_DIR"/plugin/*/; do
+    [ -f "${dir}module.info" ] || continue
+    mod="$(basename "$dir")"
+    plugin_enabled "$mod" && out="$out ${mod#vmkit-}"
+  done
+  printf '%s' "${out:- (hicbiri)}"
+}
+
+step_plugins(){
+  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; eklentiler atlaniyor."; return 1; }
+  local wroot im
+  wroot="$(webmin_root)"
+  im="$wroot/install-module.pl"
+  [ -r "$im" ] || { err "Webmin'in install-module.pl'i yok: $im"; return 1; }
+
+  local dir mod pkg any=0 skipped=""
+  for dir in "$ROOT_DIR"/plugin/*/; do
+    [ -f "${dir}module.info" ] || continue
+    mod="$(basename "$dir")"
+    if ! plugin_enabled "$mod"; then
+      skipped="$skipped $mod"
+      continue
+    fi
+
+    # Paketi kurulum aninda kaynaktan uret: paket asla bayatlamaz.
+    if ! "$ROOT_DIR/build-plugins.sh" "$mod" >/dev/null; then
+      err "  $mod paketlenemedi."; continue
+    fi
+    pkg="$ROOT_DIR/dist/$mod.wbm.gz"
+
+    # Shebang'i /usr/local/bin/perl oldugu icin dogrudan degil, perl ile.
+    if perl "$im" --acl root "$pkg" >/dev/null 2>&1; then
+      log "  kuruldu: $mod"
+    else
+      err "  $mod kurulamadi (install-module.pl)."
+      continue
+    fi
+    plugins_add "$mod" || true
+    any=1
+  done
+
+  [ -n "$skipped" ] && log "  atlandi (bayrak 0):$skipped"
+
+  if [ "$any" = 1 ]; then
+    if clear_links_cache; then :; else
+      warn "  Menu onbellegi temizlenemedi; degisiklik gorunmezse domaini kaydedin."
+    fi
+    systemctl restart webmin 2>/dev/null || warn "  webmin restart edilemedi."
+    ok "Eklentiler kuruldu. Panelde: System Settings -> Features and Plugins."
+  else
+    ok "Kurulacak eklenti yok."
+  fi
+}
+
 # Kurulum sonrasi hafiza: ne yapildi, sifre nerede, ikinci sunucu icin config.env.
 step_report(){
   local ip pg dk pt

@@ -9,3 +9,6 @@ vmin-kit-rapor.txt
 # yerel çalışma dosyaları (ekran görüntüleri vb.)
 *.png
 *.jpg
+
+# build-plugins.sh çıktısı: paketler kaynaktan üretilir, depoda tutulmaz
+dist/

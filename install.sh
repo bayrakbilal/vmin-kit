@@ -146,6 +146,8 @@ log "  - SSL         : $MAIN_DOMAIN icin Lets Encrypt"
 if is_truthy "$NO_ADMIN_REDIRECT"; then
   log "  - admin.<domain> panel yonlendirmesi: KAPATILACAK"
 fi
+log "  - Eklentiler  :$(plugin_list_enabled)"
+
 if is_truthy "$DOCKER"; then
   log "  - Docker + Portainer"
   log "  - ${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN} -> Portainer proxy"
@@ -198,6 +200,7 @@ if is_truthy "$NO_ADMIN_REDIRECT"; then step_admin_redirect; fi
 step_main_domain
 step_host_dns
 step_ssl
+step_plugins
 if is_truthy "$DOCKER"; then
   step_docker
   step_portainer

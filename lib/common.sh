@@ -85,3 +85,69 @@ gen_pass(){
     od -An -tx1 -N32 /dev/urandom | tr -d ' \n' | cut -c1-20
   fi
 }
+
+# ---- Webmin / Virtualmin yardimcilari -------------------------------------
+# install.sh (step_plugins) ve update-plugins.sh ayni isi yapiyor; tanim tek
+# yerde dursun diye burada.
+
+# Webmin kok dizini (Debian'da /usr/share/webmin)
+webmin_root(){
+  local r
+  r="$(awk -F= '/^root=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null || true)"
+  printf '%s' "${r:-/usr/share/webmin}"
+}
+
+# webmin.acl: root'un erisebildigi moduller listesi. Modul burada yoksa
+# panelde hic gorunmez. (install-module.pl --acl ile bunu kendisi yapar;
+# dosyalari elle kopyalayan yol icin gerekli.)
+acl_grant(){
+  local mod="$1" acl="/etc/webmin/webmin.acl"
+  [ -f "$acl" ] || return 0
+  [ -f "${acl}.vmin-kit.bak" ] || cp -a "$acl" "${acl}.vmin-kit.bak"
+  if awk -v m="$mod" '/^root:/ { for(i=2;i<=NF;i++) if($i==m) found=1 } END { exit !found }' "$acl"; then
+    return 0
+  fi
+  sed -i "s|^root:.*|& ${mod}|" "$acl"
+  log "  webmin.acl: root'a $mod erisimi verildi"
+}
+
+acl_revoke(){
+  local mod="$1" acl="/etc/webmin/webmin.acl"
+  [ -f "$acl" ] || return 0
+  sed -i "s|^\(root:.*\)\b${mod}\b|\1|" "$acl"
+}
+
+# Virtualmin plugin listesi: /etc/webmin/virtual-server/config icinde
+# bosluklarla ayrilmis 'plugins=' satiri. Modul kurulu olsa bile bu listede
+# degilse Virtualmin onu eklenti olarak gormez - install-module.pl bu adimi
+# yapmaz, cunku Virtualmin'e ozgudur.
+plugins_add(){
+  local mod="$1" cur cfg=/etc/webmin/virtual-server/config
+  [ -f "$cfg" ] || return 1
+  cur="$(awk -F= '/^plugins=/{sub(/^plugins=/,""); print; exit}' "$cfg" || true)"
+  case " $cur " in *" $mod "*) return 0 ;; esac
+  set_kv "$cfg" plugins "$(echo "$cur $mod" | xargs)"
+  log "  Virtualmin plugin listesine eklendi: $mod"
+}
+
+plugins_remove(){
+  local mod="$1" cur new cfg=/etc/webmin/virtual-server/config
+  [ -f "$cfg" ] || return 1
+  cur="$(awk -F= '/^plugins=/{sub(/^plugins=/,""); print; exit}' "$cfg" || true)"
+  new="$(echo "$cur" | tr ' ' '\n' | grep -vxF "$mod" | xargs || true)"
+  set_kv "$cfg" plugins "$new"
+}
+
+# Domain menusu baglantilari domain basina onbellekleniyor ve yalnizca domain
+# kaydedilince tazeleniyor. Modul degisikliginden sonra temizlemezsek yeni
+# etiketler/ikonlar panelde gorunmez.
+clear_links_cache(){
+  perl -e '
+    $ENV{WEBMIN_CONFIG} ||= "/etc/webmin"; $ENV{WEBMIN_VAR} ||= "/var/webmin";
+    push(@INC, "/usr/share/webmin"); $main::no_acl_check++;
+    chdir("/usr/share/webmin/virtual-server");
+    $0 = "/usr/share/webmin/virtual-server/clear.pl";
+    require "./virtual-server-lib.pl";
+    &clear_links_cache();
+  ' 2>/dev/null
+}
