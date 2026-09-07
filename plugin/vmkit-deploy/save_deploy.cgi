@@ -35,13 +35,16 @@ $in{'mode'} =~ /^(manual|auto)$/  || &error($text{'save_emode'});
 $in{'name'} =~ /^[A-Za-z0-9._\- ]*$/ || &error($text{'save_ename'});
 
 # Hedef klasor domainin home'unun disina cikamaz.
-my $terr = &validate_target($d, $in{'target'});
+# Formdaki alan BELGE KOKUNE gore; depoda ev dizinine gore sakliyoruz ki
+# deploy_target_dir ve eski kayitlar ayni bicimi kullansin.
+my $target = &target_full($d, $in{'target'});
+my $terr = &validate_target($d, $target);
 &error($terr) if ($terr);
 
 # Ayni hedefe iki deployment olmasin - hangisinin yazdigi belirsiz olurdu.
 foreach my $other (&list_deploys($d)) {
 	next if (!$in{'new'} && $other->{'id'} eq $dep->{'id'});
-	if ($other->{'target'} eq $in{'target'}) {
+	if ($other->{'target'} eq $target) {
 		&error(&text('save_edup', $other->{'name'} || $other->{'id'}));
 		}
 	}
@@ -57,7 +60,7 @@ my ($defbranch, $branches, $rerr) = &remote_branches($d, $in{'repo'});
 $dep->{'name'}   = $in{'name'};
 $dep->{'repo'}   = $in{'repo'};
 $dep->{'branch'} = $in{'branch'};
-$dep->{'target'} = $in{'target'};
+$dep->{'target'} = $target;
 $dep->{'mode'}   = $in{'mode'};
 &save_deploy($d, $dep);
 

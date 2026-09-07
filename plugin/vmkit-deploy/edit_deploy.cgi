@@ -86,10 +86,11 @@ if ($branches) {
 			      &text('edit_branch_default', $defbranch).
 			      "</font>" : ""));
 
-	# Hedef klasor domainin home'una gore. Ayni domainde iki repo iki ayri
-	# klasorde calisabilsin diye serbest.
+	# Sabit onek belge kokune kadar; kullanicidan yalnizca onun altindaki
+	# klasor isteniyor. Bos birakilirsa kokun kendisine deploy edilir.
 	print &ui_table_row($text{'edit_target'},
-		"<tt>$d->{'home'}/</tt> ".&ui_textbox("target", $dep->{'target'}, 30).
+		"<tt>".&deploy_root($d)."/</tt> ".
+		&ui_textbox("target", &target_sub($d, $dep->{'target'}), 25).
 		"<br><font size=-1>$text{'edit_target_help'}</font>");
 
 	print &ui_table_row($text{'edit_mode'},

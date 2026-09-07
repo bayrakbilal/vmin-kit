@@ -54,17 +54,33 @@ return ($best->{'version'}, $cmd);
 
 # list_projects(&domain) -> [ { dir, rel, ver, php } ]
 # Ana dizin altinda composer.json arar; vendor, node_modules ve .git atlanir.
+# web_root(&domain) -> taranacak en ust dizin (mutlak yol)
+#
+# Ev dizinine degil, WEB dizinine bakiyoruz: ev dizininde panelin kendi
+# klasorleri, e-posta, gunlukler ve alt sunucularin dizinleri duruyor.
+#
+# Belge kokunun kendisini degil ILK PARCASINI aliyoruz: Virtualmin'in
+# "Website documents sub-directory" ayari public_html/public gibi bir alt
+# klasoru gosterebiliyor (Laravel ve benzerleri boyle kuruluyor) ve o durumda
+# composer.json bir ust dizinde, public_html'in kendisinde olur.
+sub web_root
+{
+my ($d) = @_;
+my $home = $d->{'home'};
+return undef if (!$home);
+my $abs = &virtual_server::public_html_dir($d);
+my $rel = "public_html";
+if ($abs && $abs =~ /^\Q$home\E\/(.+)$/) {
+	$rel = $1;
+	$rel =~ s/\/.*$//;
+	}
+return "$home/$rel";
+}
+
 sub list_projects
 {
 my ($d) = @_;
-# Yalnizca belge kokunun (public_html) altina bakiyoruz. Ev dizininde panelin
-# kendi klasorleri, e-posta, gunlukler ve alt sunucularin dizinleri duruyor;
-# oraya bakmak hem karisiklik hem de baska bir sunucunun icerigini bu panelde
-# gostermek olurdu. Uygulama belge kokunu bir alt klasore tasiyorsa (Laravel
-# gibi) Virtualmin'in kendi ayari kullanilir: Website Options -> Website
-# documents sub-directory = public_html/public. Kok yine public_html kalir.
-my $home = &virtual_server::public_html_dir($d);
-$home =~ s/\/+$//;
+my $home = &web_root($d);
 return ( ) if (!$home || !-d $home);
 my $depth = $config{'scan_depth'} || 3;
 $depth =~ /^\d+$/ || ($depth = 3);

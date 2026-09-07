@@ -132,23 +132,57 @@ return undef;
 }
 
 # deploy_root(&domain) -> deploy edilebilecek en ust dizin (mutlak yol)
+#
+# Belge kokunun ILK parcasi. Virtualmin'in "Website documents sub-directory"
+# ayari public_html/public gibi bir alt klasoru gosterebiliyor (Laravel ve
+# benzerleri boyle kuruluyor); o durumda proje koku yine public_html'dir,
+# public yalnizca onun icindeki yayin klasoru. Dolayisiyla belge kokunun
+# kendisini degil, ilk parcasini aliyoruz.
 sub deploy_root
 {
 my ($d) = @_;
-my $root = &virtual_server::public_html_dir($d);
-return undef if (!$root);
-$root =~ s/\/+$//;
-return $root;
+my $home = $d->{'home'};
+return undef if (!$home);
+my $abs = &virtual_server::public_html_dir($d);
+my $rel = "public_html";
+if ($abs && $abs =~ /^\Q$home\E\/(.+)$/) {
+	$rel = $1;
+	$rel =~ s/\/.*$//;	# ilk parca
+	}
+return "$home/$rel";
 }
 
-# deploy_root_rel(&domain) -> ayni dizinin ev dizinine gore hali (mesajlar icin)
+# deploy_root_rel(&domain) -> ayni dizinin ev dizinine gore hali
 sub deploy_root_rel
 {
 my ($d) = @_;
 my $root = &deploy_root($d) || return "public_html";
 my $rel = $root;
 $rel =~ s/^\Q$d->{'home'}\E\/?//;
-return $rel eq '' ? "." : $rel;
+return $rel eq '' ? "public_html" : $rel;
+}
+
+# target_sub(&domain, hedef) -> hedefin koke gore kalan parcasi (form icin)
+# Depoda hedef EV DIZININE gore saklaniyor (public_html/app gibi); formda ise
+# yalnizca kok altindaki kismi gosteriyoruz.
+sub target_sub
+{
+my ($d, $target) = @_;
+my $rel = &deploy_root_rel($d);
+return "" if (!defined($target) || $target eq '' || $target eq $rel);
+my $sub = $target;
+return $sub if ($sub !~ s/^\Q$rel\E\///);
+return $sub;
+}
+
+# target_full(&domain, alt-yol) -> ev dizinine gore saklanacak hedef
+sub target_full
+{
+my ($d, $sub) = @_;
+my $rel = &deploy_root_rel($d);
+$sub = '' if (!defined($sub));
+$sub =~ s/^\/+//; $sub =~ s/\/+$//;
+return $sub eq '' ? $rel : "$rel/$sub";
 }
 
 # deploy_target_dir(&domain, &deploy) -> mutlak yol
