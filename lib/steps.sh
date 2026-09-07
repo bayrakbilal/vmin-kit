@@ -427,15 +427,21 @@ step_webmail(){
     fi
   fi
 
-  # Kimlikler. Virtualmin'in kurucusu mail_domain satirini
+  # Kimlik adresi. Virtualmin'in kurucusu mail_domain satirini
   # config.inc.php.sample icinde DEGISTIREREK yaziyor (scripts/roundcube.pl);
   # Roundcube 1.7'nin ornek dosyasinda o satir artik olmadigi icin deger bos
-  # kaliyor ve kimlik <kullanici>@localhost olarak cikiyordu.
+  # kaliyor ve DOMAIN SAHIBININ kimligi <kullanici>@localhost cikiyordu.
   #
   # Tek bir mail_domain yazmak cok domainli sunucuda yanlis olur. Bunun yerine
-  # Roundcube'un virtuser_file ayarini kullaniyoruz: kullanicinin gercek
-  # adreslerini ve ALIAS adreslerini Postfix'in virtual haritasindan okuyup
-  # kimlik olarak olusturuyor. Virtualmin o haritayi zaten yonetiyor.
+  # Roundcube'un virtuser_file eklentisini kullaniyoruz: giris adini Postfix'in
+  # virtual haritasinda arayip gercek adresi buluyor. AYAR TEK BASINA YETMEZ,
+  # eklenti $config['plugins'] listesinde de olmali.
+  #
+  # Kapsami: yalnizca domain sahibini duzeltir. Alias adresleri gelmez, cunku
+  # harita iki seviyeli (alias -> adres -> unix kullanici) ve eklenti tek
+  # seviye bakiyor; @ iceren giris adlari da haritada \@ olarak kacisli
+  # yazildigi icin eslesmiyor. Alias'lar Roundcube'da elle kimlik olarak
+  # eklenir.
   local dir cfg
   dir="$(virtualmin list-scripts --domain "$site" --multiline 2>/dev/null |
          awk -F': ' '/^[[:space:]]*Directory:/{print $2; exit}')"
@@ -449,10 +455,11 @@ step_webmail(){
   else
     {
       echo
-      echo "// vmin-kit: kimlikleri ve alias adreslerini Postfix virtual haritasindan al"
+      echo "// vmin-kit: giris adini Postfix virtual haritasindan gercek adrese cevir"
       echo "\$config['virtuser_file'] = '/etc/postfix/virtual';"
+      echo "\$config['plugins'][] = 'virtuser_file';"
     } >> "$cfg"
-    ok "Roundcube kimlikleri Postfix virtual haritasina baglandi."
+    ok "Roundcube virtuser_file eklentisi etkinlestirildi."
   fi
 }
 
