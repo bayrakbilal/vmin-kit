@@ -106,10 +106,11 @@ my ($d) = @_;
 return &virtual_server::can_edit_domain($d);
 }
 
-# validate_target(&domain, path)
-# Hedef klasor domainin home'unun ICINDE kalmali. Domain sahibi de bu formu
-# kullanacagi icin bu bir guvenlik siniri: ".." ya da mutlak yol kabul edilmez.
-# Hata varsa mesaj, sorun yoksa undef doner.
+# validate_target(&domain, yol)
+# Hedef domainin ev dizininin ALTINDA olmali ve alt sunucularin dizinlerine
+# girmemeli: alt sunucularin evi ana domainin evinin icinde duruyor
+# (/home/blnk/domains/webmail.blnk.tr gibi) ve her birinin kendi paneli var.
+# Ana domainin panelinden oraya dosya yazilmasini istemiyoruz.
 sub validate_target
 {
 my ($d, $path) = @_;
@@ -117,6 +118,14 @@ return $text{'err_target_empty'} if ($path eq '');
 return $text{'err_target_abs'}   if ($path =~ /^\//);
 return $text{'err_target_dots'}  if ($path =~ /(^|\/)\.\.(\/|$)/);
 return $text{'err_target_char'}  if ($path !~ /^[A-Za-z0-9._\-\/]+$/);
+
+my $full = "$d->{'home'}/$path";
+foreach my $sub (&virtual_server::get_domain_by("parent", $d->{'id'})) {
+	next if (!$sub->{'home'});
+	if ($full eq $sub->{'home'} || $full =~ /^\Q$sub->{'home'}\E\//) {
+		return &text('err_target_sub', $sub->{'dom'});
+		}
+	}
 return undef;
 }
 

@@ -110,3 +110,4 @@ commits_date=Tarih
 commits_author=Yazan
 commits_subject=Konu
 commits_note=Son deployment'ın çektiği yerel kopyadan okunuyor; uzaktaki yeni commit'ler bir sonraki deploy'dan sonra görünür.
+err_target_sub=Bu klasör $1 alt sunucusuna ait; onun kendi Git Deploy sayfası var

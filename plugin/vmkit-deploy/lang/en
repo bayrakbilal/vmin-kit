@@ -110,3 +110,4 @@ commits_date=Date
 commits_author=Author
 commits_subject=Subject
 commits_note=Read from the local copy fetched by the last deployment; newer commits on the remote appear after the next deploy.
+err_target_sub=That folder belongs to the sub-server $1, which has its own Git Deploy page
