@@ -169,6 +169,35 @@ step_domain_defaults(){
       ok "$name: kapatildi"
     fi
   done
+
+  # Rol adresleri: sablonda gelen listeden yalnizca gerekli olanlari birakiyoruz.
+  #   postmaster  RFC 5321 geregi kabul edilmeli
+  #   abuse       diger operatorlerin ve kara liste servislerinin bildirim adresi
+  # hostmaster ve webmaster yalnizca gelenek - Virtualmin kaynaginda hicbir yerde
+  # kullanilmiyorlar, SOA kaydi da hostmaster'a bakmiyor.
+  #
+  # Degeri SIFIRDAN YAZMIYORUZ, var olani suzuyoruz: hedef bicimini Virtualmin
+  # nasil kuruyorsa oyle kalsin. Yalnizca bundan sonra olusan domainleri etkiler.
+  local keep="${ROLE_ALIASES:-postmaster abuse}" cur_a new_a e nm
+  cur_a="$(sed -n "s/^newdom_aliases=//p" "$cfg" | head -1)"
+  if [ -z "$cur_a" ]; then
+    log "  Rol adresi sablonu bos; dokunulmadi."
+  else
+    new_a=""
+    while IFS= read -r e; do
+      [ -n "$e" ] || continue
+      nm="${e%%=*}"
+      case " $keep " in *" $nm "*) new_a="${new_a}${new_a:+$'\t'}${e}" ;; esac
+    done < <(printf '%s' "$cur_a" | tr '\t' '\n')
+    if [ -z "$new_a" ]; then
+      warn "  Rol adresi sablonunda '$keep' bulunamadi; dokunulmadi."
+    elif [ "$cur_a" = "$new_a" ]; then
+      ok "Rol adresleri: zaten yalnizca $keep"
+    else
+      set_kv "$cfg" newdom_aliases "$new_a"
+      ok "Rol adresleri: yalnizca $keep birakildi"
+    fi
+  fi
 }
 
 # Ana domaini VIRTUALMIN'IN KENDI VARSAYILANLARIYLA olusturur
