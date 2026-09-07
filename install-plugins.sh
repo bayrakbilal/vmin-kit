@@ -17,8 +17,9 @@
 # Not: moduller kopyalanir, symlink kurulmaz. Symlink kurulsaydi Webmin'in ve
 # bu script'in yazdiklari dogrudan git deposunu kirletirdi.
 #
-# Ayrica vmkit-cloudflare icin systemd birimlerini kurar: zone dosyasi
-# degistiginde senkronu tetikleyen .path birimi ve guvenlik agi .timer.
+# Modulun postinstall.pl / uninstall.pl kancalari da calistirilir. Webmin
+# modul kurarken bunlari kendisi cagirir; bu script o yolu kullanmadigi icin
+# elle cagiriyoruz. vmkit-cloudflare kendi systemd birimlerini orada kuruyor.
 #
 # YAPILACAK: bu script Webmin'in install-module.pl'inin isini taklit ediyor
 # (dosyalari kopyalayip webmin.acl ile plugins= satirini elle duzenliyor).
@@ -89,69 +90,23 @@ plugins_remove(){
   set_kv "$VS_CONFIG" plugins "$new"
 }
 
-# Cloudflare senkron zamanlayicisi. Eklenti kurulunca birlikte gelir; birimler
-# repodaki systemd/ klasorunden kopyalanir.
-install_sync_units(){
-  local src="$ROOT_DIR/systemd"
-  [ -d "$src" ] || return 0
-  # Modul kurulu degilse birimleri de kurma.
-  if [ ! -d "$WEBMIN_ROOT/vmkit-cloudflare" ]; then
-    [ -f /etc/systemd/system/vmkit-cloudflare-sync.timer ] || return 0
-  fi
-
-  local changed=0 f dst
-  for f in "$src"/vmkit-cloudflare-sync.service "$src"/vmkit-cloudflare-sync.timer; do
-    [ -f "$f" ] || continue
-    dst="/etc/systemd/system/$(basename "$f")"
-    cmp -s "$f" "$dst" || { cp "$f" "$dst"; changed=1; }
-  done
-
-  # .path birimi kurulum aninda uretilir: zone dizini dagitima gore degisiyor
-  # ve olmayan bir dizini izlemek birimi basarisiz kilar. Dogrudan hedefe
-  # yaziyoruz - depoya yazsaydik git calisma kopyasini kirletirdik.
-  local pathunit=/etc/systemd/system/vmkit-cloudflare-sync.path
-  local zdirs="" c tmp
-  for c in /var/lib/bind /var/cache/bind; do
-    [ -d "$c" ] && zdirs="$zdirs $c"
-  done
-  if [ -n "$zdirs" ]; then
-    tmp="$(mktemp)"
-    {
-      echo "[Unit]"
-      echo "Description=VminKit Cloudflare DNS sync on zone change"
-      echo ""
-      echo "[Path]"
-      for c in $zdirs; do echo "PathChanged=$c"; done
-      echo "Unit=vmkit-cloudflare-sync.service"
-      echo ""
-      echo "[Install]"
-      echo "WantedBy=multi-user.target"
-    } > "$tmp"
-    cmp -s "$tmp" "$pathunit" || { cp "$tmp" "$pathunit"; changed=1; }
-    rm -f "$tmp"
-  else
-    warn "  BIND zone dizini bulunamadi; anlik tetikleme kurulmadi"
-  fi
-
-  systemctl enable vmkit-cloudflare-sync.timer >/dev/null 2>&1 \
-    || warn "  vmkit-cloudflare-sync.timer etkinlestirilemedi"
-  [ -f "$pathunit" ] && { systemctl enable vmkit-cloudflare-sync.path >/dev/null 2>&1 \
-    || warn "  vmkit-cloudflare-sync.path etkinlestirilemedi"; }
-
-  if [ "$changed" = 1 ]; then
-    systemctl daemon-reload
-    # daemon-reload dosyalari yeniden okutur ama CALISAN birim eski
-    # yapilandirmasiyla devam eder; izlenen dizin degisseydi degisiklik hic
-    # uygulanmazdi. Bu yuzden dosya degistiyse birimleri yeniden baslatiyoruz.
-    systemctl restart vmkit-cloudflare-sync.timer >/dev/null 2>&1 || true
-    [ -f "$pathunit" ] && { systemctl restart vmkit-cloudflare-sync.path >/dev/null 2>&1 || true; }
-    log "  systemd birimleri guncellendi ve yeniden baslatildi"
-  else
-    # Ilk kurulumda henuz calismiyor olabilirler.
-    systemctl start vmkit-cloudflare-sync.timer >/dev/null 2>&1 || true
-    [ -f "$pathunit" ] && { systemctl start vmkit-cloudflare-sync.path >/dev/null 2>&1 || true; }
-  fi
-  return 0
+# Webmin'in modul kurulum kancalari. Normalde install_module.pl bunlari
+# cagirir; bu script dosyalari elle kopyaladigi icin ayni isi biz yapiyoruz.
+# Modul boylece nasil kurulursa kurulsun (buradan ya da .wbm.gz ile) ayni
+# kurulum sonrasi adimlari calistirir.
+run_module_hook(){
+  local mod="$1" file="$2" func="$3"
+  [ -f "$WEBMIN_ROOT/$mod/$file" ] || return 0
+  perl -e '
+    my ($root, $mod, $file, $func) = @ARGV;
+    $ENV{WEBMIN_CONFIG} ||= "/etc/webmin"; $ENV{WEBMIN_VAR} ||= "/var/webmin";
+    push(@INC, $root, "$root/$mod"); $main::no_acl_check++;
+    chdir("$root/$mod");
+    # init_config modul adini $0 icindeki dizinden okuyor.
+    $0 = "$root/$mod/$file";
+    require "./$file";
+    &{\&{"main::$func"}}();
+  ' "$WEBMIN_ROOT" "$mod" "$file" "$func" || warn "  $mod: $file calistirilamadi"
 }
 
 for mod in "${MODULES[@]}"; do
@@ -160,15 +115,11 @@ for mod in "${MODULES[@]}"; do
 
   if [ "$MODE" = remove ]; then
     log "Kaldiriliyor: $mod"
+    # Once modulun kendi temizligi (systemd birimleri gibi), dosyalar dururken.
+    run_module_hook "$mod" uninstall.pl module_uninstall
     rm -rf "$dst"
     plugins_remove "$mod"
     acl_revoke "$mod"
-    if [ "$mod" = vmkit-cloudflare ]; then
-      systemctl disable --now vmkit-cloudflare-sync.path >/dev/null 2>&1 || true
-      systemctl disable --now vmkit-cloudflare-sync.timer >/dev/null 2>&1 || true
-      rm -f /etc/systemd/system/vmkit-cloudflare-sync.path             /etc/systemd/system/vmkit-cloudflare-sync.timer             /etc/systemd/system/vmkit-cloudflare-sync.service
-      systemctl daemon-reload
-    fi
     NEED_RESTART=1
     continue
   fi
@@ -198,6 +149,10 @@ for mod in "${MODULES[@]}"; do
 
   acl_grant "$mod"
   plugins_add "$mod"
+
+  # Modulun kendi kurulum sonrasi isi: vmkit-cloudflare burada systemd
+  # birimlerini kurup baslatiyor. Zaten kuruluysa hicbir sey yapmaz.
+  run_module_hook "$mod" postinstall.pl module_install
 done
 
 # Domain menusu baglantilari domain basina onbellekleniyor ve yalnizca domain
@@ -218,8 +173,6 @@ if clear_links_cache; then
 else
   warn "Menu onbellegi temizlenemedi; degisiklik gorunmezse domaini kaydedin."
 fi
-
-[ "$MODE" = remove ] || install_sync_units
 
 if [ "$NEED_RESTART" = 1 ]; then
   # module.info onbellegi: yalnizca /usr/share/webmin dizininin mtime'ina

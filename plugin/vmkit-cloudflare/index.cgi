@@ -23,6 +23,67 @@ if (&indexof($module_name, @virtual_server::plugins) < 0) {
 	}
 use warnings "once";
 
+# ---- otomatik senkron servisi --------------------------------------------
+# Modul kendi izleme servisinden sorumlu: sayfa acildiginda birim eksikse
+# kurulur, durmussa baslatilir. Durum da her zaman gorunur - senkron sessizce
+# durmus olsun istemiyoruz.
+if (&virtual_server::master_admin()) {
+	print &ui_alert_box(&html_escape($in{'msg'}), 'success') if ($in{'msg'});
+	my $st = &sync_units_status();
+	if ($st->{'systemd'} && !&sync_units_healthy($st)) {
+		&ensure_sync_units();
+		$st = &sync_units_status();
+		}
+	my $head;
+	if (!$st->{'systemd'}) {
+		$head = &ui_text_color($text{'svc_nosystemd'}, 'warn');
+		}
+	elsif ($st->{'ok'}) {
+		$head = &ui_text_color("&#10004; ".$text{'svc_ok'}, 'success');
+		}
+	elsif ($st->{'nowatch'} && $st->{'timer'}->{'active'}) {
+		# Zamanlayici ayakta ama anlik tetikleyici yok: senkron olur,
+		# yalnizca 15 dakikaya kadar gecikir.
+		$head = &ui_text_color("&#9888; ".$text{'svc_partial'}, 'warn');
+		}
+	else {
+		$head = &ui_text_color("&#10008; ".$text{'svc_bad'}, 'danger');
+		}
+	print "<p>$head";
+	if ($st->{'systemd'}) {
+		print " &nbsp; <font size=-1>".$text{'svc_lastrun'}.": ".
+		      &html_escape($st->{'lastrun'} || $text{'svc_never'});
+		print " (".&html_escape($st->{'lastresult'}).")"
+			if ($st->{'lastresult'} && $st->{'lastresult'} ne 'success');
+		print "</font>";
+		}
+	print "</p>\n";
+
+	# Ayrinti tablosu ve onarim dugmesi yalnizca bir sorun varken. Her sey
+	# yerindeyken tek yesil satir yeterli.
+	if ($st->{'systemd'} && !$st->{'ok'}) {
+		my @tbl;
+		foreach my $k ("path", "timer", "service") {
+			my $u = $st->{$k};
+			my $state = !$u->{'exists'} ? &ui_text_color($text{'svc_missing'}, 'danger') :
+				    $k eq 'service' ? $text{'svc_oneshot'} :
+				    $u->{'active'} ? &ui_text_color($text{'svc_running'}, 'success') :
+						     &ui_text_color($text{'svc_stopped'}, 'danger');
+			push(@tbl, [ "<tt>".&html_escape($u->{'name'})."</tt>",
+				     $text{'svc_'.$k},
+				     $state ]);
+			}
+		print &ui_columns_table(
+			[ $text{'svc_col_unit'}, $text{'svc_col_role'},
+			  $text{'svc_col_state'} ], 100, \@tbl);
+		print "<p>".$text{'svc_nowatch'}."</p>\n" if ($st->{'nowatch'});
+		print &ui_form_start("units.cgi", "post"),
+		      ($in{'dom'} ? &ui_hidden("dom", $in{'dom'}) : ""),
+		      &ui_submit($text{'svc_repair'}),
+		      &ui_form_end();
+		}
+	}
+
 # ---- domain secilmedi: erisebildiklerimizi listele ----
 if (!$d) {
 	my @doms = grep { $_->{$module_name} && &can_edit_domain($_) }

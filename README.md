@@ -162,9 +162,15 @@ durumlarda dosyaları kopyalar ve sayfayı yenilemeniz yeterlidir.
 Yalnızca `vmkit` etiketli kayıtlara dokunulur — elle eklenenler, tüneller ve
 Email Routing kayıtları hiç etkilenmez. Karşılaştırma sayfası ne olacağını
 önce gösterir; kapsam dışı kayıtlar için içe aktar / sahiplen / sil düğmeleri
-vardır. Senkron elle çalıştırılabilir; ayrıca `vmkit-cloudflare-sync.timer`
-zone dosyası değiştiyse otomatik çalışır (değişmediyse hiçbir API çağrısı
-yapmaz).
+vardır.
+
+Senkron elle çalıştırılabilir, ama asıl çalışma biçimi otomatiktir: modül
+kurulduğunda kendi systemd birimlerini kendisi oluşturup başlatır
+(`postinstall.pl`). `vmkit-cloudflare-sync.path` zone dosyası değiştiği anda
+tetikler — DNS-01 wildcard doğrulaması için gereken hız buradan gelir;
+`.timer` yalnızca kaçan bir olayı yakalamak için 15 dakikada bir çalışır.
+Zone değişmediyse hiçbir API çağrısı yapılmaz. Modülün kendi sayfası servisin
+durumunu gösterir ve durmuşsa açılışta yeniden başlatır.
 
 **Composer:** domainin ana dizini altında `composer.json` içeren klasörleri
 kendiliğinden bulur ve her birini **kendi PHP sürümüyle** çalıştırır (Virtualmin
@@ -174,9 +180,6 @@ klasör başına PHP sürümü tutabiliyor). İşlemler: install, update, dump-a
 Repo adresi girilip *Kontrol et* denince `git ls-remote` ile sorgulanır; dallar
 listeden seçilir, ulaşılamayan bir repo hiç kaydedilmez. Bir domainde birden çok
 deployment olabilir; her biri kendi hedef klasörüne çalışır.
-
-> Şu an **iskelet**: tanımlar kaydediliyor, repo doğrulaması çalışıyor; asıl
-> deploy işlemi ve Cloudflare senkronu henüz yok.
 
 ## Yol haritası
 

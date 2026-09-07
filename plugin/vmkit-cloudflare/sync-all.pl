@@ -20,6 +20,18 @@ use warnings 'once';
 if ($0 =~ /^(.*)\/[^\/]+$/) { chdir($1); }
 require './vmkit-cloudflare-lib.pl';
 
+# Servisin kendini izlemesi: bu tur zamanlayicidan geldiyse ve anlik
+# tetikleyici (.path) durmussa geri kaldiriyoruz. Panel acilmasa bile senkron
+# kendi kendine ayaga kalksin diye. Her sey yerindeyse hicbir sey yapmaz.
+{
+my $st = &sync_units_status();
+if ($st->{'systemd'} && !&sync_units_healthy($st)) {
+	my ($done, $err) = &ensure_sync_units();
+	print "birimler: ", ($err ? "HATA: $err" : join(", ", @$done)), "\n"
+		if ($err || @$done);
+	}
+}
+
 my ($force, $list);
 foreach my $a (@ARGV) {
 	if    ($a eq '--force') { $force = 1; }

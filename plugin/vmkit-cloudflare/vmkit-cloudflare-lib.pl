@@ -21,7 +21,8 @@ use warnings;
 BEGIN { push(@INC, ".."); };
 use WebminCore;
 
-our (%config, %text, $module_name, $module_config_directory);
+our (%config, %text, $module_name, $module_config_directory,
+     $module_root_directory);
 
 &init_config();
 &foreign_require("virtual-server", "virtual-server-lib.pl");
@@ -631,6 +632,265 @@ sub sync_domains
 {
 return grep { $_->{'vmkit-cloudflare'} && &get_cf($_)->{'token'} }
 	    &virtual_server::list_domains();
+}
+
+
+# ---- otomatik senkron servisi -------------------------------------------
+# Birimleri BU MODUL uretir ve yonetir. Eskiden install-plugins.sh
+# olusturuyordu; modul .wbm.gz olarak standart yoldan kurulunca o script hic
+# calismayacagi icin servis de hic kurulmuyordu. Artik tek kaynak burasi ve
+# uc yerden cagriliyor:
+#   postinstall.pl   modul kurulunca (Webmin'in standart kancasi)
+#   feature_setup    ozellik bir domainde acilinca
+#   index.cgi        sayfa her acildiginda - durmussa geri kaldirir
+#
+# Birimler:
+#   .path     zone dosyasi degistigi anda senkronu tetikler (asil tetikleyici)
+#   .timer    15 dakikada bir - kacan olay ya da basarisiz tur icin guvenlik agi
+#   .service  ikisinin de calistirdigi tek seferlik is
+
+sub sync_service
+{
+return "vmkit-cloudflare-sync";
+}
+
+sub sync_unit_dir
+{
+return "/etc/systemd/system";
+}
+
+# systemd calisiyor mu? Calismiyorsa hicbir sey kurmaz, panelde de bunu
+# soyleriz - sessizce basarisiz olmaktansa.
+sub have_systemd
+{
+return &has_command("systemctl") && -d "/run/systemd/system" ? 1 : 0;
+}
+
+# systemctl(args...) -> (basarili mi, cikti)
+sub systemctl
+{
+my @args = @_;
+my $cmd = "systemctl ".join(" ", map { quotemeta($_) } @args)." 2>&1 </dev/null";
+my $out = &backquote_command($cmd);
+return ($? ? 0 : 1, $out);
+}
+
+# Izlenecek zone dizini. Tahmin etmiyoruz: olmayan bir dizini izleyen .path
+# birimi basarisiz oluyor. Once BIND'in kendi yapilandirmasina bakiyoruz,
+# bulunamazsa yaygin iki konuma.
+sub zone_watch_dirs
+{
+my @dirs;
+eval {
+	local $main::error_must_die = 1;
+	&foreign_require("bind8");
+	my %bconfig = &foreign_config("bind8");
+	my $base = $bconfig{'master_dir'} ||
+		   &bind8::base_directory(&bind8::get_config());
+	push(@dirs, &bind8::make_chroot($base)) if ($base);
+	};
+push(@dirs, "/var/lib/bind", "/var/cache/bind");
+my %seen;
+return grep { -d $_ && !$seen{$_}++ } @dirs;
+}
+
+# sync_unit_files() -> ( dosya adi => olmasi gereken icerik )
+# Kurulum da denetim de ayni metni uretir; "degismis mi" karsilastirmasi bu
+# yuzden guvenilir. Zone dizini bulunamazsa .path uretilmez.
+sub sync_unit_files
+{
+my $svc = &sync_service();
+my $exec = "$module_root_directory/sync-all.pl";
+my %f;
+
+$f{$svc.".service"} =
+"[Unit]\n".
+"Description=VminKit Cloudflare DNS sync\n".
+"After=network-online.target bind9.service\n".
+"Wants=network-online.target\n".
+"\n".
+"[Service]\n".
+"Type=oneshot\n".
+"# Zone degismediyse script hicbir API cagrisi yapmadan cikar.\n".
+"ExecStart=$exec\n".
+"# Bekleme YOK: DNS-01 dogrulamasinda challenge kaydinin Cloudflare tarafina\n".
+"# saniyeler icinde ulasmasi gerekiyor.\n".
+"Nice=10\n";
+
+$f{$svc.".timer"} =
+"[Unit]\n".
+"Description=VminKit Cloudflare DNS sync (safety net)\n".
+"\n".
+"[Timer]\n".
+"# Asil tetikleyici .path birimi; zone dosyasi degistigi anda calisiyor.\n".
+"# Bu zamanlayici yalnizca kacan bir olayi ya da basarisiz bir turu yakalar.\n".
+"OnBootSec=3min\n".
+"OnUnitActiveSec=15min\n".
+"AccuracySec=1min\n".
+"Unit=$svc.service\n".
+"\n".
+"[Install]\n".
+"WantedBy=timers.target\n";
+
+my @wd = &zone_watch_dirs();
+if (@wd) {
+	$f{$svc.".path"} =
+	"[Unit]\n".
+	"Description=VminKit Cloudflare DNS sync on zone change\n".
+	"\n".
+	"[Path]\n".
+	join("", map { "PathChanged=$_\n" } @wd).
+	"Unit=$svc.service\n".
+	"\n".
+	"[Install]\n".
+	"WantedBy=multi-user.target\n";
+	}
+return %f;
+}
+
+# sync_units_status() -> durum hash'i
+#   systemd  systemd var mi
+#   nowatch  izlenecek zone dizini yok - anlik tetikleme kurulamaz
+#   path,timer,service  her biri { exists, current, enabled, active }
+#   lastrun, lastresult  servisin son turu
+#   ok       otomatik senkron gercekten ayakta mi
+sub sync_units_status
+{
+my $svc = &sync_service();
+my %st = ( 'systemd' => &have_systemd() );
+return \%st if (!$st{'systemd'});
+
+my %want = &sync_unit_files();
+$st{'nowatch'} = $want{$svc.".path"} ? 0 : 1;
+
+foreach my $k ("path", "timer", "service") {
+	my $u = "$svc.$k";
+	my $file = &sync_unit_dir()."/$u";
+	my $cur = -r $file ? &read_file_contents($file) : undef;
+	my %u = ( 'name'    => $u,
+		  'exists'  => defined($cur) ? 1 : 0,
+		  'current' => (defined($cur) && defined($want{$u}) &&
+				$cur eq $want{$u}) ? 1 : 0 );
+	if ($u{'exists'}) {
+		my ($e) = &systemctl("is-enabled", $u);
+		my ($a) = &systemctl("is-active", $u);
+		$u{'enabled'} = $e;
+		$u{'active'} = $a;
+		}
+	$st{$k} = \%u;
+	}
+
+# .service tek seferlik (Type=oneshot): bosta iken 'inactive' gorunmesi
+# normaldir, saglik gostergesi son turun sonucudur.
+my (undef, $out) = &systemctl("show", "$svc.service",
+			      "-p", "Result", "-p", "ExecMainExitTimestamp");
+foreach my $l (split(/\r?\n/, $out)) {
+	$st{'lastresult'} = $1 if ($l =~ /^Result=(.*)/);
+	$st{'lastrun'} = $1 if ($l =~ /^ExecMainExitTimestamp=(.+)/);
+	}
+
+# Anlik tetikleme asil is: zamanlayici tek basina kalirsa DNS-01 wildcard
+# dogrulamasi icin cok yavas olur. Bu yuzden 'ok' ikisini birden istiyor;
+# yalnizca zamanlayici ayaktaysa panel bunu eksik calisma olarak gosterir.
+$st{'ok'} = ($st{'timer'}->{'active'} && !$st{'nowatch'} &&
+	     $st{'path'}->{'active'}) ? 1 : 0;
+return \%st;
+}
+
+
+# sync_units_healthy(&durum) -> dosyalar guncel ve birimler ayakta mi
+# Sayfa acilisinda once buna bakiyoruz; her sey yerindeyse ensure cagrilmiyor,
+# boylece saglikli durumda gereksiz systemctl cagrisi yapilmiyor.
+sub sync_units_healthy
+{
+my ($st) = @_;
+return 0 if (!$st->{'systemd'});
+return 0 if (!$st->{'timer'}->{'current'} || !$st->{'timer'}->{'active'});
+return 0 if (!$st->{'service'}->{'current'});
+# Izlenecek zone dizini yoksa kurulacak .path birimi de yok - bu durumda
+# tekrar tekrar kurmaya calismanin anlami olmaz, panel zaten uyariyor.
+return 1 if ($st->{'nowatch'});
+return 0 if (!$st->{'path'}->{'current'} || !$st->{'path'}->{'active'});
+return 1;
+}
+# ensure_sync_units([force]) -> ( yapilanlarin listesi, hata )
+# Eksik ya da eskimis dosyayi yazar, etkin degilse etkinlestirir, durmussa
+# baslatir. Idempotent: her sey yerindeyse hicbir sey yapmaz ve bos liste
+# doner - bu yuzden sayfa her acildiginda cagrilabilir.
+sub ensure_sync_units
+{
+my ($force) = @_;
+return ([ ], $text{'svc_enosystemd'}) if (!&have_systemd());
+my $svc = &sync_service();
+my %want = &sync_unit_files();
+my @done;
+my $reload = 0;
+
+# Zone dizini kaybolduysa eski .path birimini birakma: olmayan bir dizini
+# izleyen birim her aciliste basarisiz olur.
+if (!$want{$svc.".path"} && -e &sync_unit_dir()."/$svc.path") {
+	&systemctl("disable", "--now", "$svc.path");
+	unlink(&sync_unit_dir()."/$svc.path");
+	push(@done, "removed $svc.path");
+	$reload = 1;
+	}
+
+my @changed;
+foreach my $u (sort keys %want) {
+	my $file = &sync_unit_dir()."/$u";
+	my $cur = -r $file ? &read_file_contents($file) : "";
+	next if (!$force && $cur eq $want{$u});
+	eval {
+		local $main::error_must_die = 1;
+		&write_file_contents($file, $want{$u});
+		};
+	return (\@done, &text('svc_ewrite', $file, "$@")) if ($@);
+	push(@changed, $u);
+	push(@done, ($cur ? "updated " : "installed ").$u);
+	$reload = 1;
+	}
+
+&systemctl("daemon-reload") if ($reload);
+
+foreach my $u (sort keys %want) {
+	next if ($u =~ /\.service$/);	# tek seferlik is: enable/start edilmez
+	my ($en) = &systemctl("is-enabled", $u);
+	if (!$en) {
+		&systemctl("enable", $u);
+		push(@done, "enabled $u");
+		}
+	# daemon-reload dosyayi yeniden okutur ama CALISAN birim eski
+	# yapilandirmasiyla devam eder - izlenen dizin degisseydi degisiklik
+	# hic uygulanmazdi. Bu yuzden dosya degistiyse yeniden baslatiyoruz.
+	if (&indexof($u, @changed) >= 0) {
+		&systemctl("restart", $u);
+		push(@done, "restarted $u");
+		next;
+		}
+	my ($ac) = &systemctl("is-active", $u);
+	if (!$ac) {
+		my ($ok, $out) = &systemctl("start", $u);
+		push(@done, $ok ? "started $u" : "could not start $u: $out");
+		}
+	}
+return (\@done, undef);
+}
+
+# remove_sync_units() - modul kaldirilirken birimleri de goturur.
+sub remove_sync_units
+{
+return 0 if (!&have_systemd());
+my $svc = &sync_service();
+my $n = 0;
+foreach my $u ("$svc.path", "$svc.timer", "$svc.service") {
+	my $file = &sync_unit_dir()."/$u";
+	next if (!-e $file);
+	&systemctl("disable", "--now", $u);
+	unlink($file);
+	$n++;
+	}
+&systemctl("daemon-reload") if ($n);
+return $n;
 }
 
 1;
