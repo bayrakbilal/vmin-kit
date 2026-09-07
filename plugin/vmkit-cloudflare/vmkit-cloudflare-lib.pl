@@ -224,6 +224,14 @@ if ($type eq 'TXT') {
 	$v =~ s/^"//; $v =~ s/"$//;
 	return $v;
 	}
+if ($type eq 'CAA') {
+	# Webmin'in bind8 ayristirmasi CAA degerinin tirnaklarini soyuyor,
+	# Cloudflare ise tirnakli donduruyor. Esitlemezsek kayit her senkronda
+	# "farkli" gorunup yeniden yazilirdi.
+	$v =~ s/"//g;
+	$v =~ s/\s+/ /g;
+	return lc($v);
+	}
 $v =~ s/\.$//;
 return lc($v);
 }
@@ -234,7 +242,18 @@ sub cf_value
 {
 my ($r) = @_;
 my $t = uc($r->{'type'});
+my $dt = $r->{'data'};
 return &norm_value($t, $r->{'priority'}." ".$r->{'content'}) if ($t eq 'MX');
+# SRV ve CAA'da parcalar 'data' icinde; 'content' tek basina eksik ya da
+# farkli bicimde geliyor. Varsa data'dan kuruyoruz.
+if ($t eq 'SRV' && ref($dt) && defined($dt->{'target'})) {
+	return &norm_value($t, join(" ", $dt->{'priority'}, $dt->{'weight'},
+					 $dt->{'port'}, $dt->{'target'}));
+	}
+if ($t eq 'CAA' && ref($dt) && defined($dt->{'value'})) {
+	return &norm_value($t, join(" ", $dt->{'flags'}, $dt->{'tag'},
+					 $dt->{'value'}));
+	}
 return &norm_value($t, $r->{'content'});
 }
 
