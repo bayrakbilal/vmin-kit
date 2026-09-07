@@ -121,12 +121,17 @@ foreach my $k (sort keys %allk) {
 			}
 		}
 
-	if ($out) { push(@outside, [ $n, $t, $lcol, $ccol, $state, $note, $acts ]); }
-	else      { push(@insync,  [ $n, $t, $lcol, $ccol, $state, $note ]); }
+	# Not, ayri bir sutun yerine durumun basindaki uyari simgesinde:
+	# ilk tabloda not hic olmuyordu, ikincide uzun metin satiri sisiriyordu.
+	my $scell = $note
+		? "<span title=\"".&quote_escape($note)."\">&#9888;</span> ".$state
+		: $state;
+	if ($out) { push(@outside, [ $n, $t, $lcol, $ccol, $scell, $acts ]); }
+	else      { push(@insync,  [ $n, $t, $lcol, $ccol, $scell ]); }
 	}
 
 my @heads = ( $text{'cmp_name'}, $text{'cmp_type'}, $text{'cmp_local'},
-	      $text{'cmp_cf'}, $text{'cmp_state'}, $text{'cmp_note'} );
+	      $text{'cmp_cf'}, $text{'cmp_state'} );
 
 print &ui_subheading($text{'cmp_tbl_sync'});
 if (@insync) {

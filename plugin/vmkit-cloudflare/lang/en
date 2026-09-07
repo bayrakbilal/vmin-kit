@@ -52,7 +52,6 @@ cmp_type=Type
 cmp_local=Local
 cmp_cf=Cloudflare
 cmp_state=State
-cmp_note=Note
 cmp_readonly=This page only reads. Nothing has been changed on either side.
 err_notoken=No API token has been saved for this domain
 err_badjson=Cloudflare returned an unreadable answer
