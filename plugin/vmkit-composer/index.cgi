@@ -52,7 +52,7 @@ if (@projects) {
 	foreach my $p (@projects) {
 		my $u = "run.cgi?dom=$d->{'id'}&dir=".&urlize($p->{'dir'});
 		push(@table, [
-			"<tt>".&html_escape($p->{'rel'})."</tt>",
+			"<tt>".&html_escape($p->{'dir'})."</tt>",
 			$p->{'ver'} ? "PHP ".$p->{'ver'} : $text{'php_default'},
 			&ui_links_row([
 				&ui_link("packages.cgi?dom=$d->{'id'}&dir=".

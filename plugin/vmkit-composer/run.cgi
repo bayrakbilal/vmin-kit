@@ -18,11 +18,11 @@ my $p = &valid_project($d, $in{'dir'});
 $p || &error($text{'run_edir'});
 
 &ui_print_header(&virtual_server::domain_in($d),
-		 &text('run_title', $in{'action'}, $p->{'rel'}),
+		 &text('run_title', $in{'action'}, $p->{'dir'}),
 		 "", undef, 0, 0);
 
 my ($ok, $out) = &run_composer($d, $p, $in{'action'});
-&webmin_log("composer", "composer", $p->{'rel'},
+&webmin_log("composer", "composer", $p->{'dir'},
 	    { 'action' => $in{'action'}, 'status' => $ok ? "ok" : "failed" });
 
 print "<p><b>", $ok ? $text{'run_ok'} : $text{'run_failed'}, "</b></p>\n";

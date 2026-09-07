@@ -19,7 +19,7 @@ my $p = &valid_project($d, $in{'dir'});
 $p || &error($text{'run_edir'});
 
 &ui_print_header(&virtual_server::domain_in($d),
-		 &text('pkg_title', $p->{'rel'}), "", undef, 0, 0);
+		 &text('pkg_title', $p->{'dir'}), "", undef, 0, 0);
 
 my ($pkgs, $err) = &composer_packages($d, $p);
 if ($err) {

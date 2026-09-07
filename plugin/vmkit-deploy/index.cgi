@@ -74,7 +74,7 @@ if (@deps) {
 			$dep->{'name'} || $dep->{'id'},
 			$dep->{'repo'},
 			$dep->{'branch'},
-			$dep->{'target'},
+			"<tt>".&html_escape(&deploy_target_dir($d, $dep))."</tt>",
 			$dep->{'mode'} eq 'auto' ? $text{'mode_auto'}
 						 : $text{'mode_manual'},
 			$last,
