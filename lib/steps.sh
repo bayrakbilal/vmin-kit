@@ -575,6 +575,31 @@ add_trusted_referer(){
   ok "  Guvenilen adres eklendi: $site"
 }
 
+
+# Vekilin arkasinda arayuzun DIS adresini bilmesi gerekiyor: kendi portu 10000
+# ama disaridan gelen istek 443'ten geliyor. miniserv izin verilen websocket
+# origin listesini bu bilgiden kuruyor (miniserv-lib.pl,
+# get_websocket_allowed_origins - "canonical externally-visible URL" satiri).
+# Bildirilmezse tarayici https://webmin.<domain> origin'i gonderiyor, miniserv
+# https://webmin.<domain>:10000 bekliyor ve baglantiyi
+# "403 Invalid Websockets origin" ile reddediyor. Authentic tema panosu,
+# dosya yoneticisi ve terminali websocket kullandigi icin bu sart.
+#
+# Konak adi ayrica yazilmiyor: redirect_host bos oldugunda miniserv gelen Host
+# basligini kullaniyor, ProxyPreserveHost sayesinde o zaten dogru.
+set_panel_external_port(){
+  local name="$1" conf="$2" svc="$3"
+  [ -f "$conf" ] || return 0
+  if [ "$(sed -n 's/^redirect_port=//p' "$conf" | head -1)" = "443" ]; then
+    ok "  $name dis portu zaten bildirilmis (443)."
+    return 0
+  fi
+  [ -f "${conf}.vmin-kit.bak" ] || cp -a "$conf" "${conf}.vmin-kit.bak"
+  set_kv "$conf" redirect_port "443"
+  systemctl restart "$svc" >/dev/null 2>&1 || warn "  $svc yeniden baslatilamadi."
+  ok "  $name dis portu 443 olarak bildirildi (websocket origin icin)."
+}
+
 # Yonetim arayuzleri ana domain altinda birer alt alan olarak yayinlanir:
 #   webmin.<ana-domain>  -> 127.0.0.1:10000
 #   usermin.<ana-domain> -> 127.0.0.1:20000
@@ -587,6 +612,7 @@ step_panel_sites(){
   ensure_proxy_site "${WEBMIN_PREFIX:-webmin}" "https://127.0.0.1:${wport}/" \
                     "Webmin (vmin-kit)" phost
   add_trusted_referer /etc/webmin/config "${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}"
+  set_panel_external_port "Webmin" /etc/webmin/miniserv.conf webmin
 
   if [ -f /etc/usermin/miniserv.conf ]; then
     uport="$(awk -F= '/^port=/{print $2; exit}' /etc/usermin/miniserv.conf 2>/dev/null)"
@@ -594,6 +620,7 @@ step_panel_sites(){
     ensure_proxy_site "${USERMIN_PREFIX:-usermin}" "https://127.0.0.1:${uport}/" \
                       "Usermin (vmin-kit)" phost
     add_trusted_referer /etc/usermin/config "${USERMIN_PREFIX:-usermin}.${MAIN_DOMAIN}"
+    set_panel_external_port "Usermin" /etc/usermin/miniserv.conf usermin
   else
     log "Usermin kurulu degil; usermin.<domain> atlaniyor."
   fi

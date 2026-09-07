@@ -114,6 +114,13 @@ Webmin ve Usermin sitelerinde iki ek ayar gerekiyor (Portainer'da gerekmiyor):
   eklenir (panelde Webmin Configuration → Trusted Referrers). Referer kontrolü
   adı **ve portu** karşılaştırıyor; referer 443'ten, panel kendi portundan
   (10000) geldiği için eşleşmiyor ve istek "Security Warning" ile reddediliyor.
+- **`redirect_port=443`** (`miniserv.conf`) — dışarıdan görünen port. miniserv
+  izin verilen websocket origin listesini buradan kuruyor
+  (`get_websocket_allowed_origins`, "canonical externally-visible URL");
+  bildirilmezse tarayıcının gönderdiği `https://webmin.<domain>` origin'i
+  `…:10000` beklentisiyle eşleşmiyor ve bağlantı **403 Invalid Websockets
+  origin** ile reddediliyor. Authentic tema panosu, dosya yöneticisi ve
+  terminali websocket kullanıyor.
 
 **Kilitleme adımı en sonda ve koşulludur.** `bind=127.0.0.1` yazıldıktan sonra
 panele tek erişim vekil üzerindedir; bu yüzden önce vekilin gerçekten cevap
