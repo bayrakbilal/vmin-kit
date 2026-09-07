@@ -120,7 +120,16 @@ acl_revoke(){
 # Virtualmin plugin listesi: /etc/webmin/virtual-server/config icinde
 # bosluklarla ayrilmis 'plugins=' satiri. Modul kurulu olsa bile bu listede
 # degilse Virtualmin onu eklenti olarak gormez - install-module.pl bu adimi
-# yapmaz, cunku Virtualmin'e ozgudur.
+# yapmaz, cunku Virtualmin'e ozgudur. Panelde "Features and Plugins" sayfasinda
+# kutuyu tiklemekle ayni sey (save_newfeatures.cgi de bu satiri yaziyor).
+#
+# BILEREK yazmadigimiz ikinci bir liste var: 'plugins_inactive'. Bir eklenti
+# orada DEGILSE panelden yeni sanal sunucu olustururken kutusu tikli geliyor
+# (list_available_features: 'default' => !$inactive{$_}). Yeni domainlerde
+# eklentilerin acik gelmesini istiyoruz, o yuzden o listeye dokunmuyoruz.
+# Kurulumun kendi olusturdugu domainler bundan etkilenmiyor: create-domain
+# eklenti ozelliklerini yalnizca acikca --<eklenti> verilirse ya da
+# --default-features kullanilirsa aciyor, biz ikisini de kullanmiyoruz.
 plugins_add(){
   local mod="$1" cur cfg=/etc/webmin/virtual-server/config
   [ -f "$cfg" ] || return 1
