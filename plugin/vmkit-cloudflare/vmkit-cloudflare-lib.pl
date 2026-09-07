@@ -239,4 +239,130 @@ return "<span title=\"".&quote_escape($v)."\">".
        &html_escape(substr($v, 0, $max))."...</span>";
 }
 
+# cf_api_req(&domain, metot, yol, [govde-hashref]) -> (json, hata)
+# GET disindaki metotlar icin de calisir. Token yine yalnizca baslikta:
+# komut satirina ya da gecici dosyaya hic yazilmiyor.
+sub cf_api_req
+{
+my ($d, $method, $path, $data) = @_;
+my $cf = &get_cf($d);
+return (undef, $text{'err_notoken'}) if (!$cf->{'token'});
+
+my $host = "api.cloudflare.com";
+my $body = defined($data) ? &convert_to_json($data) : undef;
+my @headers = ( [ "Host", $host ],
+		[ "User-Agent", "vmkit" ],
+		[ "Authorization", "Bearer ".$cf->{'token'} ],
+		[ "Accept", "application/json" ] );
+if (defined($body)) {
+	push(@headers, [ "Content-Type", "application/json" ],
+		       [ "Content-Length", length($body) ]);
+	}
+
+my $h = &make_http_connection($host, 443, 1, $method, "/client/v4".$path,
+			      \@headers);
+return (undef, ref($h) ? $text{'err_apifail'} : ($h || $text{'err_apifail'}))
+	if (!ref($h));
+&write_http_connection($h, $body) if (defined($body));
+
+my ($out, $err);
+&complete_http_download($h, \$out, \$err, undef, 0, $host, 443, \@headers,
+			1, 1, 30);
+# Cloudflare hata durumunda da JSON gonderiyor; once govdeyi cozmeyi dene ki
+# "400 Bad Request" yerine gercek sebebi gosterebilelim.
+my $json = eval { &convert_from_json($out) };
+if (!$@ && ref($json)) {
+	return ($json, undef) if ($json->{'success'});
+	my @m = map { $_->{'message'} } @{$json->{'errors'} || []};
+	return (undef, @m ? join("; ", @m) : $text{'err_apifail'});
+	}
+return (undef, $err || $text{'err_badjson'});
+}
+
+# ---- islemler -------------------------------------------------------------
+
+# cf_to_bind(&cf-kaydi) -> (\@degerler, hata)
+# Cloudflare kaydini BIND'in bekledigi deger dizisine cevirir. Tipe gore
+# farkli: MX'te oncelik ayri alanda, SRV ve CAA parcalari 'data' icinde.
+sub cf_to_bind
+{
+my ($r) = @_;
+my $t = uc($r->{'type'});
+my $dt = $r->{'data'} || { };
+my $dot = sub { my ($v) = @_; $v .= "." if ($v !~ /\.$/); return $v; };
+return ([ $r->{'content'} ], undef)                    if ($t eq 'A');
+return ([ $r->{'content'} ], undef)                    if ($t eq 'AAAA');
+return ([ &$dot($r->{'content'}) ], undef)             if ($t eq 'CNAME');
+return ([ $r->{'content'} ], undef)                    if ($t eq 'TXT');
+return ([ $r->{'priority'}, &$dot($r->{'content'}) ], undef) if ($t eq 'MX');
+if ($t eq 'SRV' && defined($dt->{'target'})) {
+	return ([ $dt->{'priority'}, $dt->{'weight'}, $dt->{'port'},
+		  &$dot($dt->{'target'}) ], undef);
+	}
+if ($t eq 'CAA' && defined($dt->{'value'})) {
+	return ([ $dt->{'flags'}, $dt->{'tag'}, '"'.$dt->{'value'}.'"' ], undef);
+	}
+return (undef, $text{'err_noconv'});
+}
+
+# cf_find_record(&domain, kayit-id) -> (&kayit, hata)
+sub cf_find_record
+{
+my ($d, $id) = @_;
+my ($recs, $err) = &cf_records($d);
+return (undef, $err) if ($err);
+my ($r) = grep { $_->{'id'} eq $id } @$recs;
+return (undef, $text{'err_norec'}) if (!$r);
+return ($r, undef);
+}
+
+# cf_tag_record(&domain, &kayit) -> hata
+# Kaydi bizim etiketimize alir; bundan sonra senkron onu yonetir.
+sub cf_tag_record
+{
+my ($d, $r) = @_;
+my ($zid, $err) = &cf_zone_id($d);
+return $err if ($err);
+(undef, $err) = &cf_api_req($d, "PATCH",
+	"/zones/$zid/dns_records/$r->{'id'}", { 'comment' => &cf_tag() });
+return $err;
+}
+
+# cf_delete_record(&domain, &kayit) -> hata
+sub cf_delete_record
+{
+my ($d, $r) = @_;
+my ($zid, $err) = &cf_zone_id($d);
+return $err if ($err);
+(undef, $err) = &cf_api_req($d, "DELETE",
+	"/zones/$zid/dns_records/$r->{'id'}");
+return $err;
+}
+
+# import_record(&domain, &cf-kaydi) -> hata
+# Kaydi yerel BIND zone'una yazar. CLI yerine Virtualmin'in kendi
+# fonksiyonlarini kullaniyoruz: 'modify-dns --add-record' degeri bosluklardan
+# bolduyor icin icinde bosluk olan TXT kayitlari bozulurdu.
+sub import_record
+{
+my ($d, $r) = @_;
+my ($vals, $err) = &cf_to_bind($r);
+return $err if ($err);
+my ($recs, $file) = &virtual_server::get_domain_dns_records_and_file($d);
+return $text{'err_nozonefile'} if (!$file);
+my $name = $r->{'name'};
+$name .= "." if ($name !~ /\.$/);
+# Cloudflare'de ttl=1 "otomatik" demek, BIND'e gecirilecek bir sayi degil.
+my $ttl = ($r->{'ttl'} && $r->{'ttl'} != 1) ? $r->{'ttl'} : undef;
+&virtual_server::create_dns_record($recs, $file,
+	{ 'name'   => $name,
+	  'type'   => uc($r->{'type'}),
+	  'class'  => 'IN',
+	  'ttl'    => $ttl,
+	  'values' => $vals });
+my $perr = &virtual_server::post_records_change($d, $recs, $file);
+return $perr if ($perr);
+return undef;
+}
+
 1;

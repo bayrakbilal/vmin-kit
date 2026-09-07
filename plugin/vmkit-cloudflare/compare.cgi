@@ -27,6 +27,21 @@ if ($err) {
 	exit;
 	}
 
+print "<p><b>",&html_escape($in{'msg'}),"</b></p>
+" if ($in{'msg'});
+
+# Islem dugmesi. Mutasyonlar POST ile gonderiliyor: bir baglantiya tiklamak
+# ya da onu onbelleklemek kayit silmemeli.
+my $btn = sub {
+	my ($id, $act, $label) = @_;
+	return &ui_form_start("action.cgi", "post").
+	       &ui_hidden("dom", $d->{'id'}).
+	       &ui_hidden("id", $id).
+	       &ui_hidden("act", $act).
+	       &ui_submit($label).
+	       &ui_form_end();
+	};
+
 my @loc = &local_records($d);
 print "<p>",&text('cmp_counts', scalar(@loc), scalar(@$cfrecs)),"</p>\n";
 
@@ -40,7 +55,7 @@ foreach my $r (@$cfrecs) {
 	push(@{$cg{lc($r->{'name'})."|".uc($r->{'type'})}}, $r);
 	# Cloudflare bir adda CNAME tutarken ayni ada baska tipte kayit kabul
 	# etmez (CNAME tek basina durmali).
-	$cfcname{lc($r->{'name'})} = 1 if (uc($r->{'type'}) eq 'CNAME');
+	$cfcname{lc($r->{'name'})} = $r if (uc($r->{'type'}) eq 'CNAME');
 	}
 
 my %allk = map { $_ => 1 } (keys %lg, keys %cg);
@@ -58,7 +73,8 @@ foreach my $k (sort keys %allk) {
 	my $lcol = @lv ? "<tt>".&short_value(join(", ", sort @lv))."</tt>" : "-";
 	my $ccol = @cv ? "<tt>".&short_value(join(", ", sort @cv))."</tt>" : "-";
 
-	my ($state, $note, $out);
+	my ($state, $note, $out, $acts);
+	$acts = "";
 	if ($proxied) {
 		# Davranisi Cloudflare tarafinda; ne ice aktarilir ne yonetilir.
 		($state, $note, $out) = ($text{'st_proxied2'}, "", 1);
@@ -67,15 +83,24 @@ foreach my $k (sort keys %allk) {
 		if ($t ne 'CNAME' && $cfcname{$n}) {
 			($state, $note, $out) =
 				($text{'st_blocked'}, $text{'st_cnameclash'}, 1);
+			$acts = &$btn($cfcname{$n}->{'id'}, 'delete',
+				      $text{'act_delcname'});
 			}
 		else {
 			($state, $note, $out) = ($text{'st_willcreate'}, "", 0);
 			}
 		}
 	elsif (!@lv && @cr) {
-		($state, $note, $out) = $ours
-			? ($text{'st_willdelete'}, "", 0)
-			: ($text{'st_notours'}, "", 1);
+		if ($ours) {
+			($state, $note, $out) = ($text{'st_willdelete'}, "", 0);
+			}
+		else {
+			($state, $note, $out) = ($text{'st_notours'}, "", 1);
+			$acts = join(" ", map {
+				&$btn($_->{'id'}, 'import', $text{'act_import'}).
+				&$btn($_->{'id'}, 'delete', $text{'act_delete'})
+				} @cr);
+			}
 		}
 	elsif ($same) {
 		($state, $note, $out) = $ours
@@ -83,13 +108,21 @@ foreach my $k (sort keys %allk) {
 			: ($text{'st_willadopt'}, "", 0);
 		}
 	else {
-		($state, $note, $out) = $ours
-			? ($text{'st_willupdate'}, "", 0)
-			: ($text{'st_conflict'}, $text{'st_conflict_note'}, 1);
+		if ($ours) {
+			($state, $note, $out) = ($text{'st_willupdate'}, "", 0);
+			}
+		else {
+			($state, $note, $out) =
+				($text{'st_conflict'}, $text{'st_conflict_note'}, 1);
+			$acts = join(" ", map {
+				&$btn($_->{'id'}, 'adopt', $text{'act_adopt'}).
+				&$btn($_->{'id'}, 'import', $text{'act_import'})
+				} @cr);
+			}
 		}
 
-	my $row = [ $n, $t, $lcol, $ccol, $state, $note ];
-	if ($out) { push(@outside, $row); } else { push(@insync, $row); }
+	if ($out) { push(@outside, [ $n, $t, $lcol, $ccol, $state, $note, $acts ]); }
+	else      { push(@insync,  [ $n, $t, $lcol, $ccol, $state, $note ]); }
 	}
 
 my @heads = ( $text{'cmp_name'}, $text{'cmp_type'}, $text{'cmp_local'},
@@ -106,7 +139,7 @@ else {
 print &ui_subheading($text{'cmp_tbl_outside'});
 if (@outside) {
 	print "<p>$text{'cmp_outside_intro'}</p>\n";
-	print &ui_columns_table(\@heads, 100, \@outside);
+	print &ui_columns_table([ @heads, $text{'cmp_actions'} ], 100, \@outside);
 	}
 else {
 	print "<p><i>$text{'cmp_none_outside'}</i></p>\n";
