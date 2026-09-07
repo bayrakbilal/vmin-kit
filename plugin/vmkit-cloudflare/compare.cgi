@@ -1,8 +1,9 @@
 #!/usr/bin/perl
-# Yerel zone ile Cloudflare'i yan yana gosterir. HICBIR SEY YAZMAZ.
-# Amac: yazma tarafini eklemeden once eslesmenin dogrulugunu gormek ve
-# hangi kayitlarin dokunulmaz oldugunu (tunel, Email Routing, elle eklenen)
-# gozle dogrulamak.
+# Yerel zone ile Cloudflare'i karsilastirir. HICBIR SEY YAZMAZ.
+#
+# Karsilastirma ad+tip GRUBU uzerinden yapilir, tek tek kayit uzerinden degil:
+# ayni ad ve tipte degeri farkli bir kayit, iki ayri satir degil TEK BIR
+# CAKISMADIR. Deger anahtarin parcasi olsaydi bunu goremezdik.
 use strict;
 use warnings;
 our (%text, %in, $module_name);
@@ -29,64 +30,87 @@ if ($err) {
 my @loc = &local_records($d);
 print "<p>",&text('cmp_counts', scalar(@loc), scalar(@$cfrecs)),"</p>\n";
 
-# Anahtar: ad + tip + deger. Ayni ad/tipte birden fazla kayit olabilir
-# (iki A, birden fazla MX), o yuzden deger de anahtarin parcasi.
-my (%lk, %ck);
+# ---- gruplama ----
+my (%lg, %cg, %cfcname);
 foreach my $r (@loc) {
-	$lk{lc($r->{'name'})."|".$r->{'type'}."|".
-	   &norm_value($r->{'type'}, $r->{'value'})} = $r;
+	push(@{$lg{lc($r->{'name'})."|".$r->{'type'}}},
+	     &norm_value($r->{'type'}, $r->{'value'}));
 	}
 foreach my $r (@$cfrecs) {
-	$ck{lc($r->{'name'})."|".uc($r->{'type'})."|".&cf_value($r)} = $r;
-	}
-
-# Cloudflare'de CNAME tasiyan adlar. O adlara baska tipte kayit gonderemeyiz:
-# Cloudflare CNAME'i tek basina istiyor, aksi halde istegi reddeder.
-my %cfcname;
-foreach my $r (@$cfrecs) {
+	push(@{$cg{lc($r->{'name'})."|".uc($r->{'type'})}}, $r);
+	# Cloudflare bir adda CNAME tutarken ayni ada baska tipte kayit kabul
+	# etmez (CNAME tek basina durmali).
 	$cfcname{lc($r->{'name'})} = 1 if (uc($r->{'type'}) eq 'CNAME');
 	}
 
-my @table;
-# Yerelde olanlar
-foreach my $k (sort keys %lk) {
-	my ($n, $t, $v) = split(/\|/, $k, 3);
-	my $c = $ck{$k};
-	my ($state, $note);
-	if ($c) {
-		$state = &cf_is_ours($c) ? $text{'st_synced'} : $text{'st_adopt'};
-		$note  = &cf_is_ours($c) ? "" : $text{'st_adopt_note'};
+my %allk = map { $_ => 1 } (keys %lg, keys %cg);
+my (@insync, @outside);
+
+foreach my $k (sort keys %allk) {
+	my ($n, $t) = split(/\|/, $k, 2);
+	my @lv = @{$lg{$k} || [ ]};
+	my @cr = @{$cg{$k} || [ ]};
+	my @cv = map { &cf_value($_) } @cr;
+	my $ours    = @cr && !(grep { !&cf_is_ours($_) } @cr);
+	my $proxied = (grep { $_->{'proxied'} } @cr) ? 1 : 0;
+	my $same    = join("\n", sort @lv) eq join("\n", sort @cv);
+
+	my $lcol = @lv ? "<tt>".&short_value(join(", ", sort @lv))."</tt>" : "-";
+	my $ccol = @cv ? "<tt>".&short_value(join(", ", sort @cv))."</tt>" : "-";
+
+	my ($state, $note, $out);
+	if ($proxied) {
+		# Davranisi Cloudflare tarafinda; ne ice aktarilir ne yonetilir.
+		($state, $note, $out) = ($text{'st_proxied2'}, "", 1);
+		}
+	elsif (@lv && !@cr) {
+		if ($t ne 'CNAME' && $cfcname{$n}) {
+			($state, $note, $out) =
+				($text{'st_blocked'}, $text{'st_cnameclash'}, 1);
+			}
+		else {
+			($state, $note, $out) = ($text{'st_willcreate'}, "", 0);
+			}
+		}
+	elsif (!@lv && @cr) {
+		($state, $note, $out) = $ours
+			? ($text{'st_willdelete'}, "", 0)
+			: ($text{'st_notours'}, "", 1);
+		}
+	elsif ($same) {
+		($state, $note, $out) = $ours
+			? ($text{'st_insync'}, "", 0)
+			: ($text{'st_willadopt'}, "", 0);
 		}
 	else {
-		$state = $text{'st_topush'};
-		$note = $text{'st_cnameclash'}
-			if ($t ne 'CNAME' && $cfcname{$n});
+		($state, $note, $out) = $ours
+			? ($text{'st_willupdate'}, "", 0)
+			: ($text{'st_conflict'}, $text{'st_conflict_note'}, 1);
 		}
-	push(@table, [ $n, $t, "<tt>".&short_value($v)."</tt>",
-		       $c ? "<tt>".&short_value(&cf_value($c))."</tt>" : "-",
-		       $state, $note || "" ]);
-	}
-# Yalnizca Cloudflare'de olanlar
-foreach my $k (sort keys %ck) {
-	next if ($lk{$k});
-	my $c = $ck{$k};
-	my ($n, $t, $v) = split(/\|/, $k, 3);
-	my ($state, $note);
-	if (&cf_is_ours($c)) {
-		$state = $text{'st_todelete'};
-		}
-	else {
-		$state = $text{'st_untouched'};
-		$note  = $c->{'proxied'} ? $text{'st_proxied'} : "";
-		}
-	push(@table, [ $n, $t, "-", "<tt>".&short_value($v)."</tt>",
-		       $state, $note || "" ]);
+
+	my $row = [ $n, $t, $lcol, $ccol, $state, $note ];
+	if ($out) { push(@outside, $row); } else { push(@insync, $row); }
 	}
 
-print &ui_columns_table(
-	[ $text{'cmp_name'}, $text{'cmp_type'}, $text{'cmp_local'},
-	  $text{'cmp_cf'}, $text{'cmp_state'}, $text{'cmp_note'} ],
-	100, \@table);
+my @heads = ( $text{'cmp_name'}, $text{'cmp_type'}, $text{'cmp_local'},
+	      $text{'cmp_cf'}, $text{'cmp_state'}, $text{'cmp_note'} );
+
+print &ui_subheading($text{'cmp_tbl_sync'});
+if (@insync) {
+	print &ui_columns_table(\@heads, 100, \@insync);
+	}
+else {
+	print "<p><i>$text{'cmp_none_sync'}</i></p>\n";
+	}
+
+print &ui_subheading($text{'cmp_tbl_outside'});
+if (@outside) {
+	print "<p>$text{'cmp_outside_intro'}</p>\n";
+	print &ui_columns_table(\@heads, 100, \@outside);
+	}
+else {
+	print "<p><i>$text{'cmp_none_outside'}</i></p>\n";
+	}
 
 print "<p><font size=-1>$text{'cmp_readonly'}</font></p>\n";
 
