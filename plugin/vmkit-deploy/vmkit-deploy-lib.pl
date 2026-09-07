@@ -332,4 +332,36 @@ $dep->{'last_status'} = $ok ? "ok" : "failed";
 return ($ok, $out);
 }
 
+# deploy_commits(&domain, &deploy, [adet]) -> (\@commit, hata)
+# Bare repodaki dalin son commit'leri. Repo yalnizca ilk deploy'dan sonra
+# olustugu icin yoksa acik bir mesaj donuyoruz.
+#
+# Alanlar birim ayiricisi (0x1f) ile ayriliyor: commit konusunda her noktalama
+# gecebilir, metin bir ayirici guvenli olmaz.
+sub deploy_commits
+{
+my ($d, $dep, $count) = @_;
+$count = 20 if (!$count || $count !~ /^\d+$/);
+my $repo = &deploy_repo_path($d, $dep);
+return (undef, $text{'commits_norepo'}) if (!-d $repo);
+
+my $fmt = '%h%x1f%an%x1f%ad%x1f%s';
+my $inner = "git --git-dir=".quotemeta($repo).
+	    " log --no-decorate --date=short --format=".quotemeta($fmt).
+	    " -n ".int($count)." ".quotemeta($dep->{'branch'});
+my $cmd = &command_as_user($d->{'user'}, 1, $inner);
+my ($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 30);
+return (undef, $text{'err_timeout'}) if ($timed);
+return (undef, $out) if ($?);
+
+my @rv;
+foreach my $l (split(/\r?\n/, $out)) {
+	next if ($l !~ /\S/);
+	my ($h, $an, $ad, $s) = split(/\x1f/, $l, 4);
+	push(@rv, { 'hash' => $h, 'author' => $an,
+		    'date' => $ad, 'subject' => $s });
+	}
+return (\@rv, undef);
+}
+
 1;

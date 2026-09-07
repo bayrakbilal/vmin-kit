@@ -61,9 +61,15 @@ if (@deps) {
 			&ui_link("edit_deploy.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
 				 $text{'act_edit'}),
 			);
-		push(@acts, &ui_link("deploylog.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
-				     $text{'act_log'}))
-			if ($dep->{'last_time'});
+		# Repo yalnizca ilk deploy'dan sonra olusuyor; iki baglantiyi da
+		# o zaman gosteriyoruz.
+		if ($dep->{'last_time'}) {
+			push(@acts,
+			     &ui_link("commits.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
+				      $text{'act_commits'}),
+			     &ui_link("deploylog.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
+				      $text{'act_log'}));
+			}
 		push(@table, [
 			$dep->{'name'} || $dep->{'id'},
 			$dep->{'repo'},

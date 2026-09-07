@@ -55,6 +55,8 @@ if (@projects) {
 			"<tt>".&html_escape($p->{'rel'})."</tt>",
 			$p->{'ver'} ? "PHP ".$p->{'ver'} : $text{'php_default'},
 			&ui_links_row([
+				&ui_link("packages.cgi?dom=$d->{'id'}&dir=".
+					 &urlize($p->{'dir'}), $text{'act_packages'}),
 				&ui_link($u."&action=install", $text{'act_install'}),
 				&ui_link($u."&action=update", $text{'act_update'}),
 				&ui_link($u."&action=dump-autoload", $text{'act_dump'}),

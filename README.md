@@ -252,11 +252,11 @@ tetikler — DNS-01 wildcard doğrulaması için gereken hız buradan gelir;
 Zone değişmediyse hiçbir API çağrısı yapılmaz. Modülün kendi sayfası servisin
 durumunu gösterir ve durmuşsa açılışta yeniden başlatır.
 
-**Composer:** domainin ana dizini altında `composer.json` içeren klasörleri
+**Composer:** her projede **Paketler** sayfası kurulu paketleri, son sürümlerini ve güncellenebilir olanları listeler (`composer show --latest`, yalnızca okur). Domainin ana dizini altında `composer.json` içeren klasörleri
 kendiliğinden bulur ve her birini **kendi PHP sürümüyle** çalıştırır (Virtualmin
 klasör başına PHP sürümü tutabiliyor). İşlemler: install, update, dump-autoload.
 
-**Git Deploy:** kaynak her zaman **uzak repodur** — sunucuda repo barındırmıyoruz.
+**Git Deploy:** her deployment için **Commit'ler** sayfası, son deploy'un çektiği yerel kopyadan dalın son commit'lerini listeler. Kaynak her zaman **uzak repodur** — sunucuda repo barındırmıyoruz.
 Repo adresi girilip *Kontrol et* denince `git ls-remote` ile sorgulanır; dallar
 listeden seçilir, ulaşılamayan bir repo hiç kaydedilmez. Bir domainde birden çok
 deployment olabilir; her biri kendi hedef klasörüne çalışır.

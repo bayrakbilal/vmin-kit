@@ -115,4 +115,32 @@ return (0, $text{'err_timeout'}) if ($timed);
 return ($? ? 0 : 1, $out);
 }
 
+# composer_packages(&domain, &proje) -> (\@paket, hata)
+# 'composer show --latest --format=json' kurulu paketleri, her birinin surumunu
+# ve varsa daha yeni surumunu tek seferde veriyor; ayrica 'outdated'
+# calistirmaya gerek kalmiyor.
+#
+# vendor/ yoksa composer hata verir - o hatayi oldugu gibi gosteriyoruz, cunku
+# kullaniciya "once install calistir" demenin en dogru yolu composer'in kendi
+# mesaji. --latest agdan surum sorgusu yaptigi icin zaman asimi genis.
+sub composer_packages
+{
+my ($d, $p) = @_;
+my $composer = &composer_command();
+return (undef, $text{'err_nocomposer'}) if (!$composer);
+
+my $inner = "cd ".quotemeta($p->{'dir'})." && ".
+	    ($p->{'php'} ? quotemeta($p->{'php'})." " : "").
+	    quotemeta($composer)." show --latest --format=json --no-interaction";
+my $cmd = &command_as_user($d->{'user'}, 1, $inner);
+my ($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 300);
+return (undef, $text{'err_timeout'}) if ($timed);
+return (undef, $out) if ($?);
+
+my $j;
+eval { $j = &convert_from_json($out); };
+return (undef, $text{'err_badjson'}) if ($@ || ref($j) ne 'HASH');
+return ($j->{'installed'} || [ ], undef);
+}
+
 1;
