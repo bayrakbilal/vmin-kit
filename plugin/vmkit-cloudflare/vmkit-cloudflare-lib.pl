@@ -203,6 +203,16 @@ return @rv;
 # norm_value(tip, deger) -> karsilastirilabilir bicim
 # BIND ve Cloudflare ayni kaydi farkli yaziyor: BIND sonda nokta koyuyor,
 # TXT degerlerini tirnak icinde tutuyor; Cloudflare ikisini de yapmiyor.
+#
+# TXT ve tirnaklar: Cloudflare'e GONDERIRKEN de tirnaksiz gonderiyoruz.
+# Dokumantasyon "tirnaksiz kaydedilirse Cloudflare kendisi ekler" diyor;
+# tirnakli gonderip Cloudflare bunu fark etmezse ""deger"" gibi cift
+# tirnaklanmis bozuk bir kayit olusurdu. Tirnaksiz gondermek o riski
+# tamamen ortadan kaldiriyor.
+#
+# BIND 255 karakterden uzun TXT degerlerini parcalara bolup her parcayi
+# tirnaklar ("aaa" "bbb"). Asagidaki ilk ikame parcalari birlestiriyor;
+# olmasa DKIM anahtarlari yarim gonderilirdi.
 sub norm_value
 {
 my ($type, $v) = @_;
