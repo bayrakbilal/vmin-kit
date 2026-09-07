@@ -1,5 +1,5 @@
 feat_name=VminKit - Composer
-feat_label=Composer açılsın mı?
+feat_label=Composer
 feat_label2=Composer
 feat_losing=Hiçbir şey silinmez; vendor klasörleri yerinde kalır
 feat_disname=Composer

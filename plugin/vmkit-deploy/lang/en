@@ -1,6 +1,6 @@
 feat_name=VminKit - Git Deploy
-feat_label=Enable Git deploy?
-feat_label2=Git deploy
+feat_label=Git Deploy
+feat_label2=Git Deploy
 feat_losing=All deployment definitions will be deleted
 feat_disname=Git deploy
 feat_echeck=The 'git' command is not installed

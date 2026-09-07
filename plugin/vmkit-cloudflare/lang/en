@@ -1,5 +1,5 @@
 feat_name=VminKit - Cloudflare DNS
-feat_label=Enable Cloudflare DNS sync?
+feat_label=Cloudflare DNS sync
 feat_label2=Cloudflare DNS sync
 feat_losing=The Cloudflare API token and sync settings will be deleted
 feat_disname=Cloudflare DNS sync

@@ -1,6 +1,6 @@
 feat_name=VminKit - Git Deploy
-feat_label=Git deploy açılsın mı?
-feat_label2=Git deploy
+feat_label=Git Deploy
+feat_label2=Git Deploy
 feat_losing=Tüm deployment tanımları silinecek
 feat_disname=Git deploy
 feat_echeck='git' komutu kurulu değil

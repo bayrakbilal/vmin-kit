@@ -1,5 +1,5 @@
 feat_name=VminKit - Cloudflare DNS
-feat_label=Cloudflare DNS senkronu açılsın mı?
+feat_label=Cloudflare DNS senkronu
 feat_label2=Cloudflare DNS senkronu
 feat_losing=Cloudflare API token'ı ve senkron ayarları silinecek
 feat_disname=Cloudflare DNS senkronu

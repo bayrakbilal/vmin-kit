@@ -1,5 +1,5 @@
 feat_name=VminKit - Composer
-feat_label=Enable Composer?
+feat_label=Composer
 feat_label2=Composer
 feat_losing=Nothing will be deleted; the vendor directories stay
 feat_disname=Composer
