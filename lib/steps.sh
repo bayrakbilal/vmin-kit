@@ -374,6 +374,28 @@ step_docker_site(){
                     "Portainer (vmin-kit)"
 }
 
+# Webmin/Usermin, istegin Referer basligindaki adresi kendi gordugu
+# Host + PORT ile karsilastiriyor (web-lib-funcs.pl, referer kontrolu).
+# Vekilin arkasinda referer https://webmin.<domain> yani port 443, arayuzun
+# kendi portu ise 10000 oldugu icin esitlik tutmuyor ve istek "Security
+# Warning" sayfasiyla reddediliyor. ProxyPreserveHost adi duzeltiyor ama port
+# farkini gideremiyor.
+#
+# Cozum panelin kendi onerdigi sey: adresi guvenilen siteler listesine eklemek.
+# Panelde Webmin Configuration -> Trusted Referrers ile ayni yer.
+# Bu dosya her istekte yeniden okundugu icin servisi yeniden baslatmak gerekmez.
+add_trusted_referer(){
+  local conf="$1" site="$2" cur
+  [ -f "$conf" ] || return 0
+  cur="$(awk -F= '/^referers=/{sub(/^referers=/,""); print; exit}' "$conf")"
+  case " $cur " in
+    *" $site "*) ok "  Guvenilen adres zaten kayitli: $site"; return 0 ;;
+  esac
+  [ -f "${conf}.vmin-kit.bak" ] || cp -a "$conf" "${conf}.vmin-kit.bak"
+  set_kv "$conf" referers "$(echo "$cur $site" | xargs)"
+  ok "  Guvenilen adres eklendi: $site"
+}
+
 # Yonetim arayuzleri ana domain altinda birer alt alan olarak yayinlanir:
 #   webmin.<ana-domain>  -> 127.0.0.1:10000
 #   usermin.<ana-domain> -> 127.0.0.1:20000
@@ -385,12 +407,14 @@ step_panel_sites(){
   wport="${wport:-10000}"
   ensure_proxy_site "${WEBMIN_PREFIX:-webmin}" "http://127.0.0.1:${wport}/" \
                     "Webmin (vmin-kit)" phost
+  add_trusted_referer /etc/webmin/config "${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}"
 
   if [ -f /etc/usermin/miniserv.conf ]; then
     uport="$(awk -F= '/^port=/{print $2; exit}' /etc/usermin/miniserv.conf 2>/dev/null)"
     uport="${uport:-20000}"
     ensure_proxy_site "${USERMIN_PREFIX:-usermin}" "http://127.0.0.1:${uport}/" \
                       "Usermin (vmin-kit)" phost
+    add_trusted_referer /etc/usermin/config "${USERMIN_PREFIX:-usermin}.${MAIN_DOMAIN}"
   else
     log "Usermin kurulu degil; usermin.<domain> atlaniyor."
   fi
