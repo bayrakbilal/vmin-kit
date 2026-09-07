@@ -138,6 +138,19 @@ step_panel_redirects(){
 # yapilandirmasina yazilir, cunku --default-features bu degerleri okuyor.
 # Bayrak yok - dogru kurulum davranisi bu; istisna gerekirse panelden acilir.
 #
+#   bind_spf=yes     Her yeni domaine SPF kaydi. Varsayilan kapali.
+#   bind_spfall=1    SPF'in "all" kipi. Sablondaki 0/1/2, bind8'de 1/2/3 olup
+#                    ?all / ~all / -all uretiyor (f-dns.pl: dns_spfall + 1).
+#                    Bos birakilirsa ?all cikiyor - hicbir sey soylemeyen bir
+#                    kayit. 1 -> ~all: standart ve guvenli. -all katidir,
+#                    posta bir yerden yonlendirilirse reddedilmesine yol acar.
+#
+#   bind_dmarc=yes   Her yeni domaine DMARC kaydi. Politika ayrica yazilmiyor:
+#                    bind_dmarcp bos oldugunda "none" kullaniliyor (vslib.pl:
+#                    bind_dmarcp || "none"), yani kayit yayinlanir ama hicbir
+#                    posta engellenmez. SPF/DKIM'in dogru calistigi gorulunce
+#                    panelden quarantine'e sikilir. Yuzde de varsayilan 100.
+#
 #   spam=0, virus=0  Spam ve virus taramasi ana domainde ACILMASIN. Kurulum
 #                    sonrasi sihirbaz bunlari zaten kapali olarak oneriyor;
 #                    domain onlarla olusursa sihirbaz "1 sanal sunucu
@@ -159,14 +172,17 @@ step_domain_defaults(){
 
   local row key val name cur
   for row in "spam|0|Spam taramasi" \
-             "virus|0|Virus taramasi"; do
+             "virus|0|Virus taramasi" \
+             "bind_spf|yes|SPF kaydi" \
+             "bind_spfall|1|SPF sertligi (~all)" \
+             "bind_dmarc|yes|DMARC kaydi"; do
     IFS='|' read -r key val name <<< "$row"
     cur="$(sed -n "s/^${key}=//p" "$cfg" | head -1)"
     if [ "$cur" = "$val" ]; then
-      ok "$name: zaten kapali"
+      ok "$name: zaten yerinde ($key=$val)"
     else
       set_kv "$cfg" "$key" "$val"
-      ok "$name: kapatildi"
+      ok "$name: $key=$val yazildi"
     fi
   done
 
