@@ -200,11 +200,14 @@ step_domain_defaults(){
     log "  Rol adresi sablonu bos; dokunulmadi."
   else
     new_a=""
+    # printf '%s' son satiri newline'siz birakiyor ve 'read' onu donguye
+    # sokmuyor: listedeki SON giris sessizce dusuyordu (once webmaster, sonraki
+    # turda abuse). '%s\n' sart.
     while IFS= read -r e; do
       [ -n "$e" ] || continue
       nm="${e%%=*}"
       case " $keep " in *" $nm "*) new_a="${new_a}${new_a:+$'\t'}${e}" ;; esac
-    done < <(printf '%s' "$cur_a" | tr '\t' '\n')
+    done < <(printf '%s\n' "$cur_a" | tr '\t' '\n')
     if [ -z "$new_a" ]; then
       warn "  Rol adresi sablonunda '$keep' bulunamadi; dokunulmadi."
     elif [ "$cur_a" = "$new_a" ]; then
