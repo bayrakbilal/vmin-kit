@@ -86,21 +86,56 @@ plugins_remove(){
 install_sync_units(){
   local src="$ROOT_DIR/systemd"
   [ -d "$src" ] || return 0
-  # Modul kurulu degilse zamanlayiciyi da kurma.
+  # Modul kurulu degilse birimleri de kurma.
   if [ ! -d "$WEBMIN_ROOT/vmkit-cloudflare" ]; then
     [ -f /etc/systemd/system/vmkit-cloudflare-sync.timer ] || return 0
   fi
-  local changed=0 f
-  for f in "$src"/vmkit-cloudflare-sync.*; do
-    local dst="/etc/systemd/system/$(basename "$f")"
-    if ! cmp -s "$f" "$dst"; then cp "$f" "$dst"; changed=1; fi
+
+  local changed=0 f dst
+  for f in "$src"/vmkit-cloudflare-sync.service "$src"/vmkit-cloudflare-sync.timer; do
+    [ -f "$f" ] || continue
+    dst="/etc/systemd/system/$(basename "$f")"
+    cmp -s "$f" "$dst" || { cp "$f" "$dst"; changed=1; }
   done
+
+  # .path birimi kurulum aninda uretilir: zone dizini dagitima gore degisiyor
+  # ve olmayan bir dizini izlemek birimi basarisiz kilar. Dogrudan hedefe
+  # yaziyoruz - depoya yazsaydik git calisma kopyasini kirletirdik.
+  local pathunit=/etc/systemd/system/vmkit-cloudflare-sync.path
+  local zdirs="" c tmp
+  for c in /var/lib/bind /var/cache/bind; do
+    [ -d "$c" ] && zdirs="$zdirs $c"
+  done
+  if [ -n "$zdirs" ]; then
+    tmp="$(mktemp)"
+    {
+      echo "[Unit]"
+      echo "Description=VminKit - zone degisikliginde Cloudflare senkronu"
+      echo ""
+      echo "[Path]"
+      for c in $zdirs; do echo "PathChanged=$c"; done
+      echo "Unit=vmkit-cloudflare-sync.service"
+      echo ""
+      echo "[Install]"
+      echo "WantedBy=multi-user.target"
+    } > "$tmp"
+    cmp -s "$tmp" "$pathunit" || { cp "$tmp" "$pathunit"; changed=1; }
+    rm -f "$tmp"
+  else
+    warn "  BIND zone dizini bulunamadi; anlik tetikleme kurulmadi"
+  fi
+
   if [ "$changed" = 1 ]; then
     systemctl daemon-reload
     log "  systemd birimleri guncellendi"
   fi
   systemctl enable --now vmkit-cloudflare-sync.timer >/dev/null 2>&1 \
     || warn "  vmkit-cloudflare-sync.timer etkinlestirilemedi"
+  if [ -f "$pathunit" ]; then
+    systemctl enable --now vmkit-cloudflare-sync.path >/dev/null 2>&1 \
+      || warn "  vmkit-cloudflare-sync.path etkinlestirilemedi"
+  fi
+  return 0
 }
 
 for mod in "${MODULES[@]}"; do
@@ -113,8 +148,9 @@ for mod in "${MODULES[@]}"; do
     plugins_remove "$mod"
     acl_revoke "$mod"
     if [ "$mod" = vmkit-cloudflare ]; then
+      systemctl disable --now vmkit-cloudflare-sync.path >/dev/null 2>&1 || true
       systemctl disable --now vmkit-cloudflare-sync.timer >/dev/null 2>&1 || true
-      rm -f /etc/systemd/system/vmkit-cloudflare-sync.timer             /etc/systemd/system/vmkit-cloudflare-sync.service
+      rm -f /etc/systemd/system/vmkit-cloudflare-sync.path             /etc/systemd/system/vmkit-cloudflare-sync.timer             /etc/systemd/system/vmkit-cloudflare-sync.service
       systemctl daemon-reload
     fi
     NEED_RESTART=1

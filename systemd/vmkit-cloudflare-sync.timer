@@ -1,12 +1,13 @@
 [Unit]
-Description=VminKit - Cloudflare DNS senkronunu duzenli calistir
+Description=VminKit - Cloudflare senkronu icin guvenlik agi
 
 [Timer]
-# Ilk calisma acilistan 2 dakika sonra, sonra dakikada bir.
-# Zone degismediyse tur bedavaya yakin: yalnizca dosya zamanina bakilir.
-OnBootSec=2min
-OnUnitActiveSec=1min
-AccuracySec=15s
+# Asil tetikleyici .path birimi; zone dosyasi degistigi anda calisiyor.
+# Bu zamanlayici yalnizca kacan bir olayi ya da basarisiz bir turu yakalamak
+# icin. Zone degismediyse tur hicbir API cagrisi yapmadan bitiyor.
+OnBootSec=3min
+OnUnitActiveSec=15min
+AccuracySec=1min
 Unit=vmkit-cloudflare-sync.service
 
 [Install]
