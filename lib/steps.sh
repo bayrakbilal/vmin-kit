@@ -91,17 +91,19 @@ step_dns_template(){
   ok "dns-template: bind_master=$NS1, dns_ns=$NS2, bind_sub=yes"
 }
 
-# Virtualmin her yeni domaine admin.<domain> A kaydi ve o adi panele
-# (https://<domain>:10000) goturen bir 301 yonlendirmesi ekliyor. Bunu
+# Virtualmin her yeni domaine iki "kisayol" ekliyor:
+#   admin.<domain>   -> Webmin  (https://<domain>:10000)
+#   webmail.<domain> -> Usermin (https://<domain>:20000)
+# Her biri bir A kaydi ve vhost'ta bir 301 yonlendirmesi demek. Ikisini de
 # istemiyoruz: panele hostname uzerinden giriliyor.
 #
-# Ayar SABLON duzeyinde tutuluyor (web_admin). Varsayilan sablonun ayri bir
-# dosyasi yok: list_templates() 0 numarali sablonu dogrudan modul
-# yapilandirmasindan uretiyor, save_template() de oraya geri yaziyor. Bu yuzden
-# dogru yer /etc/webmin/virtual-server/config - dns-template adiminin yazdigi
-# dosyanin ayni.
+# Ayar SABLON duzeyinde tutuluyor (web_admin / web_webmail). Varsayilan
+# sablonun ayri bir dosyasi yok: list_templates() 0 numarali sablonu dogrudan
+# modul yapilandirmasindan uretiyor, save_template() de oraya geri yaziyor. Bu
+# yuzden dogru yer /etc/webmin/virtual-server/config - dns-template adiminin
+# yazdigi dosyanin ayni.
 #
-# Tek anahtar iki seyi birden kapatiyor: DNS kaydini
+# Her anahtar iki seyi birden kapatiyor: DNS kaydini
 # (add_webmail_dns_records_to_file) ve Apache yonlendirmesi ile ServerAlias'i
 # (add_webmail_redirect_directives). ServerAlias gitince ad sertifikaya da
 # girmiyor - get_hostnames_for_ssl yalnizca web sunucusunun gercekten cevap
@@ -109,19 +111,26 @@ step_dns_template(){
 #
 # DOMAIN OLUSTURMADAN ONCE calismali: sonradan kapatmak var olan domainlerin
 # kaydini ve yonlendirmesini temizlemiyor.
-#
-# webmail.<domain> ayni mekanizmada (web_webmail) ama BILEREK acik birakildi:
-# bir domainde mail acilirsa kisayol hazir olsun.
-step_admin_redirect(){
+step_panel_redirects(){
   local cfg="/etc/webmin/virtual-server/config"
-  if [ ! -f "$cfg" ]; then err "Virtualmin config yok; admin yonlendirmesi atlaniyor."; return 1; fi
+  if [ ! -f "$cfg" ]; then err "Virtualmin config yok; panel yonlendirmeleri atlaniyor."; return 1; fi
   [ -f "${cfg}.vmin-kit.bak" ] || cp -a "$cfg" "${cfg}.vmin-kit.bak"
-  if [ "$(awk -F= '/^web_admin=/{print $2; exit}' "$cfg")" = "0" ]; then
-    ok "admin.<domain> yonlendirmesi zaten kapali."
-    return
-  fi
-  set_kv "$cfg" web_admin "0"
-  ok "admin.<domain> yonlendirmesi kapatildi (bundan sonra olusan domainler icin)."
+
+  local row key flag name cur
+  for row in "web_admin|${NO_ADMIN_REDIRECT:-1}|admin"              "web_webmail|${NO_WEBMAIL_REDIRECT:-1}|webmail"; do
+    IFS='|' read -r key flag name <<< "$row"
+    if ! is_truthy "$flag"; then
+      log "  ${name}.<domain> yonlendirmesine dokunulmuyor (ayar 0)."
+      continue
+    fi
+    cur="$(awk -F= -v k="$key" '$1==k{print $2; exit}' "$cfg")"
+    if [ "$cur" = "0" ]; then
+      ok "${name}.<domain> yonlendirmesi zaten kapali."
+    else
+      set_kv "$cfg" "$key" "0"
+      ok "${name}.<domain> yonlendirmesi kapatildi (bundan sonra olusan domainler icin)."
+    fi
+  done
 }
 
 # Ana domaini SADE olusturur: web + SSL + DNS.

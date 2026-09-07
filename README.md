@@ -48,7 +48,7 @@ verilebilir: `MAIN_DOMAIN=ornek.com sudo -E ./install.sh`.
 | `postgres` | PostgreSQL kurar ve Virtualmin özelliğini açar — Virtualmin kurulumuyla gelmiyor. *(isteğe bağlı)* |
 | `composer` | Composer kurar (`vmkit-composer` eklentisinin gereksinimi). *(isteğe bağlı)* |
 | `dns-template` | Yeni domainler için DNS varsayılanları (`bind_master`, `dns_ns`, `dns_prins`, `bind_sub`). |
-| `admin-redirect` | *(`NO_ADMIN_REDIRECT=1` ise)* Yeni domainlere eklenen `admin.<domain>` → panel (`:10000`) yönlendirmesini kapatır (`web_admin=0`). Tek ayar hem DNS kaydını hem Apache yönlendirmesini kapatıyor; **domain oluşmadan önce** çalışmalı, sonradan kapatmak var olanları temizlemiyor. `webmail.<domain>` bilerek açık bırakıldı. |
+| `panel-redirects` | Virtualmin'in her domaine eklediği iki kısayolu kapatır: `admin.<domain>` → panel (`:10000`) ve `webmail.<domain>` → Usermin (`:20000`). Bayraklar: `NO_ADMIN_REDIRECT`, `NO_WEBMAIL_REDIRECT` (ikisi de varsayılan 1). Her anahtar hem DNS kaydını hem Apache yönlendirmesini kapatıyor; **domain oluşmadan önce** çalışmalı, sonradan kapatmak var olanları temizlemiyor. |
 | `main-domain` | Ana domaini **sade** oluşturur: web + SSL + DNS. Mail ve veritabanı **kapalı**. |
 | `host-dns` | Ana domainin zone'una hostname (`s.<domain>`) için A kaydı ekler. |
 | `ssl` | Ana domain için Let's Encrypt sertifikası + otomatik yenileme. |

@@ -84,6 +84,7 @@ HOSTNAME_FQDN="${HOSTNAME_FQDN:-${HOST_PREFIX}.${MAIN_DOMAIN}}"
 POSTGRES="${POSTGRES:-1}"
 COMPOSER="${COMPOSER:-1}"
 NO_ADMIN_REDIRECT="${NO_ADMIN_REDIRECT:-1}"
+NO_WEBMAIL_REDIRECT="${NO_WEBMAIL_REDIRECT:-1}"
 # Docker ve Portainer tek bayrak: Portainer, Docker olmadan anlamsiz ve
 # Docker'i Portainer'siz kurmak istemedigimiz icin ikisi birlikte gider.
 DOCKER="${DOCKER:-1}"
@@ -144,7 +145,10 @@ log "  - DNS sablonu : NS1=${NS1}  NS2=${NS2}   (bu sunucunun NS cifti)"
 log "  - Ana domain  : $MAIN_DOMAIN  (web + SSL + DNS; mail ve veritabani KAPALI)"
 log "  - SSL         : $MAIN_DOMAIN icin Lets Encrypt"
 if is_truthy "$NO_ADMIN_REDIRECT"; then
-  log "  - admin.<domain> panel yonlendirmesi: KAPATILACAK"
+  log "  - admin.<domain> -> panel yonlendirmesi: KAPATILACAK"
+fi
+if is_truthy "$NO_WEBMAIL_REDIRECT"; then
+  log "  - webmail.<domain> -> Usermin yonlendirmesi: KAPATILACAK"
 fi
 log "  - Eklentiler  :$(plugin_list_enabled)"
 
@@ -196,7 +200,7 @@ step_virtualmin
 if is_truthy "$POSTGRES"; then step_postgres; fi
 if is_truthy "$COMPOSER"; then step_composer; fi
 step_dns_template
-if is_truthy "$NO_ADMIN_REDIRECT"; then step_admin_redirect; fi
+step_panel_redirects
 step_main_domain
 step_host_dns
 step_ssl
