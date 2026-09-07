@@ -1,5 +1,5 @@
 [Unit]
-Description=VminKit - Cloudflare DNS senkronu
+Description=VminKit Cloudflare DNS sync
 After=network-online.target bind9.service
 Wants=network-online.target
 

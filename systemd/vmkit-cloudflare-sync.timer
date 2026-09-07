@@ -1,5 +1,5 @@
 [Unit]
-Description=VminKit - Cloudflare senkronu icin guvenlik agi
+Description=VminKit Cloudflare DNS sync (safety net)
 
 [Timer]
 # Asil tetikleyici .path birimi; zone dosyasi degistigi anda calisiyor.

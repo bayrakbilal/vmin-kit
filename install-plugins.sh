@@ -16,6 +16,14 @@
 #
 # Not: moduller kopyalanir, symlink kurulmaz. Symlink kurulsaydi Webmin'in ve
 # bu script'in yazdiklari dogrudan git deposunu kirletirdi.
+#
+# Ayrica vmkit-cloudflare icin systemd birimlerini kurar: zone dosyasi
+# degistiginde senkronu tetikleyen .path birimi ve guvenlik agi .timer.
+#
+# YAPILACAK: bu script Webmin'in install-module.pl'inin isini taklit ediyor
+# (dosyalari kopyalayip webmin.acl ile plugins= satirini elle duzenliyor).
+# Eklentiler oturunca moduller .wbm.gz olarak paketlenip standart yoldan
+# kurulacak; bu script de paketleri kuran ince bir sarmalayiciya donusecek.
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
@@ -110,7 +118,7 @@ install_sync_units(){
     tmp="$(mktemp)"
     {
       echo "[Unit]"
-      echo "Description=VminKit - zone degisikliginde Cloudflare senkronu"
+      echo "Description=VminKit Cloudflare DNS sync on zone change"
       echo ""
       echo "[Path]"
       for c in $zdirs; do echo "PathChanged=$c"; done
@@ -228,7 +236,14 @@ if [ "$MODE" = remove ]; then
   ok "Moduller kaldirildi: ${MODULES[*]}"
 else
   ok "Moduller kuruldu: ${MODULES[*]}"
-  log "Panelde:"
-  log "  Git Deploy  -> Edit Virtual Server'da ozelligi acin, sonra domain menusunde 'Git Deploy'"
-  log "  Cloudflare  -> System Settings -> Cloudflare DNS Sync"
+  echo
+  log "Her ucu de domain basina ozelliktir. Once System Settings -> Features"
+  log "and Plugins altindan etkinlestirin, sonra Edit Virtual Server'da ilgili"
+  log "domain icin acin. Acildiginda domainin menusunde gorunurler:"
+  log "  Git Deploy       - uzak repodan deploy"
+  log "  Composer         - composer.json bulunan klasorler icin install/update"
+  log "  Cloudflare DNS   - yerel zone'u Cloudflare ile senkronlar"
+  if systemctl is-active --quiet vmkit-cloudflare-sync.path 2>/dev/null; then
+    log "Otomatik DNS senkronu calisiyor (zone degistiginde tetiklenir)."
+  fi
 fi
