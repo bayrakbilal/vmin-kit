@@ -364,7 +364,7 @@ step_portainer_token(){
   fi
 }
 
-# ensure_proxy_site <onek> <hedef-url> <aciklama>
+# ensure_proxy_site <onek> <hedef-url> <aciklama> [proxy-host]
 # <onek>.<ana-domain> alt sunucusunu olusturur ve / yolunu hedefe vekiller.
 #
 # Yonetim araclarini disariya port acmadan yayinlamanin kalibi budur: arayuz
@@ -377,7 +377,7 @@ step_portainer_token(){
 # sertifikasina baglanmak yerine kendi sertifikasini alir.
 #
 ensure_proxy_site(){
-  local prefix="$1" url="$2" desc="$3"
+  local prefix="$1" url="$2" desc="$3" phost="${4:-}"
   local site="${prefix}.${MAIN_DOMAIN}"
   command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; $site atlaniyor."; return 1; }
 
@@ -411,6 +411,25 @@ ensure_proxy_site(){
     else
       err "Vekil eklenemedi. Elle: virtualmin create-proxy --domain $site --path / --url $url --websockets"
       return 1
+    fi
+  fi
+
+  # 4. parametre verilirse "Forward original HTTP hostname when proxying"
+  # aciliyor (ProxyPreserveHost On; panelde Server Configuration -> Website
+  # Options, CLI'da modify-web --proxy-host - ikisi de save_domain_proxy_host
+  # cagiriyor). Webmin ve Usermin bu olmadan vekilin arkasinda duzgun
+  # calismiyor: kendilerine gelen Host basligi 127.0.0.1:<port> oluyor ve
+  # urettikleri adresler ile oturum kontrolleri buna gore sasiyor.
+  # Portainer'in buna ihtiyaci yok, docker sitesi bu parametreyi almiyor.
+  if [ -n "$phost" ]; then
+    if [ -f "$vhost" ] && grep -qi 'ProxyPreserveHost[[:space:]]*On' "$vhost"; then
+      ok "Host basligi zaten iletiliyor."
+    else
+      if virtualmin modify-web --domain "$site" --proxy-host >/dev/null 2>&1; then
+        ok "Host basligi vekile iletiliyor (ProxyPreserveHost On)."
+      else
+        warn "ProxyPreserveHost acilamadi; $site uzerinden giris reddedilebilir."
+      fi
     fi
   fi
 
@@ -558,14 +577,14 @@ step_panel_sites(){
   wport="$(awk -F= '/^port=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null)"
   wport="${wport:-10000}"
   ensure_proxy_site "${WEBMIN_PREFIX:-webmin}" "https://127.0.0.1:${wport}/" \
-                    "Webmin (vmin-kit)"
+                    "Webmin (vmin-kit)" phost
   add_trusted_referer /etc/webmin/config "${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}"
 
   if [ -f /etc/usermin/miniserv.conf ]; then
     uport="$(awk -F= '/^port=/{print $2; exit}' /etc/usermin/miniserv.conf 2>/dev/null)"
     uport="${uport:-20000}"
     ensure_proxy_site "${USERMIN_PREFIX:-usermin}" "https://127.0.0.1:${uport}/" \
-                      "Usermin (vmin-kit)"
+                      "Usermin (vmin-kit)" phost
     add_trusted_referer /etc/usermin/config "${USERMIN_PREFIX:-usermin}.${MAIN_DOMAIN}"
   else
     log "Usermin kurulu degil; usermin.<domain> atlaniyor."

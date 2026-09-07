@@ -104,11 +104,16 @@ kendi sertifikasıyla çıkar:
 Webmin ve Usermin kendi SSL'lerinde kalır, vekil onlara `https://127.0.0.1:<port>`
 ile gider.
 
-Tek ek ayar **güvenilen referer**: adres `/etc/webmin/config` içindeki `referers`
-satırına eklenir (panelde Webmin Configuration → Trusted Referrers). Referer
-kontrolü adı **ve portu** karşılaştırıyor; referer 443'ten, panel kendi
-portundan (10000) geldiği için eşleşmiyor ve istek "Security Warning" ile
-reddediliyor. Bunun dışında Virtualmin'in getirdiği ayarlara dokunulmaz.
+Webmin ve Usermin sitelerinde iki ek ayar gerekiyor (Portainer'da gerekmiyor):
+
+- **`ProxyPreserveHost On`** — panelde *Server Configuration → Website Options →
+  "Forward original HTTP hostname when proxying?"*, CLI'da `modify-web
+  --proxy-host`. Olmadan Webmin'e giden `Host` başlığı `127.0.0.1:<port>` olur
+  ve panel vekilin arkasında düzgün çalışmaz.
+- **Güvenilen referer** — adres `/etc/webmin/config` içindeki `referers` satırına
+  eklenir (panelde Webmin Configuration → Trusted Referrers). Referer kontrolü
+  adı **ve portu** karşılaştırıyor; referer 443'ten, panel kendi portundan
+  (10000) geldiği için eşleşmiyor ve istek "Security Warning" ile reddediliyor.
 
 **Kilitleme adımı en sonda ve koşulludur.** `bind=127.0.0.1` yazıldıktan sonra
 panele tek erişim vekil üzerindedir; bu yüzden önce vekilin gerçekten cevap
