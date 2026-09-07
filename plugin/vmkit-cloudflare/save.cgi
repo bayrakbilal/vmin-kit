@@ -30,6 +30,7 @@ if ($in{'token'} =~ /\S/) {
 	$in{'token'} =~ /^[A-Za-z0-9_\-]{20,}$/ || &error($text{'save_etoken'});
 	$cf->{'token'} = $in{'token'};
 	}
+$cf->{'enabled'} = $in{'enabled'} ? 1 : 0;
 $cf->{'proxy'} = $in{'proxy'} ? 1 : 0;
 &save_cf($d, $cf);
 

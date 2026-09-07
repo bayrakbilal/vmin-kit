@@ -66,7 +66,8 @@ sub feature_setup
 my ($d) = @_;
 &$virtual_server::first_print($text{'setup_start'});
 # Varsayilan, modul ayarlarindan gelir (Features and Plugins -> Configure).
-&save_cf($d, { 'proxy' => $config{'default_proxy'} ? 1 : 0 });
+&save_cf($d, { 'proxy'   => $config{'default_proxy'} ? 1 : 0,
+	       'enabled' => 1 });
 # Ilk domain acilirken izleme servisinin ayakta oldugundan emin ol: modul
 # elle kopyalanmis, yani postinstall.pl hic calismamis olabilir.
 &ensure_sync_units();

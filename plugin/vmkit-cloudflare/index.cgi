@@ -27,8 +27,10 @@ use warnings "once";
 # Modul kendi izleme servisinden sorumlu: sayfa acildiginda birim eksikse
 # kurulur, durmussa baslatilir. Durum da her zaman gorunur - senkron sessizce
 # durmus olsun istemiyoruz.
+# Islem sonucu mesaji (ac/kapat gibi) herkese gosterilir.
+print &ui_alert_box(&html_escape($in{'msg'}), 'success') if ($in{'msg'});
+
 if (&virtual_server::master_admin()) {
-	print &ui_alert_box(&html_escape($in{'msg'}), 'success') if ($in{'msg'});
 	my $st = &sync_units_status();
 	if ($st->{'systemd'} && !&sync_units_healthy($st)) {
 		&ensure_sync_units();
@@ -95,14 +97,25 @@ if (!$d) {
 	my @table;
 	foreach my $dd (@doms) {
 		my $cf = &get_cf($dd);
+		# Tek tikla ac/kapat: her satirin kendi kucuk formu. Listeden
+		# yonetilsin, ayarlara girmek gerekmesin.
+		my $btn = &ui_form_start("toggle.cgi", "post").
+			  &ui_hidden("dom", $dd->{'id'}).
+			  &ui_submit($cf->{'enabled'} ? $text{'sync_off'}
+						      : $text{'sync_on'}).
+			  &ui_form_end();
 		push(@table, [
 			&ui_link("index.cgi?dom=$dd->{'id'}", $dd->{'dom'}),
 			$cf->{'token'} ? $text{'yes'} : $text{'no'},
+			$cf->{'enabled'} ? &ui_text_color($text{'sync_yes'}, 'success')
+					 : $text{'sync_no'},
 			&zone_status($dd),
+			$btn,
 			]);
 		}
 	print &ui_columns_table(
-		[ $text{'col_domain'}, $text{'col_token'}, $text{'col_status'} ],
+		[ $text{'col_domain'}, $text{'col_token'}, $text{'col_auto'},
+		  $text{'col_status'}, "" ],
 		100, \@table);
 	&ui_print_footer("/", $text{'index'});
 	exit;
@@ -130,6 +143,12 @@ print &ui_table_row($text{'index_token'},
 	($cf->{'token'} ? &text('index_token_set', &masked_token($cf->{'token'}))
 			: $text{'index_token_none'}).
 	"<br>$text{'index_token_help'}</font>");
+
+# Otomatik senkron anahtari. Token'dan ayri: kapatmak icin token'i silmek
+# gerekmesin, acmak da tek tik olsun.
+print &ui_table_row($text{'index_enabled'},
+	&ui_yesno_radio("enabled", $cf->{'enabled'} ? 1 : 0)."<br>".
+	"<font size=-1>$text{'index_enabled_help'}</font>");
 
 print &ui_table_row($text{'index_proxy'},
 	&ui_yesno_radio("proxy", $cf->{'proxy'} ? 1 : 0)."<br>".

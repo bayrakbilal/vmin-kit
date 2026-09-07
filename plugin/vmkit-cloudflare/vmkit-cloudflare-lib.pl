@@ -45,6 +45,9 @@ my ($d) = @_;
 my %cf;
 &read_file(&domain_file($d), \%cf);
 $cf{'proxy'} = 0 if (!defined($cf{'proxy'}));
+# Otomatik senkron varsayilan ACIK. Anahtar yoksa (eski kayitlar) da acik
+# sayiliyor - davranis degismesin diye.
+$cf{'enabled'} = 1 if (!defined($cf{'enabled'}));
 return \%cf;
 }
 
@@ -627,11 +630,22 @@ $cf->{'synced_mtime'} = &zone_mtime($d);
 &save_cf($d, $cf);
 }
 
-# sync_domains() -> senkronu acik ve token'i olan domainler
+# sync_domains() -> OTOMATIK senkrona giren domainler: ozelligi acik, token'i
+# olan ve otomatik senkronu kapatilmamis olanlar.
+#
+# 'enabled' yalnizca otomatik yolu (path/timer -> sync-all.pl) durdurur;
+# paneldeki "Simdi senkronla" dugmesi calismaya devam eder, cunku o acik bir
+# kullanici eylemidir. Token silinmez: kapatip acmak tek tik.
 sub sync_domains
 {
-return grep { $_->{'vmkit-cloudflare'} && &get_cf($_)->{'token'} }
-	    &virtual_server::list_domains();
+my @rv;
+foreach my $d (&virtual_server::list_domains()) {
+	next if (!$d->{'vmkit-cloudflare'});
+	my $cf = &get_cf($d);
+	next if (!$cf->{'token'} || !$cf->{'enabled'});
+	push(@rv, $d);
+	}
+return @rv;
 }
 
 
