@@ -381,7 +381,9 @@ step_plugins(){
     fi
 
     # Paketi kurulum aninda kaynaktan uret: paket asla bayatlamaz.
-    if ! "$ROOT_DIR/build-plugins.sh" "$mod" >/dev/null; then
+    # 'bash ile' cagriliyor: git calistirma bitini her ortamda tasimiyor
+    # (Windows'ta core.filemode=false), dosya izni yuzunden kurulum patlamasin.
+    if ! bash "$ROOT_DIR/build-plugins.sh" "$mod" >/dev/null; then
       err "  $mod paketlenemedi."; continue
     fi
     pkg="$ROOT_DIR/dist/$mod.wbm.gz"
