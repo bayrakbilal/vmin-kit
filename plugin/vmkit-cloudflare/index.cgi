@@ -80,15 +80,22 @@ print &ui_table_end();
 print &ui_form_end([ [ undef, $text{'save'} ],
 		     $cf->{'token'} ? ( [ "forget", $text{'index_forget'} ] ) : ( ) ]);
 
-print "<p>",&ui_link("compare.cgi?dom=$d->{'id'}", $text{'index_compare'}),
-      "</p>\n";
-# Senkron uzun surebilir ve yazma islemi: ayri bir POST formu.
+# Karsilastir ve Senkronize et: ikisi de ayri birer islem, ayni bicimde ve
+# yan yana. Kaydet/Unut yukaridaki ayar formuna ait, orada kaliyor.
+# Form blok eleman oldugu icin inline-block olmadan alt alta dizilirler.
+my $inl = "style='display:inline-block;margin-right:6px'";
+print "<p>";
+print &ui_form_start("compare.cgi", "get", undef, $inl),
+      &ui_hidden("dom", $d->{'id'}),
+      &ui_submit($text{'index_compare'}),
+      &ui_form_end();
 if ($cf->{'token'}) {
-	print &ui_form_start("sync.cgi", "post"),
+	print &ui_form_start("sync.cgi", "post", undef, $inl),
 	      &ui_hidden("dom", $d->{'id'}),
 	      &ui_submit($text{'index_syncnow'}),
 	      &ui_form_end();
 	}
+print "</p>\n";
 
 &ui_print_footer("/virtual-server/summary_domain.cgi?dom=$d->{'id'}",
 		 $text{'index_return'});

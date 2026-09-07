@@ -34,7 +34,9 @@ print "<p><b>",&html_escape($in{'msg'}),"</b></p>
 # ya da onu onbelleklemek kayit silmemeli.
 my $btn = sub {
 	my ($id, $act, $label) = @_;
-	return &ui_form_start("action.cgi", "post").
+	# Her dugme kendi formu; form blok eleman oldugu icin varsayilan olarak
+	# alt alta diziliyorlar. inline-block ile yan yana duruyorlar.
+	return &ui_form_start("action.cgi", "post", undef, "style='display:inline-block;margin-right:6px'").
 	       &ui_hidden("dom", $d->{'id'}).
 	       &ui_hidden("id", $id).
 	       &ui_hidden("act", $act).
