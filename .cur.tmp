@@ -1,2 +1,0 @@
-    # Deger '=' icerebiliyor (newdom_aliases gibi), o yuzden awk -F= degil sed.
-    cur="$(sed -n "s/^${key}=//p" "$cfg" | head -1)"
