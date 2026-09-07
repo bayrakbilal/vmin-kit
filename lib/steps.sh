@@ -360,6 +360,50 @@ proxy_site_works(){
   esac
 }
 
+
+# webmail.<ana-domain>: Roundcube.
+#
+# Bu bir vekil DEGIL, gercek bir PHP uygulamasi; Virtualmin'in kendi kurucusu
+# (Install Scripts) ile kuruluyor. Roundcube veritabani istedigi icin alt
+# sunucu --mysql ile olusuyor; ProxyPreserveHost gibi seylere ihtiyaci yok.
+#
+# Roundcube yalnizca bir IMAP istemcisi: postalar Dovecot'un Maildir'inde
+# durur, kullanici/kutu/sifre yonetimi Virtualmin'de kalir. Giris adresi tam
+# e-posta adresidir (ornek: blnk@blnk.tr).
+step_webmail(){
+  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; webmail atlaniyor."; return 1; }
+  local site="${WEBMAIL_PREFIX:-webmail}.${MAIN_DOMAIN}"
+
+  if virtualmin list-domains --name-only 2>/dev/null | grep -qxF "$site"; then
+    ok "Alt sunucu zaten var: $site"
+  else
+    log "Alt sunucu olusturuluyor: $site (ana domain: $MAIN_DOMAIN)"
+    if ! virtualmin create-domain \
+           --domain "$site" \
+           --parent "$MAIN_DOMAIN" \
+           --desc   "Roundcube (vmin-kit)" \
+           --dir --web --ssl --mysql --break-ssl-cert; then
+      err "$site olusturulamadi; Roundcube atlaniyor."
+      return 1
+    fi
+    ok "Alt sunucu olusturuldu: $site"
+  fi
+
+  if virtualmin list-scripts --domain "$site" 2>/dev/null | grep -qi roundcube; then
+    ok "Roundcube zaten kurulu: https://${site}/"
+    return 0
+  fi
+
+  log "Roundcube kuruluyor: https://${site}/  (indirme ve kurulum biraz surer)"
+  if virtualmin install-script --domain "$site" --type roundcube \
+       --version latest --path / --db "mysql roundcube" --newdb --prefix-db; then
+    ok "Roundcube kuruldu: https://${site}/"
+  else
+    err "Roundcube kurulamadi. Elle: Virtualmin -> $site -> Install Scripts"
+    return 1
+  fi
+}
+
 # docker.<domain> alt sunucusu + Portainer'a proxy.
 #
 # Ozellikler burada BILEREK tek tek sayiliyor: ana domainin aksine

@@ -55,6 +55,7 @@ verilebilir: `MAIN_DOMAIN=ornek.com sudo -E ./install.sh`.
 | `ssl` | Ana domain için Let's Encrypt sertifikası + otomatik yenileme. |
 | `panel-sites` | Webmin ve Usermin'i ana domain altında birer alt alan olarak yayınlar: `webmin.<domain>` → `127.0.0.1:10000`, `usermin.<domain>` → `127.0.0.1:20000`. `PANEL_PROXY=1`. |
 | `docker` | Docker Engine + Portainer CE + `docker.<domain>` proxy sitesi. Tek bayrak (`DOCKER=1`); üçü birlikte gelir. *(isteğe bağlı)* |
+| `webmail` | `webmail.<domain>` alt sunucusu + Virtualmin'in kendi Install Scripts'i ile **Roundcube**. `ROUNDCUBE=1`. |
 | `lock-panel-ports` | Vekilin çalıştığı **doğrulandıktan sonra** 10000/20000 portlarını yalnızca `127.0.0.1`'e bağlar. `LOCK_PANEL_PORTS=1`. Doğrulanamazsa kilitlemez. |
 | `report` | Araç klasörüne `vmin-kit-rapor.txt` üretir: ne yapıldı, panel adresi, sırada ne var. |
 
