@@ -206,6 +206,13 @@ if ! ask_yn "Bu ayarlarla devam edeyim mi?" E; then
 fi
 
 # ---- ADIMLAR: SIRA BURADA, ACIKCA ----
+#
+# Burada set -e KAPALI. Her adim kendi hatasini kendisi bildirip 'return 1'
+# ile cikiyor; bir adimin basarisiz olmasi geri kalanini iptal etmemeli.
+# set -e acik kalsaydi ilk basarisiz adim tum kurulumu oldururdu - "atlaniyor"
+# yazip duruyordu. Yukaridaki hazirlik ve dogrulama bolumu set -e ile korunmaya
+# devam ediyor, orada durmak DOGRU davranis.
+set +e
 echo
 step_hostname
 step_virtualmin
@@ -233,6 +240,7 @@ if is_truthy "$PANEL_PROXY" && is_truthy "$LOCK_PANEL_PORTS"; then
   step_lock_panel_ports
 fi
 step_report
+set -e
 
 echo
 ok "Tamamlandi."
