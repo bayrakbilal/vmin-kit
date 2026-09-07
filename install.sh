@@ -182,6 +182,7 @@ step_virtualmin
 if is_truthy "$POSTGRES"; then step_postgres; fi
 if is_truthy "$COMPOSER"; then step_composer; fi
 step_dns_template
+step_admin_redirect
 step_main_domain
 step_host_dns
 step_ssl

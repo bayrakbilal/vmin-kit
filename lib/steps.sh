@@ -91,6 +91,39 @@ step_dns_template(){
   ok "dns-template: bind_master=$NS1, dns_ns=$NS2, bind_sub=yes"
 }
 
+# Virtualmin her yeni domaine admin.<domain> A kaydi ve o adi panele
+# (https://<domain>:10000) goturen bir 301 yonlendirmesi ekliyor. Bunu
+# istemiyoruz: panele hostname uzerinden giriliyor.
+#
+# Ayar SABLON duzeyinde tutuluyor (web_admin). Varsayilan sablonun ayri bir
+# dosyasi yok: list_templates() 0 numarali sablonu dogrudan modul
+# yapilandirmasindan uretiyor, save_template() de oraya geri yaziyor. Bu yuzden
+# dogru yer /etc/webmin/virtual-server/config - dns-template adiminin yazdigi
+# dosyanin ayni.
+#
+# Tek anahtar iki seyi birden kapatiyor: DNS kaydini
+# (add_webmail_dns_records_to_file) ve Apache yonlendirmesi ile ServerAlias'i
+# (add_webmail_redirect_directives). ServerAlias gitince ad sertifikaya da
+# girmiyor - get_hostnames_for_ssl yalnizca web sunucusunun gercekten cevap
+# verdigi adlari topluyor.
+#
+# DOMAIN OLUSTURMADAN ONCE calismali: sonradan kapatmak var olan domainlerin
+# kaydini ve yonlendirmesini temizlemiyor.
+#
+# webmail.<domain> ayni mekanizmada (web_webmail) ama BILEREK acik birakildi:
+# bir domainde mail acilirsa kisayol hazir olsun.
+step_admin_redirect(){
+  local cfg="/etc/webmin/virtual-server/config"
+  if [ ! -f "$cfg" ]; then err "Virtualmin config yok; admin yonlendirmesi atlaniyor."; return 1; fi
+  [ -f "${cfg}.vmin-kit.bak" ] || cp -a "$cfg" "${cfg}.vmin-kit.bak"
+  if [ "$(awk -F= '/^web_admin=/{print $2; exit}' "$cfg")" = "0" ]; then
+    ok "admin.<domain> yonlendirmesi zaten kapali."
+    return
+  fi
+  set_kv "$cfg" web_admin "0"
+  ok "admin.<domain> yonlendirmesi kapatildi (bundan sonra olusan domainler icin)."
+}
+
 # Ana domaini SADE olusturur: web + SSL + DNS.
 # Mail ve veritabani BILEREK kapali - ikisi de domain basina onay kutusu,
 # istendigi an panelden acilir (Edit Virtual Server -> Enabled features).
