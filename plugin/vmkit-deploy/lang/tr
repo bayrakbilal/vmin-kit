@@ -9,7 +9,6 @@ feat_module=VminKit - Git Deploy (deployment yönetimi)
 links_link=Git Deploy
 setup_start=Git deploy açılıyor ..
 delete_start=Deployment tanımları siliniyor ..
-
 index=VminKit - Git Deploy
 index_title=Git Deploy
 index_return=domain özetine
@@ -23,20 +22,17 @@ index_dom=Domain
 index_count=Deployment
 index_none=Bu domain için henüz deployment tanımlanmamış.
 index_add=Yeni deployment ekle
-
 col_name=Ad
 col_repo=Repo
 col_branch=Dal
 col_target=Hedef klasör
 col_mode=Mod
 col_last=Son deploy
-
 mode_manual=Elle
 mode_auto=Otomatik
 mode_manual_desc=Yalnızca Deploy'a bastığımda
 mode_auto_desc=Dal her değiştiğinde
 never=Hiç
-
 edit_title=Deployment düzenle
 edit_title_new=Deployment ekle
 edit_repo_header=Repo
@@ -53,9 +49,8 @@ edit_needcheck=Bir repo adresi girip "Repoyu kontrol et" düğmesine basın.
 edit_branch=Dal
 edit_branch_default=Bu reponun varsayılan dalı: $1
 edit_target=Hedef klasör
-edit_target_help=Domainin ana dizinine göre, örnek: public_html ya da public_html/app
+edit_target_help=Domainin ana dizinine göre yazılır ve belge kök dizininin içinde kalmalıdır - örnek: public_html ya da public_html/app. Uygulama bir alt klasörden yayın yapıyorsa Website Options - Website documents sub-directory ayarını oraya yönlendirin.
 edit_mode=Deploy modu
-
 save=Kaydet
 create=Oluştur
 delete=Sil
@@ -67,7 +62,6 @@ save_erepourl=Repo adresi https://, ssh:// ya da git@ ile başlamalı
 save_edup=Başka bir deployment ($1) zaten bu klasörü hedefliyor
 save_ereporeach=Repo okunamadığı için hiçbir şey kaydedilmedi: $1
 save_ebranchgone=Bu dal repoda artık yok
-
 err_timeout=Repo zamanında yanıt vermedi
 err_nobranches=Repoda hiç dal yok
 err_target_empty=Hedef klasör boş olamaz
@@ -110,4 +104,5 @@ commits_date=Tarih
 commits_author=Yazan
 commits_subject=Konu
 commits_note=Son deployment'ın çektiği yerel kopyadan okunuyor; uzaktaki yeni commit'ler bir sonraki deploy'dan sonra görünür.
-err_target_sub=Bu klasör $1 alt sunucusuna ait; onun kendi Git Deploy sayfası var
+err_target_nohtml=Bu domainin belge kök dizini bulunamadı
+err_target_outside=Hedef $1 içinde olmalı. Uygulama bir alt klasörden yayın yapıyorsa Website Options - Website documents sub-directory ayarını oraya yönlendirin

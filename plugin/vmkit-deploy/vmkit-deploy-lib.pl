@@ -107,10 +107,14 @@ return &virtual_server::can_edit_domain($d);
 }
 
 # validate_target(&domain, yol)
-# Hedef domainin ev dizininin ALTINDA olmali ve alt sunucularin dizinlerine
-# girmemeli: alt sunucularin evi ana domainin evinin icinde duruyor
-# (/home/blnk/domains/webmail.blnk.tr gibi) ve her birinin kendi paneli var.
-# Ana domainin panelinden oraya dosya yazilmasini istemiyoruz.
+# Hedef domainin BELGE KOKUNUN (public_html) altinda olmali. Ev dizininde
+# panelin kendi klasorleri, e-posta, gunlukler ve alt sunucularin dizinleri
+# duruyor; oraya deploy etmek karisikliktan baska bir sey getirmez ve ana
+# domainin panelinden alt sunucunun icine yazmayi mumkun kilar.
+#
+# Uygulama belge kokunu bir alt klasore tasiyorsa (Laravel gibi) Virtualmin'in
+# kendi ayari kullanilir: Website Options -> Website documents sub-directory =
+# public_html/public. Deploy yine public_html'e yapilir, kok asagi kayar.
 sub validate_target
 {
 my ($d, $path) = @_;
@@ -119,14 +123,32 @@ return $text{'err_target_abs'}   if ($path =~ /^\//);
 return $text{'err_target_dots'}  if ($path =~ /(^|\/)\.\.(\/|$)/);
 return $text{'err_target_char'}  if ($path !~ /^[A-Za-z0-9._\-\/]+$/);
 
+my $root = &deploy_root($d);
+return $text{'err_target_nohtml'} if (!$root);
 my $full = "$d->{'home'}/$path";
-foreach my $sub (&virtual_server::get_domain_by("parent", $d->{'id'})) {
-	next if (!$sub->{'home'});
-	if ($full eq $sub->{'home'} || $full =~ /^\Q$sub->{'home'}\E\//) {
-		return &text('err_target_sub', $sub->{'dom'});
-		}
-	}
+return &text('err_target_outside', &deploy_root_rel($d))
+	if ($full ne $root && $full !~ /^\Q$root\E\//);
 return undef;
+}
+
+# deploy_root(&domain) -> deploy edilebilecek en ust dizin (mutlak yol)
+sub deploy_root
+{
+my ($d) = @_;
+my $root = &virtual_server::public_html_dir($d);
+return undef if (!$root);
+$root =~ s/\/+$//;
+return $root;
+}
+
+# deploy_root_rel(&domain) -> ayni dizinin ev dizinine gore hali (mesajlar icin)
+sub deploy_root_rel
+{
+my ($d) = @_;
+my $root = &deploy_root($d) || return "public_html";
+my $rel = $root;
+$rel =~ s/^\Q$d->{'home'}\E\/?//;
+return $rel eq '' ? "." : $rel;
 }
 
 # deploy_target_dir(&domain, &deploy) -> mutlak yol

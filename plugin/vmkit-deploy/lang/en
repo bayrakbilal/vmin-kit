@@ -9,7 +9,6 @@ feat_module=VminKit - Git Deploy (manage deployments)
 links_link=Git Deploy
 setup_start=Enabling Git deploy ..
 delete_start=Removing deployment definitions ..
-
 index=VminKit - Git Deploy
 index_title=Git Deploy
 index_return=domain summary
@@ -23,20 +22,17 @@ index_dom=Domain
 index_count=Deployments
 index_none=No deployments have been defined for this domain yet.
 index_add=Add a new deployment
-
 col_name=Name
 col_repo=Repository
 col_branch=Branch
 col_target=Target directory
 col_mode=Mode
 col_last=Last deploy
-
 mode_manual=Manual
 mode_auto=Automatic
 mode_manual_desc=Only when I click Deploy
 mode_auto_desc=Whenever the branch changes
 never=Never
-
 edit_title=Edit deployment
 edit_title_new=Add deployment
 edit_repo_header=Repository
@@ -53,9 +49,8 @@ edit_needcheck=Enter a repository address and press Check repository.
 edit_branch=Branch
 edit_branch_default=Default branch of this repository: $1
 edit_target=Target directory
-edit_target_help=Relative to the domain's home directory, for example public_html or public_html/app
+edit_target_help=Relative to the domain's home directory, and must stay inside the website document directory - for example public_html or public_html/app. If the application serves from a sub-directory, point Website Options - Website documents sub-directory at it.
 edit_mode=Deploy mode
-
 save=Save
 create=Create
 delete=Delete
@@ -67,7 +62,6 @@ save_erepourl=Repository address must start with https://, ssh:// or git@
 save_edup=Another deployment ($1) already targets this directory
 save_ereporeach=The repository could not be read, so nothing was saved: $1
 save_ebranchgone=That branch no longer exists in the repository
-
 err_timeout=The repository did not answer in time
 err_nobranches=The repository has no branches
 err_target_empty=Missing target directory
@@ -110,4 +104,5 @@ commits_date=Date
 commits_author=Author
 commits_subject=Subject
 commits_note=Read from the local copy fetched by the last deployment; newer commits on the remote appear after the next deploy.
-err_target_sub=That folder belongs to the sub-server $1, which has its own Git Deploy page
+err_target_nohtml=The website document directory for this domain could not be found
+err_target_outside=The target must be inside $1. If the application serves from a sub-directory, point Website Options - Website documents sub-directory at it instead

@@ -54,24 +54,18 @@ return ($best->{'version'}, $cmd);
 
 # list_projects(&domain) -> [ { dir, rel, ver, php } ]
 # Ana dizin altinda composer.json arar; vendor, node_modules ve .git atlanir.
-# sub_homes(&domain) -> alt sunucularin ev dizinleri
-# Alt sunucularin evi ana domainin evinin ICINDE duruyor
-# (/home/blnk/domains/webmail.blnk.tr gibi). Ana domainin panelinde onlarin
-# icerigini gostermek ya da oraya yazmak yanlis: her alt sunucunun kendi
-# paneli var. Dizin adini tahmin etmiyoruz (sablonla degisebiliyor),
-# Virtualmin'e soruyoruz.
-sub sub_homes
-{
-my ($d) = @_;
-return grep { $_ }
-       map { $_->{'home'} }
-       &virtual_server::get_domain_by("parent", $d->{'id'});
-}
-
 sub list_projects
 {
 my ($d) = @_;
-my $home = $d->{'home'};
+# Yalnizca belge kokunun (public_html) altina bakiyoruz. Ev dizininde panelin
+# kendi klasorleri, e-posta, gunlukler ve alt sunucularin dizinleri duruyor;
+# oraya bakmak hem karisiklik hem de baska bir sunucunun icerigini bu panelde
+# gostermek olurdu. Uygulama belge kokunu bir alt klasore tasiyorsa (Laravel
+# gibi) Virtualmin'in kendi ayari kullanilir: Website Options -> Website
+# documents sub-directory = public_html/public. Kok yine public_html kalir.
+my $home = &virtual_server::public_html_dir($d);
+$home =~ s/\/+$//;
+return ( ) if (!$home || !-d $home);
 my $depth = $config{'scan_depth'} || 3;
 $depth =~ /^\d+$/ || ($depth = 3);
 my $inner = "find ".quotemeta($home)." -maxdepth ".($depth + 1).
@@ -79,10 +73,6 @@ my $inner = "find ".quotemeta($home)." -maxdepth ".($depth + 1).
 	    " -not -path ".quotemeta("*/vendor/*").
 	    " -not -path ".quotemeta("*/node_modules/*").
 	    " -not -path ".quotemeta("*/.git/*");
-# Alt sunucularin dizinleri haric: onlar kendi panellerinde gorunur.
-foreach my $sh (&sub_homes($d)) {
-	$inner .= " -not -path ".quotemeta("$sh/*");
-	}
 my $cmd = &command_as_user($d->{'user'}, 1, $inner);
 my ($out, $timed) = &backquote_with_timeout("$cmd 2>/dev/null", 30);
 return ( ) if ($timed);
