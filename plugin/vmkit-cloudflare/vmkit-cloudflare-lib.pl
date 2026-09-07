@@ -187,6 +187,41 @@ return ($r->{'comment'} || '') eq &cf_tag() ? 1 : 0;
 
 # local_records(&domain) -> [ { name, type, value, ttl } ]
 # Yerel BIND zone'undan, gonderdigimiz tiplerle sinirli.
+# Cloudflare'e GONDERILMEYEN adlar. Zone'da kaliyorlar, yalnizca yayinlanan
+# kopyaya girmiyorlar.
+#
+# ns1/ns2: yerel zone her zaman "NS yonetimi bizde" modeline gore uretiliyor,
+# bu yuzden kendi nameserver ciftimizin A kayitlarini tasiyor. Delegasyon
+# Cloudflare'deyse o kayitlarin yayinlanan kopyada isi yok.
+sub skip_name
+{
+my ($label) = @_;
+return $label =~ /^ns\d*$/ ? 1 : 0;
+}
+
+# Kaydin domaine gore etiketi: ns1.ornek.com -> ns1, ornek.com -> @
+sub record_label
+{
+my ($d, $name) = @_;
+my $dom = lc($d->{'dom'});
+my $lc = lc($name);
+$lc =~ s/\.$//;
+return '@' if ($lc eq $dom);
+return $1 if ($lc =~ /^(.*)\.\Q$dom\E$/);
+return $lc;
+}
+
+# Varsayilan proxy tercihi ACIK olsa bile proxy'lenmemesi gereken adlar.
+# Cloudflare proxy'si yalnizca HTTP/HTTPS tasiyor; posta ve otomatik
+# yapilandirma adlari proxy'lenirse SMTP/IMAP baglantisi ve istemci kesfi
+# kirilir. Kullanici bir kaydi elle proxy'ye alirsa ona dokunmuyoruz - bu
+# liste yalnizca BIZ yeni kayit olustururken uygulaniyor.
+sub never_proxy
+{
+my ($label) = @_;
+return $label =~ /^(mail|smtp|imap|pop|pop3|mta-sts|autoconfig|autodiscover)$/ ? 1 : 0;
+}
+
 sub local_records
 {
 my ($d) = @_;
@@ -196,6 +231,7 @@ foreach my $r (&virtual_server::get_domain_dns_records($d)) {
 	next if (!$ok{uc($r->{'type'})});
 	my $name = $r->{'name'};
 	$name =~ s/\.$//;
+	next if (&skip_name(&record_label($d, $name)));
 	push(@rv, { 'name'  => lc($name),
 		    'type'  => uc($r->{'type'}),
 		    'value' => join(" ", @{$r->{'values'}}),
@@ -361,6 +397,22 @@ return $err if ($err);
 return $err;
 }
 
+# cf_set_proxy(&domain, &cfrecord, 1|0)
+# Tek bir kaydin proxy durumunu degistirir. Yalnizca A, AAAA ve CNAME'de
+# anlamli; digerlerinde Cloudflare alani zaten kabul etmiyor.
+sub cf_set_proxy
+{
+my ($d, $r, $on) = @_;
+my ($zid, $err) = &cf_zone_id($d);
+return $err if ($err);
+return $text{'err_noproxytype'}
+	if (uc($r->{'type'}) !~ /^(A|AAAA|CNAME)$/);
+my ($out, $e) = &cf_api_req($d, "PATCH",
+			    "/zones/$zid/dns_records/$r->{'id'}",
+			    { 'proxied' => $on ? \1 : \0 });
+return $e;
+}
+
 # cf_delete_record(&domain, &kayit) -> hata
 sub cf_delete_record
 {
@@ -434,11 +486,12 @@ foreach my $k (sort keys %allk) {
 	my $same    = join("\n", sort @lv) eq join("\n", sort @cv);
 
 	my $e = { 'name' => $n, 'type' => $t, 'lvals' => \@lv,
-		  'crecs' => \@cr, 'cvals' => \@cv, 'lttl' => $lr[0]->{'ttl'} };
-	if ($proxied) {
-		$e->{'op'} = 'skip'; $e->{'why'} = 'proxied';
-		}
-	elsif (@lv && !@cr) {
+		  'crecs' => \@cr, 'cvals' => \@cv, 'lttl' => $lr[0]->{'ttl'},
+		  'ours' => $ours, 'proxied' => $proxied };
+	# Proxy bir 'atla' sebebi DEGIL: kaydi kimin yonettigine sahiplik karar
+	# veriyor. Tuneli koruyan sey de zaten sahiplik ('notours'), proxy degil.
+	# Proxy yalnizca gosterilen ve guncellemede korunan bir nitelik.
+	if (@lv && !@cr) {
 		if ($t ne 'CNAME' && $cfcname{$n}) {
 			$e->{'op'} = 'skip'; $e->{'why'} = 'cnameclash';
 			$e->{'blocker'} = $cfcname{$n};
@@ -566,9 +619,13 @@ foreach my $e (@$plan) {
 			$ok = 0 if ($uerr);
 			}
 		elsif ($i < @lv) {
-			# Yeni kayit: varsayilan proxy tercihi burada uygulanir.
+			# Yeni kayit: varsayilan proxy tercihi burada uygulanir
+			# (posta adlari haric - never_proxy).
+			my $px = $cf->{'proxy'} &&
+				 !&never_proxy(&record_label($d, $e->{'name'}))
+					? 1 : 0;
 			my $body = &cf_body($e->{'name'}, $e->{'type'}, $lv[$i],
-					    $e->{'lttl'}, $cf->{'proxy'});
+					    $e->{'lttl'}, $px);
 			if (!$body) { &$cb(&text('sync_ebody', $what)); $ok = 0; next; }
 			my (undef, $cerr) = &cf_api_req($d, "POST", $base, $body);
 			$n++;

@@ -1,9 +1,13 @@
 #!/usr/bin/perl
 # Yerel zone ile Cloudflare'i karsilastirir. HICBIR SEY YAZMAZ.
 #
+# Siniflandirma sync_plan()'dan geliyor: senkronun kullandigi kodun AYNISI.
+# Bu ekranda yazan ile gerceklesecek olan boylece ayrisamaz. (Eskiden burada
+# ayni mantigin ikinci bir kopyasi vardi ve zamanla ayristi.)
+#
 # Karsilastirma ad+tip GRUBU uzerinden yapilir, tek tek kayit uzerinden degil:
 # ayni ad ve tipte degeri farkli bir kayit, iki ayri satir degil TEK BIR
-# CAKISMADIR. Deger anahtarin parcasi olsaydi bunu goremezdik.
+# CAKISMADIR.
 use strict;
 use warnings;
 our (%text, %in, $module_name);
@@ -19,7 +23,7 @@ $d->{'vmkit-cloudflare'} || &error(&text('index_eoff', $d->{'dom'}));
 &ui_print_header(&virtual_server::domain_in($d), $text{'cmp_title'},
 		 "", undef, 0, 0);
 
-my ($cfrecs, $err) = &cf_records($d);
+my ($plan, $err) = &sync_plan($d);
 if ($err) {
 	print "<p><b>$text{'cmp_eapi'}</b></p>\n";
 	print "<pre style='white-space:pre-wrap'>",&html_escape($err),"</pre>\n";
@@ -27,8 +31,9 @@ if ($err) {
 	exit;
 	}
 
-print "<p><b>",&html_escape($in{'msg'}),"</b></p>
-" if ($in{'msg'});
+print "<p><b>",&html_escape($in{'msg'}),"</b></p>\n" if ($in{'msg'});
+
+my $cf = &get_cf($d);
 
 # Islem dugmesi. Mutasyonlar POST ile gonderiliyor: bir baglantiya tiklamak
 # ya da onu onbelleklemek kayit silmemeli.
@@ -44,83 +49,78 @@ my $btn = sub {
 	       &ui_form_end();
 	};
 
-my @loc = &local_records($d);
-print "<p>",&text('cmp_counts', scalar(@loc), scalar(@$cfrecs)),"</p>\n";
+# Proxy hucresi: sutunun kendisi dugme. Bizim kayitlarimizda tiklayinca
+# tersine cevirir; bizim olmayanlarda (tunel gibi) yalnizca durumu yazar.
+# Proxy yalnizca A, AAAA ve CNAME icin gecerli.
+my $proxy_cell = sub {
+	my ($e) = @_;
+	return "-" if ($e->{'type'} !~ /^(A|AAAA|CNAME)$/);
+	my @cr = @{$e->{'crecs'}};
+	if (!@cr) {
+		# Kayit henuz yok: olusturuldugunda ne olacagini yaziyoruz.
+		my $on = $cf->{'proxy'} &&
+			 !&never_proxy(&record_label($d, $e->{'name'})) ? 1 : 0;
+		return "<font size=-1>".
+		       &text('proxy_new', $on ? $text{'proxy_on'} : $text{'proxy_off'}).
+		       "</font>";
+		}
+	return join(" ", map {
+		my $lbl = $_->{'proxied'} ? $text{'proxy_on'} : $text{'proxy_off'};
+		&cf_is_ours($_) ? &$btn($_->{'id'}, 'proxy', $lbl) : $lbl;
+		} @cr);
+	};
 
-# ---- gruplama ----
-my (%lg, %cg, %cfcname);
-foreach my $r (@loc) {
-	push(@{$lg{lc($r->{'name'})."|".$r->{'type'}}},
-	     &norm_value($r->{'type'}, $r->{'value'}));
+my ($lcount, $ccount) = (0, 0);
+foreach my $e (@$plan) {
+	$lcount += scalar(@{$e->{'lvals'}});
+	$ccount += scalar(@{$e->{'crecs'}});
 	}
-foreach my $r (@$cfrecs) {
-	push(@{$cg{lc($r->{'name'})."|".uc($r->{'type'})}}, $r);
-	# Cloudflare bir adda CNAME tutarken ayni ada baska tipte kayit kabul
-	# etmez (CNAME tek basina durmali).
-	$cfcname{lc($r->{'name'})} = $r if (uc($r->{'type'}) eq 'CNAME');
-	}
+print "<p>",&text('cmp_counts', $lcount, $ccount),"</p>\n";
 
-my %allk = map { $_ => 1 } (keys %lg, keys %cg);
 my (@insync, @outside);
-
-foreach my $k (sort keys %allk) {
-	my ($n, $t) = split(/\|/, $k, 2);
-	my @lv = @{$lg{$k} || [ ]};
-	my @cr = @{$cg{$k} || [ ]};
-	my @cv = map { &cf_value($_) } @cr;
-	my $ours    = @cr && !(grep { !&cf_is_ours($_) } @cr);
-	my $proxied = (grep { $_->{'proxied'} } @cr) ? 1 : 0;
-	my $same    = join("\n", sort @lv) eq join("\n", sort @cv);
-
+foreach my $e (@$plan) {
+	my @lv = @{$e->{'lvals'}};
+	my @cv = @{$e->{'cvals'}};
+	my @cr = @{$e->{'crecs'}};
 	my $lcol = @lv ? "<tt>".&short_value(join(", ", sort @lv))."</tt>" : "-";
 	my $ccol = @cv ? "<tt>".&short_value(join(", ", sort @cv))."</tt>" : "-";
 
-	my ($state, $note, $out, $acts);
-	$acts = "";
-	if ($proxied) {
-		# Davranisi Cloudflare tarafinda; ne ice aktarilir ne yonetilir.
-		($state, $note, $out) = ($text{'st_proxied2'}, "", 1);
-		}
-	elsif (@lv && !@cr) {
-		if ($t ne 'CNAME' && $cfcname{$n}) {
-			($state, $note, $out) =
-				($text{'st_blocked'}, $text{'st_cnameclash'}, 1);
-			$acts = &$btn($cfcname{$n}->{'id'}, 'delete',
+	my ($state, $note, $out, $acts) = ("", "", 0, "");
+	my $op = $e->{'op'};
+	if    ($op eq 'create') { $state = $text{'st_willcreate'}; }
+	elsif ($op eq 'delete') { $state = $text{'st_willdelete'}; }
+	elsif ($op eq 'update') { $state = $text{'st_willupdate'}; }
+	elsif ($op eq 'adopt')  { $state = $text{'st_willadopt'}; }
+	elsif ($op eq 'none')   { $state = $text{'st_insync'}; }
+	else {
+		# skip: kapsam disi. Neden oldugu 'why' alaninda.
+		$out = 1;
+		if ($e->{'why'} eq 'cnameclash') {
+			($state, $note) = ($text{'st_blocked'}, $text{'st_cnameclash'});
+			$acts = &$btn($e->{'blocker'}->{'id'}, 'delete',
 				      $text{'act_delcname'});
 			}
-		else {
-			($state, $note, $out) = ($text{'st_willcreate'}, "", 0);
-			}
-		}
-	elsif (!@lv && @cr) {
-		if ($ours) {
-			($state, $note, $out) = ($text{'st_willdelete'}, "", 0);
-			}
-		else {
-			($state, $note, $out) = ($text{'st_notours'}, "", 1);
+		elsif ($e->{'why'} eq 'notours') {
+			$state = $text{'st_notours'};
+			# Proxy'li kayitlara dugme YOK: tipik ornek Cloudflare
+			# tuneli; icerigi yerel zone'da anlamsiz, silinmesi
+			# calisan bir kurulumu bozar.
 			$acts = join(" ", map {
-				&$btn($_->{'id'}, 'import', $text{'act_import'}).
-				&$btn($_->{'id'}, 'delete', $text{'act_delete'})
+				$_->{'proxied'} ? "" :
+					&$btn($_->{'id'}, 'import', $text{'act_import'}).
+					&$btn($_->{'id'}, 'delete', $text{'act_delete'})
 				} @cr);
 			}
-		}
-	elsif ($same) {
-		($state, $note, $out) = $ours
-			? ($text{'st_insync'}, "", 0)
-			: ($text{'st_willadopt'}, "", 0);
-		}
-	else {
-		if ($ours) {
-			($state, $note, $out) = ($text{'st_willupdate'}, "", 0);
-			}
 		else {
-			($state, $note, $out) =
-				($text{'st_conflict'}, $text{'st_conflict_note'}, 1);
+			($state, $note) = ($text{'st_conflict'}, $text{'st_conflict_note'});
 			$acts = join(" ", map {
-				&$btn($_->{'id'}, 'adopt', $text{'act_adopt'}).
-				&$btn($_->{'id'}, 'import', $text{'act_import'})
+				$_->{'proxied'} ? "" :
+					&$btn($_->{'id'}, 'adopt', $text{'act_adopt'}).
+					&$btn($_->{'id'}, 'import', $text{'act_import'})
 				} @cr);
 			}
+		# Dugme cikmamasinin sebebini not olarak acikla.
+		$note = $text{'st_proxied2'} if (!$acts && $e->{'proxied'});
 		}
 
 	# Not, ayri bir sutun yerine durumun basindaki uyari simgesinde:
@@ -128,12 +128,13 @@ foreach my $k (sort keys %allk) {
 	my $scell = $note
 		? "<span title=\"".&quote_escape($note)."\">&#9888;</span> ".$state
 		: $state;
-	if ($out) { push(@outside, [ $n, $t, $lcol, $ccol, $scell, $acts ]); }
-	else      { push(@insync,  [ $n, $t, $lcol, $ccol, $scell ]); }
+	my $row = [ $e->{'name'}, $e->{'type'}, $lcol, $ccol, &$proxy_cell($e), $scell ];
+	if ($out) { push(@outside, [ @$row, $acts ]); }
+	else      { push(@insync,  $row); }
 	}
 
 my @heads = ( $text{'cmp_name'}, $text{'cmp_type'}, $text{'cmp_local'},
-	      $text{'cmp_cf'}, $text{'cmp_state'} );
+	      $text{'cmp_cf'}, $text{'cmp_proxy'}, $text{'cmp_state'} );
 
 print &ui_subheading($text{'cmp_tbl_sync'});
 if (@insync) {
@@ -152,6 +153,6 @@ else {
 	print "<p><i>$text{'cmp_none_outside'}</i></p>\n";
 	}
 
-print "<p><font size=-1>$text{'cmp_readonly'}</font></p>\n";
+print "<p><font size=-1>$text{'cmp_readonly'} $text{'cmp_proxy_help'}</font></p>\n";
 
 &ui_print_footer("index.cgi?dom=$d->{'id'}", $text{'index_return2'});

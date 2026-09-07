@@ -18,13 +18,25 @@ $d->{'vmkit-cloudflare'} || &error(&text('index_eoff', $d->{'dom'}));
 my ($r, $err) = &cf_find_record($d, $in{'id'});
 &error($err) if ($err);
 
-# Proxy'li kayitlara hicbir islem uygulanmaz: davranislari Cloudflare
-# tarafindaki yapilandirmada, biz ne ice aktarabiliriz ne anlamli silebiliriz.
-&error($text{'act_eproxied'}) if ($r->{'proxied'});
-
 my $act = $in{'act'};
 my $done;
-if ($act eq 'import') {
+
+# Proxy'li ve BIZIM OLMAYAN kayitlara dokunulmaz: tipik ornek Cloudflare
+# tuneli - icerigi (xxx.cfargotunnel.com) yerel zone'da anlamsizdir ve
+# silinmesi calisan bir kurulumu bozar. Proxy durumunu degistirmek ise
+# yalnizca bizim kayitlarimizda serbest.
+if ($r->{'proxied'} && $act ne 'proxy') {
+	&error($text{'act_eproxied'});
+	}
+
+if ($act eq 'proxy') {
+	&cf_is_ours($r) || &error($text{'act_enotours'});
+	my $on = $r->{'proxied'} ? 0 : 1;
+	$err = &cf_set_proxy($d, $r, $on);
+	&error($err) if ($err);
+	$done = $on ? $text{'act_proxyon'} : $text{'act_proxyoff'};
+	}
+elsif ($act eq 'import') {
 	$err = &import_record($d, $r);
 	&error($err) if ($err);
 	$err = &cf_tag_record($d, $r);
