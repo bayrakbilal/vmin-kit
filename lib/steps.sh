@@ -321,8 +321,12 @@ ensure_proxy_site(){
   if [ -f "$vhost" ] && grep -qF "$url" "$vhost"; then
     ok "Vekil zaten tanimli: / -> $url"
   else
-    log "Vekil ekleniyor: / -> $url  (websocket destegiyle)"
-    if virtualmin create-proxy --domain "$site" --path / --url "$url" --websockets; then
+    log "Vekil ayarlaniyor: / -> $url  (websocket destegiyle)"
+    # Zaten bir vekil varsa (ornegin eski http hedefi) URL'yi guncelliyoruz,
+    # yoksa yenisini kuruyoruz.
+    if virtualmin modify-proxy --domain "$site" --path / --url "$url" >/dev/null 2>&1; then
+      ok "Vekil hedefi guncellendi."
+    elif virtualmin create-proxy --domain "$site" --path / --url "$url" --websockets; then
       ok "Vekil eklendi."
     else
       err "Vekil eklenemedi. Elle: virtualmin create-proxy --domain $site --path / --url $url --websockets"
@@ -405,14 +409,14 @@ step_panel_sites(){
   local wport uport
   wport="$(awk -F= '/^port=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null)"
   wport="${wport:-10000}"
-  ensure_proxy_site "${WEBMIN_PREFIX:-webmin}" "http://127.0.0.1:${wport}/" \
+  ensure_proxy_site "${WEBMIN_PREFIX:-webmin}" "https://127.0.0.1:${wport}/" \
                     "Webmin (vmin-kit)" phost
   add_trusted_referer /etc/webmin/config "${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}"
 
   if [ -f /etc/usermin/miniserv.conf ]; then
     uport="$(awk -F= '/^port=/{print $2; exit}' /etc/usermin/miniserv.conf 2>/dev/null)"
     uport="${uport:-20000}"
-    ensure_proxy_site "${USERMIN_PREFIX:-usermin}" "http://127.0.0.1:${uport}/" \
+    ensure_proxy_site "${USERMIN_PREFIX:-usermin}" "https://127.0.0.1:${uport}/" \
                       "Usermin (vmin-kit)" phost
     add_trusted_referer /etc/usermin/config "${USERMIN_PREFIX:-usermin}.${MAIN_DOMAIN}"
   else
@@ -426,20 +430,18 @@ step_panel_sites(){
 # Bu yuzden ONCE vekilin gercekten cevap verdigini dogruluyoruz; dogrulama
 # basarisizsa kilitleme YAPILMIYOR ve nasil elle yapilacagi yaziliyor.
 #
-# Arayuz loopback'te duz HTTP dinliyor, TLS'i Apache yapiyor: Apache'nin https
-# hedefe vekillemesi icin SSLProxyEngine gerekiyor ve Virtualmin onu yazmiyor.
-# Uretilen adreslerde port sizmasin diye redirect_* ayarlari veriliyor
-# (miniserv-lib.pl bunlari yonlendirme kurarken kullaniyor).
+# Arayuz kendi SSL'inde kaliyor ve vekil ona https ile gidiyor; boylece Webmin
+# kendini guvenli sayiyor ve urettigi baglantilar https oluyor.
 lock_panel_port(){
   local name="$1" conf="$2" svc="$3" prefix="$4"
   [ -f "$conf" ] || { log "  $name kurulu degil, atlaniyor."; return 0; }
 
-  if [ "$(awk -F= '/^bind=/{print $2; exit}' "$conf")" = "127.0.0.1" ]; then
-    ok "$name zaten yalnizca 127.0.0.1 dinliyor."
-    return 0
-  fi
+  local bound
+  bound="$(awk -F= '/^bind=/{print $2; exit}' "$conf")"
 
-  if ! proxy_site_works "$prefix"; then
+  # Zaten kilitliyse vekili dogrulamayi atlamiyoruz ama ayarlari yine de
+  # gozden geciriyoruz: onceki bir calistirmadan kalan yanlis deger duzelsin.
+  if [ "$bound" != "127.0.0.1" ] && ! proxy_site_works "$prefix"; then
     warn "$name kilitlenmedi: ${prefix}.${MAIN_DOMAIN} vekili dogrulanamadi."
     warn "  Vekil calistiktan sonra elle: $conf icine bind=127.0.0.1 ekleyip"
     warn "  systemctl restart $svc"
@@ -448,11 +450,12 @@ lock_panel_port(){
 
   [ -f "${conf}.vmin-kit.bak" ] || cp -a "$conf" "${conf}.vmin-kit.bak"
   set_kv "$conf" bind "127.0.0.1"
-  set_kv "$conf" ssl "0"
-  set_kv "$conf" redirect_ssl "1"
+  set_kv "$conf" ssl "1"
+  # Arayuz 10000'de dinlemeye devam ediyor; urettigi yonlendirmelerde port
+  # sizmasin diye 443 diyoruz (miniserv-lib.pl redirect_port).
   set_kv "$conf" redirect_port "443"
   systemctl restart "$svc" >/dev/null 2>&1 || warn "  $svc yeniden baslatilamadi."
-  ok "$name artik yalnizca 127.0.0.1 dinliyor -> https://${prefix}.${MAIN_DOMAIN}/"
+  ok "$name yalnizca 127.0.0.1 dinliyor -> https://${prefix}.${MAIN_DOMAIN}/"
 }
 
 step_lock_panel_ports(){

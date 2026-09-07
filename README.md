@@ -99,11 +99,16 @@ kendi sertifikasıyla çıkar:
 | `docker.<ana-domain>` | `127.0.0.1:9000` (Portainer) |
 
 Üçü de aynı kalıp (`ensure_proxy_site`): alt sunucu + `create-proxy --websockets`.
-Webmin ve Usermin ek olarak `ProxyPreserveHost On` ister (`modify-web
---proxy-host`) — gelen `Referer` başlığını gördükleri `Host` ile karşılaştırıp
-uymazsa isteği reddediyorlar. Loopback'te düz HTTP dinlerler (Apache TLS'i
-yapar); ürettikleri adreslerde port sızmasın diye `redirect_ssl` ve
-`redirect_port` ayarlanır.
+Webmin ve Usermin **kendi SSL'lerinde kalır**, vekil onlara `https://127.0.0.1:<port>`
+ile gider; böylece panel kendini güvenli sayar ve ürettiği bağlantılar `https`
+olur. Ürettikleri adreslerde port sızmasın diye `redirect_port=443` ayarlanır.
+
+İki ek ayar gerekiyor:
+- `ProxyPreserveHost On` (`modify-web --proxy-host`) — `Host` başlığı doğru gitsin.
+- **Güvenilen referer**: adres `/etc/webmin/config` içindeki `referers` satırına
+  eklenir (panelde Webmin Configuration → Trusted Referrers). Referer kontrolü
+  adı **ve portu** karşılaştırıyor; referer 443'ten, panel kendi portundan (10000)
+  geldiği için eşleşmiyor ve istek "Security Warning" ile reddediliyor.
 
 **Kilitleme adımı en sonda ve koşulludur.** `bind=127.0.0.1` yazıldıktan sonra
 panele tek erişim vekil üzerindedir; bu yüzden önce vekilin gerçekten cevap
