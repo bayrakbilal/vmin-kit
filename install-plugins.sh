@@ -125,15 +125,23 @@ install_sync_units(){
     warn "  BIND zone dizini bulunamadi; anlik tetikleme kurulmadi"
   fi
 
+  systemctl enable vmkit-cloudflare-sync.timer >/dev/null 2>&1 \
+    || warn "  vmkit-cloudflare-sync.timer etkinlestirilemedi"
+  [ -f "$pathunit" ] && { systemctl enable vmkit-cloudflare-sync.path >/dev/null 2>&1 \
+    || warn "  vmkit-cloudflare-sync.path etkinlestirilemedi"; }
+
   if [ "$changed" = 1 ]; then
     systemctl daemon-reload
-    log "  systemd birimleri guncellendi"
-  fi
-  systemctl enable --now vmkit-cloudflare-sync.timer >/dev/null 2>&1 \
-    || warn "  vmkit-cloudflare-sync.timer etkinlestirilemedi"
-  if [ -f "$pathunit" ]; then
-    systemctl enable --now vmkit-cloudflare-sync.path >/dev/null 2>&1 \
-      || warn "  vmkit-cloudflare-sync.path etkinlestirilemedi"
+    # daemon-reload dosyalari yeniden okutur ama CALISAN birim eski
+    # yapilandirmasiyla devam eder; izlenen dizin degisseydi degisiklik hic
+    # uygulanmazdi. Bu yuzden dosya degistiyse birimleri yeniden baslatiyoruz.
+    systemctl restart vmkit-cloudflare-sync.timer >/dev/null 2>&1 || true
+    [ -f "$pathunit" ] && { systemctl restart vmkit-cloudflare-sync.path >/dev/null 2>&1 || true; }
+    log "  systemd birimleri guncellendi ve yeniden baslatildi"
+  else
+    # Ilk kurulumda henuz calismiyor olabilirler.
+    systemctl start vmkit-cloudflare-sync.timer >/dev/null 2>&1 || true
+    [ -f "$pathunit" ] && { systemctl start vmkit-cloudflare-sync.path >/dev/null 2>&1 || true; }
   fi
   return 0
 }
