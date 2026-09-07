@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=oneshot
 # Zone degismediyse script hicbir API cagrisi yapmadan cikar.
 ExecStart=/usr/share/webmin/vmkit-cloudflare/sync-all.pl
-# Art arda gelen zone yazimlarinda tek bir tur calissin diye kisa bekleme.
-ExecStartPre=/bin/sleep 5
+# Bekleme YOK: DNS-01 dogrulamasinda challenge kaydinin Cloudflare'e saniyeler
+# icinde ulasmasi gerekiyor. Art arda gelen zone yazimlari zaten sorun degil -
+# zone degismediyse tur hicbir API cagrisi yapmadan bitiyor.
 Nice=10

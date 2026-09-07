@@ -12,7 +12,11 @@ use warnings;
 
 $ENV{'WEBMIN_CONFIG'} ||= "/etc/webmin";
 $ENV{'WEBMIN_VAR'}    ||= "/var/webmin";
+# Webmin'in kendi degiskeni; bir kez atandigi icin 'used only once' uyarisi
+# veriyor ve her calismada log'a dusuyordu.
+no warnings 'once';
 $main::no_acl_check++;
+use warnings 'once';
 if ($0 =~ /^(.*)\/[^\/]+$/) { chdir($1); }
 require './vmkit-cloudflare-lib.pl';
 
