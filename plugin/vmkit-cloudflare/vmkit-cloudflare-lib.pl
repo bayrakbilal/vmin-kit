@@ -375,4 +375,200 @@ return $perr if ($perr);
 return undef;
 }
 
+# ---- senkron plani --------------------------------------------------------
+# Karsilastirmanin TEK kaynagi. Hem onizleme sayfasi hem senkron motoru bunu
+# kullanir; ayri ayri siniflandirsalardi tablo bir sey gosterip motor baska
+# sey yapabilirdi.
+#
+# Her girdi: name, type, lvals, crecs, cvals, op, why
+#   op: create | update | delete | adopt | none | skip
+sub sync_plan
+{
+my ($d) = @_;
+my ($cfrecs, $err) = &cf_records($d);
+return (undef, $err) if ($err);
+
+my (%lg, %cg, %cfcname);
+foreach my $r (&local_records($d)) {
+	push(@{$lg{lc($r->{'name'})."|".$r->{'type'}}}, $r);
+	}
+foreach my $r (@$cfrecs) {
+	push(@{$cg{lc($r->{'name'})."|".uc($r->{'type'})}}, $r);
+	# Cloudflare bir adda CNAME tutarken ayni ada baska tip kabul etmez.
+	$cfcname{lc($r->{'name'})} = $r if (uc($r->{'type'}) eq 'CNAME');
+	}
+
+my %allk = map { $_ => 1 } (keys %lg, keys %cg);
+my @plan;
+foreach my $k (sort keys %allk) {
+	my ($n, $t) = split(/\|/, $k, 2);
+	my @lr = @{$lg{$k} || [ ]};
+	my @cr = @{$cg{$k} || [ ]};
+	my @lv = map { &norm_value($t, $_->{'value'}) } @lr;
+	my @cv = map { &cf_value($_) } @cr;
+	my $ours    = @cr && !(grep { !&cf_is_ours($_) } @cr);
+	my $proxied = (grep { $_->{'proxied'} } @cr) ? 1 : 0;
+	my $same    = join("\n", sort @lv) eq join("\n", sort @cv);
+
+	my $e = { 'name' => $n, 'type' => $t, 'lvals' => \@lv,
+		  'crecs' => \@cr, 'cvals' => \@cv, 'lttl' => $lr[0]->{'ttl'} };
+	if ($proxied) {
+		$e->{'op'} = 'skip'; $e->{'why'} = 'proxied';
+		}
+	elsif (@lv && !@cr) {
+		if ($t ne 'CNAME' && $cfcname{$n}) {
+			$e->{'op'} = 'skip'; $e->{'why'} = 'cnameclash';
+			$e->{'blocker'} = $cfcname{$n};
+			}
+		else { $e->{'op'} = 'create'; }
+		}
+	elsif (!@lv && @cr) {
+		if ($ours) { $e->{'op'} = 'delete'; }
+		else { $e->{'op'} = 'skip'; $e->{'why'} = 'notours'; }
+		}
+	elsif ($same) {
+		$e->{'op'} = $ours ? 'none' : 'adopt';
+		}
+	else {
+		if ($ours) { $e->{'op'} = 'update'; }
+		else { $e->{'op'} = 'skip'; $e->{'why'} = 'conflict'; }
+		}
+	push(@plan, $e);
+	}
+return (\@plan, undef);
+}
+
+# cf_body(ad, tip, deger, ttl, proxy) -> Cloudflare kayit govdesi
+# MX'te oncelik, SRV ve CAA'da parcalar ayri alanlara gidiyor.
+sub cf_body
+{
+my ($name, $type, $value, $ttl, $proxy) = @_;
+# Cloudflare'de ttl=1 "otomatik" demek; yerelde TTL yoksa onu kullaniyoruz.
+my %r = ( 'type' => $type, 'name' => $name,
+	  'ttl' => ($ttl && $ttl >= 60 ? int($ttl) : 1),
+	  'comment' => &cf_tag() );
+if ($type eq 'MX') {
+	return undef if ($value !~ /^(\d+)\s+(\S+)$/);
+	$r{'priority'} = int($1);
+	$r{'content'}  = $2;
+	}
+elsif ($type eq 'SRV') {
+	my @p = split(/\s+/, $value);
+	return undef if (@p != 4);
+	$r{'data'} = { 'priority' => int($p[0]), 'weight' => int($p[1]),
+		       'port' => int($p[2]), 'target' => $p[3] };
+	}
+elsif ($type eq 'CAA') {
+	my @p = split(/\s+/, $value, 3);
+	return undef if (@p != 3);
+	my $v = $p[2];
+	$v =~ s/^"//; $v =~ s/"$//;
+	$r{'data'} = { 'flags' => int($p[0]), 'tag' => $p[1], 'value' => $v };
+	}
+else {
+	$r{'content'} = $value;
+	}
+# Proxy yalnizca A, AAAA ve CNAME icin gecerli; digerlerinde alan gonderilmez.
+if ($type eq 'A' || $type eq 'AAAA' || $type eq 'CNAME') {
+	$r{'proxied'} = $proxy ? \1 : \0;
+	}
+return \%r;
+}
+
+# run_sync(&domain, &geri-cagirma) -> (basarili?, hata)
+# Plandaki islemleri uygular. Her satiri geri cagirmaya verir ki sayfa ne
+# yapildigini tek tek gosterebilsin.
+sub run_sync
+{
+my ($d, $cb) = @_;
+my ($plan, $err) = &sync_plan($d);
+return (0, $err) if ($err);
+my ($zid, $zerr) = &cf_zone_id($d);
+return (0, $zerr) if ($zerr);
+my $cf = &get_cf($d);
+my $base = "/zones/$zid/dns_records";
+my $ok = 1;
+my $n = 0;
+
+foreach my $e (@$plan) {
+	my $op = $e->{'op'};
+	next if ($op eq 'none' || $op eq 'skip');
+	my $what = $e->{'name'}." ".$e->{'type'};
+
+	if ($op eq 'adopt') {
+		# Deger zaten ayni; yalnizca etiketi koyuyoruz.
+		foreach my $r (@{$e->{'crecs'}}) {
+			next if (&cf_is_ours($r));
+			my (undef, $aerr) = &cf_api_req($d, "PATCH",
+				"$base/$r->{'id'}", { 'comment' => &cf_tag() });
+			$n++;
+			&$cb($aerr ? &text('sync_efail', $what, $aerr)
+				   : &text('sync_adopted', $what));
+			$ok = 0 if ($aerr);
+			}
+		next;
+		}
+
+	if ($op eq 'delete') {
+		foreach my $r (@{$e->{'crecs'}}) {
+			my (undef, $derr) = &cf_api_req($d, "DELETE",
+							"$base/$r->{'id'}");
+			$n++;
+			&$cb($derr ? &text('sync_efail', $what, $derr)
+				   : &text('sync_deleted', $what));
+			$ok = 0 if ($derr);
+			}
+		next;
+		}
+
+	# create ve update: yerel degerlerle Cloudflare kayitlarini birebir
+	# eslestiriyoruz. Fazla kayit silinir, eksik olan olusturulur. Hepsini
+	# silip yeniden olusturmak daha basit olurdu ama kaydin kisa sureligine
+	# hic var olmadigi bir aralik dogardi.
+	my @lv = @{$e->{'lvals'}};
+	my @cr = @{$e->{'crecs'}};
+	my $max = @lv > @cr ? @lv : @cr;
+	for(my $i = 0; $i < $max; $i++) {
+		if ($i < @lv && $i < @cr) {
+			# Mevcut kaydin proxy durumuna DOKUNMUYORUZ: elle
+			# ayarlanmis bir tercihi bozmayalim.
+			my $body = &cf_body($e->{'name'}, $e->{'type'}, $lv[$i],
+					    $e->{'lttl'}, $cr[$i]->{'proxied'});
+			if (!$body) { &$cb(&text('sync_ebody', $what)); $ok = 0; next; }
+			my (undef, $uerr) = &cf_api_req($d, "PUT",
+					"$base/$cr[$i]->{'id'}", $body);
+			$n++;
+			&$cb($uerr ? &text('sync_efail', $what, $uerr)
+				   : &text('sync_updated', $what, $lv[$i]));
+			$ok = 0 if ($uerr);
+			}
+		elsif ($i < @lv) {
+			# Yeni kayit: varsayilan proxy tercihi burada uygulanir.
+			my $body = &cf_body($e->{'name'}, $e->{'type'}, $lv[$i],
+					    $e->{'lttl'}, $cf->{'proxy'});
+			if (!$body) { &$cb(&text('sync_ebody', $what)); $ok = 0; next; }
+			my (undef, $cerr) = &cf_api_req($d, "POST", $base, $body);
+			$n++;
+			&$cb($cerr ? &text('sync_efail', $what, $cerr)
+				   : &text('sync_created', $what, $lv[$i]));
+			$ok = 0 if ($cerr);
+			}
+		else {
+			my (undef, $derr) = &cf_api_req($d, "DELETE",
+					"$base/$cr[$i]->{'id'}");
+			$n++;
+			&$cb($derr ? &text('sync_efail', $what, $derr)
+				   : &text('sync_deleted', $what));
+			$ok = 0 if ($derr);
+			}
+		}
+	}
+
+&$cb($text{'sync_nothing'}) if (!$n);
+$cf->{'last_status'} = $ok ? $text{'sync_ok'} : $text{'sync_partial'};
+$cf->{'last_time'} = time();
+&save_cf($d, $cf);
+return ($ok, undef);
+}
+
 1;

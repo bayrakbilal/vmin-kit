@@ -78,11 +78,17 @@ print &ui_table_row($text{'index_status'}, &zone_status($d));
 
 print &ui_table_end();
 print &ui_form_end([ [ undef, $text{'save'} ],
-		     $cf->{'token'} ? ( [ "sync", $text{'index_syncnow'} ] ) : ( ),
 		     $cf->{'token'} ? ( [ "forget", $text{'index_forget'} ] ) : ( ) ]);
 
 print "<p>",&ui_link("compare.cgi?dom=$d->{'id'}", $text{'index_compare'}),
       "</p>\n";
+# Senkron uzun surebilir ve yazma islemi: ayri bir POST formu.
+if ($cf->{'token'}) {
+	print &ui_form_start("sync.cgi", "post"),
+	      &ui_hidden("dom", $d->{'id'}),
+	      &ui_submit($text{'index_syncnow'}),
+	      &ui_form_end();
+	}
 
 &ui_print_footer("/virtual-server/summary_domain.cgi?dom=$d->{'id'}",
 		 $text{'index_return'});

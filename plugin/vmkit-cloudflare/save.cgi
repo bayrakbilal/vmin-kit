@@ -33,10 +33,5 @@ if ($in{'token'} =~ /\S/) {
 $cf->{'proxy'} = $in{'proxy'} ? 1 : 0;
 &save_cf($d, $cf);
 
-if ($in{'sync'}) {
-	# ISKELET: senkron motoru henuz yok.
-	&error($text{'save_enosync'});
-	}
-
 &webmin_log("save", "cloudflare", $d->{'dom'});
 &redirect("index.cgi?dom=$d->{'id'}");

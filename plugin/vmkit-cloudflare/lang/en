@@ -42,7 +42,6 @@ no=No
 save=Save
 save_err=Failed to save Cloudflare settings
 save_etoken=That does not look like a Cloudflare API token
-save_enosync=The sync engine is not built yet, so there is nothing to run. Settings were saved.
 index_return2=back
 index_compare=Compare with Cloudflare
 cmp_title=Local zone vs Cloudflare
@@ -89,3 +88,14 @@ act_deleted=Record deleted from Cloudflare.
 err_norec=That record no longer exists in Cloudflare
 err_noconv=This record type cannot be converted to a local zone record
 err_nozonefile=The local zone file could not be found
+sync_title=Synchronise with Cloudflare
+sync_ok=Synchronisation finished.
+sync_partial=Synchronisation finished with errors.
+sync_failed=Synchronisation could not run:
+sync_nothing=Nothing to do - Cloudflare already matches the local zone.
+sync_created=created $1 = $2
+sync_updated=updated $1 = $2
+sync_deleted=deleted $1
+sync_adopted=adopted $1
+sync_efail=FAILED $1 : $2
+sync_ebody=SKIPPED $1 - value could not be converted

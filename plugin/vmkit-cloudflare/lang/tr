@@ -42,7 +42,6 @@ no=Hayır
 save=Kaydet
 save_err=Cloudflare ayarları kaydedilemedi
 save_etoken=Bu bir Cloudflare API token'ına benzemiyor
-save_enosync=Senkron motoru henüz yazılmadı, çalıştırılacak bir şey yok. Ayarlar kaydedildi.
 index_return2=geri
 index_compare=Cloudflare ile karşılaştır
 cmp_title=Yerel zone ile Cloudflare
@@ -89,3 +88,14 @@ act_deleted=Kayıt Cloudflare'den silindi.
 err_norec=Bu kayıt Cloudflare'de artık yok
 err_noconv=Bu kayıt tipi yerel zone kaydına çevrilemiyor
 err_nozonefile=Yerel zone dosyası bulunamadı
+sync_title=Cloudflare ile senkronize et
+sync_ok=Senkronizasyon tamamlandı.
+sync_partial=Senkronizasyon hatalarla tamamlandı.
+sync_failed=Senkronizasyon çalıştırılamadı:
+sync_nothing=Yapılacak bir şey yok - Cloudflare yerel zone ile zaten aynı.
+sync_created=oluşturuldu $1 = $2
+sync_updated=güncellendi $1 = $2
+sync_deleted=silindi $1
+sync_adopted=sahiplenildi $1
+sync_efail=BAŞARISIZ $1 : $2
+sync_ebody=ATLANDI $1 - değer çevrilemedi
