@@ -281,6 +281,81 @@ step_portainer_token(){
   fi
 }
 
+# ensure_proxy_site <onek> <hedef-url> <aciklama> [proxy-host]
+# <onek>.<ana-domain> alt sunucusunu olusturur ve / yolunu hedefe vekiller.
+#
+# Yonetim araclarini disariya port acmadan yayinlamanin kalibi budur: arayuz
+# 127.0.0.1'de dinler, disariya Apache uzerinden ve o alt alanin KENDI
+# sertifikasiyla cikar. docker./webmin./usermin. ucu de bu kalibi kullaniyor.
+#
+# Ozellikler bilerek en az: --dir (web sitesi icin sart), --web (vhost),
+# --ssl (https), --parent (alt sunucu; ayri Unix kullanicisi acilmaz, DNS
+# kayitlari ana domainin zone'una yazilir). --break-ssl-cert ile ana domainin
+# sertifikasina baglanmak yerine kendi sertifikasini alir.
+#
+# 4. parametre verilirse ProxyPreserveHost acilir: Webmin ve Usermin gelen
+# Referer basligini gordukleri Host ile karsilastirip uymazsa istegi
+# reddediyorlar, vekilin arkasinda calismalari icin sart.
+ensure_proxy_site(){
+  local prefix="$1" url="$2" desc="$3" phost="${4:-}"
+  local site="${prefix}.${MAIN_DOMAIN}"
+  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; $site atlaniyor."; return 1; }
+
+  if virtualmin list-domains --name-only 2>/dev/null | grep -qxF "$site"; then
+    ok "Alt sunucu zaten var: $site"
+  else
+    log "Alt sunucu olusturuluyor: $site (ana domain: $MAIN_DOMAIN)"
+    if ! virtualmin create-domain \
+           --domain "$site" \
+           --parent "$MAIN_DOMAIN" \
+           --desc   "$desc" \
+           --dir --web --ssl --break-ssl-cert; then
+      err "$site olusturulamadi."
+      return 1
+    fi
+    ok "Alt sunucu olusturuldu: $site"
+  fi
+
+  # Vekil zaten tanimli mi? (vhost dosyasinda hedefi ariyoruz)
+  local vhost="/etc/apache2/sites-available/${site}.conf"
+  if [ -f "$vhost" ] && grep -qF "$url" "$vhost"; then
+    ok "Vekil zaten tanimli: / -> $url"
+  else
+    log "Vekil ekleniyor: / -> $url  (websocket destegiyle)"
+    if virtualmin create-proxy --domain "$site" --path / --url "$url" --websockets; then
+      ok "Vekil eklendi."
+    else
+      err "Vekil eklenemedi. Elle: virtualmin create-proxy --domain $site --path / --url $url --websockets"
+      return 1
+    fi
+  fi
+
+  if [ -n "$phost" ]; then
+    if [ -f "$vhost" ] && grep -qi 'ProxyPreserveHost[[:space:]]*On' "$vhost"; then
+      ok "Host basligi zaten iletiliyor."
+    else
+      virtualmin modify-web --domain "$site" --proxy-host >/dev/null 2>&1 \
+        && ok "Host basligi vekile iletiliyor (ProxyPreserveHost On)." \
+        || warn "ProxyPreserveHost acilamadi; $site uzerinden giris reddedilebilir."
+    fi
+  fi
+  return 0
+}
+
+# proxy_site_works <onek> -> vekil gercekten cevap veriyor mu
+# DNS'e BAGLI DEGIL: --resolve ile dogrudan yerel Apache'ye, dogru Host ve SNI
+# ile gidiyoruz. Harici DNS modunda alt alan adi daha yayilmamis olabilir ama
+# vekilin calistigini yine de dogrulayabilmemiz gerekiyor.
+proxy_site_works(){
+  local site="$1.${MAIN_DOMAIN}" code
+  code="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 \
+          --resolve "${site}:443:127.0.0.1" "https://${site}/" 2>/dev/null || true)"
+  case "$code" in
+    200|302|301|401) return 0 ;;
+    *) log "  $site -> HTTP ${code:-yanit yok}"; return 1 ;;
+  esac
+}
+
 # docker.<domain> alt sunucusu + Portainer'a proxy.
 #
 # Ozellikler burada BILEREK tek tek sayiliyor: ana domainin aksine
@@ -294,39 +369,71 @@ step_portainer_token(){
 # --break-ssl-cert ile ana domainin sertifikasina baglanmak yerine kendi
 # sertifikasini alir (ana domainin sertifikasi bu ismi kapsamiyor).
 step_docker_site(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; docker sitesi atlaniyor."; return 1; }
-  local site="${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}"
-  local port="${PORTAINER_PORT:-9000}"
-  local url="http://127.0.0.1:${port}/"
+  ensure_proxy_site "${DOCKER_PREFIX:-docker}" \
+                    "http://127.0.0.1:${PORTAINER_PORT:-9000}/" \
+                    "Portainer (vmin-kit)"
+}
 
-  if virtualmin list-domains --name-only 2>/dev/null | grep -qxF "$site"; then
-    ok "Alt sunucu zaten var: $site"
+# Yonetim arayuzleri ana domain altinda birer alt alan olarak yayinlanir:
+#   webmin.<ana-domain>  -> 127.0.0.1:10000
+#   usermin.<ana-domain> -> 127.0.0.1:20000
+# Amac disariya acik yonetim portu birakmamak. Kilitleme ayri bir adimda
+# (step_lock_panel_ports), once vekilin calistigi dogrulaniyor.
+step_panel_sites(){
+  local wport uport
+  wport="$(awk -F= '/^port=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null)"
+  wport="${wport:-10000}"
+  ensure_proxy_site "${WEBMIN_PREFIX:-webmin}" "http://127.0.0.1:${wport}/" \
+                    "Webmin (vmin-kit)" phost
+
+  if [ -f /etc/usermin/miniserv.conf ]; then
+    uport="$(awk -F= '/^port=/{print $2; exit}' /etc/usermin/miniserv.conf 2>/dev/null)"
+    uport="${uport:-20000}"
+    ensure_proxy_site "${USERMIN_PREFIX:-usermin}" "http://127.0.0.1:${uport}/" \
+                      "Usermin (vmin-kit)" phost
   else
-    log "Alt sunucu olusturuluyor: $site (ana domain: $MAIN_DOMAIN)"
-    if ! virtualmin create-domain \
-           --domain "$site" \
-           --parent "$MAIN_DOMAIN" \
-           --desc   "Portainer (vmin-kit)" \
-           --dir --web --ssl --break-ssl-cert; then
-      err "$site olusturulamadi; proxy adimi atlaniyor."
-      return 1
-    fi
-    ok "Alt sunucu olusturuldu: $site"
+    log "Usermin kurulu degil; usermin.<domain> atlaniyor."
+  fi
+}
+
+# Yonetim portlarini yalnizca 127.0.0.1'e baglar.
+#
+# TEHLIKELI ADIM: baglandiktan sonra panele tek erisim vekil uzerinden olur.
+# Bu yuzden ONCE vekilin gercekten cevap verdigini dogruluyoruz; dogrulama
+# basarisizsa kilitleme YAPILMIYOR ve nasil elle yapilacagi yaziliyor.
+#
+# Arayuz loopback'te duz HTTP dinliyor, TLS'i Apache yapiyor: Apache'nin https
+# hedefe vekillemesi icin SSLProxyEngine gerekiyor ve Virtualmin onu yazmiyor.
+# Uretilen adreslerde port sizmasin diye redirect_* ayarlari veriliyor
+# (miniserv-lib.pl bunlari yonlendirme kurarken kullaniyor).
+lock_panel_port(){
+  local name="$1" conf="$2" svc="$3" prefix="$4"
+  [ -f "$conf" ] || { log "  $name kurulu degil, atlaniyor."; return 0; }
+
+  if [ "$(awk -F= '/^bind=/{print $2; exit}' "$conf")" = "127.0.0.1" ]; then
+    ok "$name zaten yalnizca 127.0.0.1 dinliyor."
+    return 0
   fi
 
-  # Proxy zaten tanimli mi? (vhost dosyasinda hedef URL'yi ariyoruz)
-  local vhost="/etc/apache2/sites-available/${site}.conf"
-  if [ -f "$vhost" ] && grep -q "127.0.0.1:${port}" "$vhost"; then
-    ok "Proxy zaten tanimli: / -> $url"
-  else
-    log "Proxy ekleniyor: / -> $url  (websocket destegiyle)"
-    if virtualmin create-proxy --domain "$site" --path / --url "$url" --websockets; then
-      ok "Proxy eklendi."
-    else
-      warn "Proxy eklenemedi. Elle:"
-      warn "  virtualmin create-proxy --domain $site --path / --url $url --websockets"
-    fi
+  if ! proxy_site_works "$prefix"; then
+    warn "$name kilitlenmedi: ${prefix}.${MAIN_DOMAIN} vekili dogrulanamadi."
+    warn "  Vekil calistiktan sonra elle: $conf icine bind=127.0.0.1 ekleyip"
+    warn "  systemctl restart $svc"
+    return 1
   fi
+
+  [ -f "${conf}.vmin-kit.bak" ] || cp -a "$conf" "${conf}.vmin-kit.bak"
+  set_kv "$conf" bind "127.0.0.1"
+  set_kv "$conf" ssl "0"
+  set_kv "$conf" redirect_ssl "1"
+  set_kv "$conf" redirect_port "443"
+  systemctl restart "$svc" >/dev/null 2>&1 || warn "  $svc yeniden baslatilamadi."
+  ok "$name artik yalnizca 127.0.0.1 dinliyor -> https://${prefix}.${MAIN_DOMAIN}/"
+}
+
+step_lock_panel_ports(){
+  lock_panel_port "Webmin"  /etc/webmin/miniserv.conf  webmin  "${WEBMIN_PREFIX:-webmin}"
+  lock_panel_port "Usermin" /etc/usermin/miniserv.conf usermin "${USERMIN_PREFIX:-usermin}"
 }
 
 step_docker(){
@@ -470,7 +577,14 @@ step_report(){
     echo "Docker       : $dk"
     echo "Portainer    : $pt"
     echo
-    echo "Panel        : https://${HOSTNAME_FQDN}:10000"
+    if [ "$(awk -F= '/^bind=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null)" = "127.0.0.1" ]; then
+      echo "Panel        : https://${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}/"
+      echo "               (10000 portu disariya KAPALI, yalnizca 127.0.0.1)"
+      echo "               Vekil bozulursa: SSH ile /etc/webmin/miniserv.conf"
+      echo "               icindeki bind= satirini silip systemctl restart webmin"
+    else
+      echo "Panel        : https://${HOSTNAME_FQDN}:10000"
+    fi
     if is_truthy "${DOCKER:-0}"; then
       echo "Portainer    : https://${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}/"
       echo "               Ilk giriste setup_token istenir. Token kisa omurludur;"

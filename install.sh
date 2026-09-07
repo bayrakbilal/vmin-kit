@@ -85,6 +85,8 @@ POSTGRES="${POSTGRES:-1}"
 COMPOSER="${COMPOSER:-1}"
 NO_ADMIN_REDIRECT="${NO_ADMIN_REDIRECT:-1}"
 NO_WEBMAIL_REDIRECT="${NO_WEBMAIL_REDIRECT:-1}"
+PANEL_PROXY="${PANEL_PROXY:-1}"
+LOCK_PANEL_PORTS="${LOCK_PANEL_PORTS:-1}"
 # Docker ve Portainer tek bayrak: Portainer, Docker olmadan anlamsiz ve
 # Docker'i Portainer'siz kurmak istemedigimiz icin ikisi birlikte gider.
 DOCKER="${DOCKER:-1}"
@@ -150,6 +152,12 @@ fi
 if is_truthy "$NO_WEBMAIL_REDIRECT"; then
   log "  - webmail.<domain> -> Usermin yonlendirmesi: KAPATILACAK"
 fi
+if is_truthy "$PANEL_PROXY"; then
+  log "  - ${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN} -> Webmin (vekil)"
+  log "  - ${USERMIN_PREFIX:-usermin}.${MAIN_DOMAIN} -> Usermin (vekil)"
+  is_truthy "$LOCK_PANEL_PORTS" &&
+    log "  - Yonetim portlari (10000/20000) yalnizca 127.0.0.1'e baglanacak"
+fi
 log "  - Eklentiler  :$(plugin_list_enabled)"
 
 if is_truthy "$DOCKER"; then
@@ -208,16 +216,26 @@ step_plugins
 step_main_domain
 step_host_dns
 step_ssl
+if is_truthy "$PANEL_PROXY"; then step_panel_sites; fi
 if is_truthy "$DOCKER"; then
   step_docker
   step_portainer
   step_docker_site
 fi
+# Kilitleme EN SON: once vekillerin calistigi dogrulanir, dogrulanamazsa
+# port kapatilmaz. Yanlis sirada yapilirsa panele erisim kaybedilir.
+if is_truthy "$PANEL_PROXY" && is_truthy "$LOCK_PANEL_PORTS"; then
+  step_lock_panel_ports
+fi
 step_report
 
 echo
 ok "Tamamlandi."
-log "Panel : https://${HOSTNAME_FQDN}:10000"
+if is_truthy "$PANEL_PROXY"; then
+  log "Panel : https://${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}/"
+else
+  log "Panel : https://${HOSTNAME_FQDN}:10000"
+fi
 log "Site  : https://${MAIN_DOMAIN}"
 log "Rapor : $VMINKIT_REPORT"
 

@@ -53,7 +53,9 @@ verilebilir: `MAIN_DOMAIN=ornek.com sudo -E ./install.sh`.
 | `main-domain` | Ana domaini **Virtualmin'in kendi varsayılanlarıyla** oluşturur (`--default-features`) — panelden açtığın domainlerle birebir aynı. Açılan özellikler kurulum kaydına yazılır. |
 | `host-dns` | Ana domainin zone'una hostname (`s.<domain>`) için A kaydı ekler. |
 | `ssl` | Ana domain için Let's Encrypt sertifikası + otomatik yenileme. |
+| `panel-sites` | Webmin ve Usermin'i ana domain altında birer alt alan olarak yayınlar: `webmin.<domain>` → `127.0.0.1:10000`, `usermin.<domain>` → `127.0.0.1:20000`. `PANEL_PROXY=1`. |
 | `docker` | Docker Engine + Portainer CE + `docker.<domain>` proxy sitesi. Tek bayrak (`DOCKER=1`); üçü birlikte gelir. *(isteğe bağlı)* |
+| `lock-panel-ports` | Vekilin çalıştığı **doğrulandıktan sonra** 10000/20000 portlarını yalnızca `127.0.0.1`'e bağlar. `LOCK_PANEL_PORTS=1`. Doğrulanamazsa kilitlemez. |
 | `report` | Araç klasörüne `vmin-kit-rapor.txt` üretir: ne yapıldı, panel adresi, sırada ne var. |
 
 Tüm adımlar **idempotent**: ikinci kez çalıştırmak zarar vermez, kurulu olanı atlar.
@@ -83,6 +85,32 @@ gerekir: **Edit Virtual Server → Password**.
 
 `webmail.<domain>` kısayolu posta açık olsa bile kapalıdır
 (`NO_WEBMAIL_REDIRECT=1`); Usermin'e panel adresinden girilir.
+
+### Yönetim arayüzleri neden port değil alt alan?
+
+Dışarıya açık yönetim portu bırakmıyoruz. Webmin, Usermin ve Portainer
+`127.0.0.1`'de dinler; dışarıya Apache üzerinden, her biri kendi alt alanı ve
+kendi sertifikasıyla çıkar:
+
+| Adres | Arkasında |
+|---|---|
+| `webmin.<ana-domain>` | `127.0.0.1:10000` |
+| `usermin.<ana-domain>` | `127.0.0.1:20000` |
+| `docker.<ana-domain>` | `127.0.0.1:9000` (Portainer) |
+
+Üçü de aynı kalıp (`ensure_proxy_site`): alt sunucu + `create-proxy --websockets`.
+Webmin ve Usermin ek olarak `ProxyPreserveHost On` ister (`modify-web
+--proxy-host`) — gelen `Referer` başlığını gördükleri `Host` ile karşılaştırıp
+uymazsa isteği reddediyorlar. Loopback'te düz HTTP dinlerler (Apache TLS'i
+yapar); ürettikleri adreslerde port sızmasın diye `redirect_ssl` ve
+`redirect_port` ayarlanır.
+
+**Kilitleme adımı en sonda ve koşulludur.** `bind=127.0.0.1` yazıldıktan sonra
+panele tek erişim vekil üzerindedir; bu yüzden önce vekilin gerçekten cevap
+verdiği doğrulanır (`curl --resolve` ile doğrudan yerel Apache'ye, DNS'e
+bağlı olmadan). Doğrulanamazsa port kapatılmaz. Kurtarma: SSH ile
+`/etc/webmin/miniserv.conf` içindeki `bind=` satırını silip
+`systemctl restart webmin`.
 
 ## DNS modları
 
