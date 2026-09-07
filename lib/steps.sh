@@ -133,6 +133,43 @@ step_panel_redirects(){
   done
 }
 
+# Domain varsayilanlari: ilk domain olusmadan once Virtualmin'in modul
+# yapilandirmasina yazilir, cunku --default-features bu degerleri okuyor.
+# Bayrak yok - dogru kurulum davranisi bu; istisna gerekirse panelden acilir.
+#
+#   spam=0, virus=0  Spam ve virus taramasi ana domainde ACILMASIN. Kurulum
+#                    sonrasi sihirbaz bunlari zaten kapali olarak oneriyor;
+#                    domain onlarla olusursa sihirbaz "1 sanal sunucu
+#                    kullaniyor" diyip kapatmaya izin vermiyor. Ihtiyac olursa
+#                    sihirbazdan ya da Features and Plugins'ten acilir.
+#
+#   append_style=6   Posta kutusu kullanici adlari <ad>@<domain> bicimde
+#                    olusur (userdom_name, deger 6). Boylece webmail'e
+#                    e-posta adresiyle giris yapilir - diger panellerdeki
+#                    standart davranis. Domain sahibi kullanici bunun
+#                    disindadir, onun adi domainin unix kullanicisidir.
+#
+# Idempotent: deger zaten dogruysa dosyaya dokunulmaz.
+step_domain_defaults(){
+  local cfg="/etc/webmin/virtual-server/config"
+  if [ ! -f "$cfg" ]; then err "Virtualmin config yok; domain varsayilanlari atlaniyor."; return 1; fi
+  [ -f "${cfg}.vmin-kit.bak" ] || cp -a "$cfg" "${cfg}.vmin-kit.bak"
+
+  local row key val name cur
+  for row in "spam|0|Spam taramasi" \
+             "virus|0|Virus taramasi" \
+             "append_style|6|Posta kutusu adi <ad>@<domain>"; do
+    IFS='|' read -r key val name <<< "$row"
+    cur="$(awk -F= -v k="$key" '$1==k{print $2; exit}' "$cfg")"
+    if [ "$cur" = "$val" ]; then
+      ok "$name: zaten ${key}=${val}"
+    else
+      set_kv "$cfg" "$key" "$val"
+      ok "$name: ${key}=${val} yazildi"
+    fi
+  done
+}
+
 # Ana domaini VIRTUALMIN'IN KENDI VARSAYILANLARIYLA olusturur
 # (--default-features): panelden "Create Virtual Server" dediginde ne
 # aciliyorsa aynisi. Boylece ana domain ozel bir durum olmuyor, sonradan
@@ -281,7 +318,7 @@ step_portainer_token(){
   fi
 }
 
-# ensure_proxy_site <onek> <hedef-url> <aciklama> [proxy-host]
+# ensure_proxy_site <onek> <hedef-url> <aciklama>
 # <onek>.<ana-domain> alt sunucusunu olusturur ve / yolunu hedefe vekiller.
 #
 # Yonetim araclarini disariya port acmadan yayinlamanin kalibi budur: arayuz
@@ -293,11 +330,8 @@ step_portainer_token(){
 # kayitlari ana domainin zone'una yazilir). --break-ssl-cert ile ana domainin
 # sertifikasina baglanmak yerine kendi sertifikasini alir.
 #
-# 4. parametre verilirse ProxyPreserveHost acilir: Webmin ve Usermin gelen
-# Referer basligini gordukleri Host ile karsilastirip uymazsa istegi
-# reddediyorlar, vekilin arkasinda calismalari icin sart.
 ensure_proxy_site(){
-  local prefix="$1" url="$2" desc="$3" phost="${4:-}"
+  local prefix="$1" url="$2" desc="$3"
   local site="${prefix}.${MAIN_DOMAIN}"
   command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; $site atlaniyor."; return 1; }
 
@@ -334,15 +368,6 @@ ensure_proxy_site(){
     fi
   fi
 
-  if [ -n "$phost" ]; then
-    if [ -f "$vhost" ] && grep -qi 'ProxyPreserveHost[[:space:]]*On' "$vhost"; then
-      ok "Host basligi zaten iletiliyor."
-    else
-      virtualmin modify-web --domain "$site" --proxy-host >/dev/null 2>&1 \
-        && ok "Host basligi vekile iletiliyor (ProxyPreserveHost On)." \
-        || warn "ProxyPreserveHost acilamadi; $site uzerinden giris reddedilebilir."
-    fi
-  fi
   return 0
 }
 
@@ -365,7 +390,7 @@ proxy_site_works(){
 #
 # Bu bir vekil DEGIL, gercek bir PHP uygulamasi; Virtualmin'in kendi kurucusu
 # (Install Scripts) ile kuruluyor. Roundcube veritabani istedigi icin alt
-# sunucu --mysql ile olusuyor; ProxyPreserveHost gibi seylere ihtiyaci yok.
+# sunucu --mysql ile olusuyor.
 #
 # Roundcube yalnizca bir IMAP istemcisi: postalar Dovecot'un Maildir'inde
 # durur, kullanici/kutu/sifre yonetimi Virtualmin'de kalir. Giris adresi tam
@@ -391,16 +416,43 @@ step_webmail(){
 
   if virtualmin list-scripts --domain "$site" 2>/dev/null | grep -qi roundcube; then
     ok "Roundcube zaten kurulu: https://${site}/"
-    return 0
+  else
+    log "Roundcube kuruluyor: https://${site}/  (indirme ve kurulum biraz surer)"
+    if virtualmin install-script --domain "$site" --type roundcube \
+           --version latest --path / --db "mysql roundcube" --newdb --prefix-db; then
+      ok "Roundcube kuruldu: https://${site}/"
+    else
+      err "Roundcube kurulamadi. Elle: Virtualmin -> $site -> Install Scripts"
+      return 1
+    fi
   fi
 
-  log "Roundcube kuruluyor: https://${site}/  (indirme ve kurulum biraz surer)"
-  if virtualmin install-script --domain "$site" --type roundcube \
-       --version latest --path / --db "mysql roundcube" --newdb --prefix-db; then
-    ok "Roundcube kuruldu: https://${site}/"
+  # Kimlikler. Virtualmin'in kurucusu mail_domain satirini
+  # config.inc.php.sample icinde DEGISTIREREK yaziyor (scripts/roundcube.pl);
+  # Roundcube 1.7'nin ornek dosyasinda o satir artik olmadigi icin deger bos
+  # kaliyor ve kimlik <kullanici>@localhost olarak cikiyordu.
+  #
+  # Tek bir mail_domain yazmak cok domainli sunucuda yanlis olur. Bunun yerine
+  # Roundcube'un virtuser_file ayarini kullaniyoruz: kullanicinin gercek
+  # adreslerini ve ALIAS adreslerini Postfix'in virtual haritasindan okuyup
+  # kimlik olarak olusturuyor. Virtualmin o haritayi zaten yonetiyor.
+  local dir cfg
+  dir="$(virtualmin list-scripts --domain "$site" --multiline 2>/dev/null |
+         awk -F': ' '/^[[:space:]]*Directory:/{print $2; exit}')"
+  cfg="$dir/config/config.inc.php"
+  if [ ! -f "$cfg" ]; then
+    warn "Roundcube yapilandirmasi bulunamadi ($cfg); kimlik ayari atlandi."
+    return 0
+  fi
+  if grep -q "virtuser_file" "$cfg"; then
+    ok "Roundcube kimlik ayari zaten yapilmis."
   else
-    err "Roundcube kurulamadi. Elle: Virtualmin -> $site -> Install Scripts"
-    return 1
+    {
+      echo
+      echo "// vmin-kit: kimlikleri ve alias adreslerini Postfix virtual haritasindan al"
+      echo "\$config['virtuser_file'] = '/etc/postfix/virtual';"
+    } >> "$cfg"
+    ok "Roundcube kimlikleri Postfix virtual haritasina baglandi."
   fi
 }
 
@@ -426,8 +478,7 @@ step_docker_site(){
 # Host + PORT ile karsilastiriyor (web-lib-funcs.pl, referer kontrolu).
 # Vekilin arkasinda referer https://webmin.<domain> yani port 443, arayuzun
 # kendi portu ise 10000 oldugu icin esitlik tutmuyor ve istek "Security
-# Warning" sayfasiyla reddediliyor. ProxyPreserveHost adi duzeltiyor ama port
-# farkini gideremiyor.
+# Warning" sayfasiyla reddediliyor.
 #
 # Cozum panelin kendi onerdigi sey: adresi guvenilen siteler listesine eklemek.
 # Panelde Webmin Configuration -> Trusted Referrers ile ayni yer.
@@ -454,14 +505,14 @@ step_panel_sites(){
   wport="$(awk -F= '/^port=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null)"
   wport="${wport:-10000}"
   ensure_proxy_site "${WEBMIN_PREFIX:-webmin}" "https://127.0.0.1:${wport}/" \
-                    "Webmin (vmin-kit)" phost
+                    "Webmin (vmin-kit)"
   add_trusted_referer /etc/webmin/config "${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}"
 
   if [ -f /etc/usermin/miniserv.conf ]; then
     uport="$(awk -F= '/^port=/{print $2; exit}' /etc/usermin/miniserv.conf 2>/dev/null)"
     uport="${uport:-20000}"
     ensure_proxy_site "${USERMIN_PREFIX:-usermin}" "https://127.0.0.1:${uport}/" \
-                      "Usermin (vmin-kit)" phost
+                      "Usermin (vmin-kit)"
     add_trusted_referer /etc/usermin/config "${USERMIN_PREFIX:-usermin}.${MAIN_DOMAIN}"
   else
     log "Usermin kurulu degil; usermin.<domain> atlaniyor."

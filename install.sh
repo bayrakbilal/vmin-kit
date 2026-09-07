@@ -220,6 +220,7 @@ if is_truthy "$POSTGRES"; then step_postgres; fi
 if is_truthy "$COMPOSER"; then step_composer; fi
 step_dns_template
 step_panel_redirects
+step_domain_defaults
 # Eklentiler domainlerden ONCE: boylece domain olusturulurken ozellikleri
 # secilebilir hale geliyor. Virtualmin kurulu oldugu icin BIND de kurulu,
 # senkron servisinin izleyecegi zone dizini bu asamada mevcut.

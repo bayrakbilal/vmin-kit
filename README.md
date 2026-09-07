@@ -49,13 +49,14 @@ verilebilir: `MAIN_DOMAIN=ornek.com sudo -E ./install.sh`.
 | `composer` | Composer kurar (`vmkit-composer` eklentisinin gereksinimi). *(isteğe bağlı)* |
 | `dns-template` | Yeni domainler için DNS varsayılanları (`bind_master`, `dns_ns`, `dns_prins`, `bind_sub`). |
 | `panel-redirects` | Virtualmin'in her domaine eklediği iki kısayolu kapatır: `admin.<domain>` → panel (`:10000`) ve `webmail.<domain>` → Usermin (`:20000`). Bayraklar: `NO_ADMIN_REDIRECT`, `NO_WEBMAIL_REDIRECT` (ikisi de varsayılan 1). Her anahtar hem DNS kaydını hem Apache yönlendirmesini kapatıyor; **domain oluşmadan önce** çalışmalı, sonradan kapatmak var olanları temizlemiyor. |
+| `domain-defaults` | İlk domain oluşmadan önce Virtualmin varsayılanları: **spam ve virüs taraması kapalı** (kurulum sonrası sihirbaz da bunları kapalı öneriyor; domain onlarla oluşursa sihirbaz kapatmaya izin vermiyor) ve `append_style=6` — posta kutusu adları `<ad>@<domain>` olur, webmail'e **e-posta adresiyle** girilir. |
 | `plugins` | Eklentileri `.wbm.gz` olarak paketleyip Webmin'in `install-module.pl`'i ile kurar, Virtualmin'in `plugins=` listesine ekler. Hangileri: `PLUGIN_*` bayrakları. |
 | `main-domain` | Ana domaini **Virtualmin'in kendi varsayılanlarıyla** oluşturur (`--default-features`) — panelden açtığın domainlerle birebir aynı. Açılan özellikler kurulum kaydına yazılır. |
 | `host-dns` | Ana domainin zone'una hostname (`s.<domain>`) için A kaydı ekler. |
 | `ssl` | Ana domain için Let's Encrypt sertifikası + otomatik yenileme. |
 | `panel-sites` | Webmin ve Usermin'i ana domain altında birer alt alan olarak yayınlar: `webmin.<domain>` → `127.0.0.1:10000`, `usermin.<domain>` → `127.0.0.1:20000`. `PANEL_PROXY=1`. |
 | `docker` | Docker Engine + Portainer CE + `docker.<domain>` proxy sitesi. Tek bayrak (`DOCKER=1`); üçü birlikte gelir. *(isteğe bağlı)* |
-| `webmail` | `webmail.<domain>` alt sunucusu + Virtualmin'in kendi Install Scripts'i ile **Roundcube**. `ROUNDCUBE=1`. |
+| `webmail` | `webmail.<domain>` alt sunucusu + Virtualmin'in kendi Install Scripts'i ile **Roundcube**. Kimlikler ve alias adresleri Postfix'in `virtual` haritasından okunur (`virtuser_file`). `ROUNDCUBE=1`. |
 | `lock-panel-ports` | Vekilin çalıştığı **doğrulandıktan sonra** 10000/20000 portlarını yalnızca `127.0.0.1`'e bağlar. `LOCK_PANEL_PORTS=1`. Doğrulanamazsa kilitlemez. |
 | `report` | Araç klasörüne `vmin-kit-rapor.txt` üretir: ne yapıldı, panel adresi, sırada ne var. |
 
@@ -103,12 +104,11 @@ kendi sertifikasıyla çıkar:
 Webmin ve Usermin kendi SSL'lerinde kalır, vekil onlara `https://127.0.0.1:<port>`
 ile gider.
 
-İki ek ayar gerekiyor:
-- `ProxyPreserveHost On` (`modify-web --proxy-host`) — `Host` başlığı doğru gitsin.
-- **Güvenilen referer**: adres `/etc/webmin/config` içindeki `referers` satırına
-  eklenir (panelde Webmin Configuration → Trusted Referrers). Referer kontrolü
-  adı **ve portu** karşılaştırıyor; referer 443'ten, panel kendi portundan (10000)
-  geldiği için eşleşmiyor ve istek "Security Warning" ile reddediliyor.
+Tek ek ayar **güvenilen referer**: adres `/etc/webmin/config` içindeki `referers`
+satırına eklenir (panelde Webmin Configuration → Trusted Referrers). Referer
+kontrolü adı **ve portu** karşılaştırıyor; referer 443'ten, panel kendi
+portundan (10000) geldiği için eşleşmiyor ve istek "Security Warning" ile
+reddediliyor. Bunun dışında Virtualmin'in getirdiği ayarlara dokunulmaz.
 
 **Kilitleme adımı en sonda ve koşulludur.** `bind=127.0.0.1` yazıldıktan sonra
 panele tek erişim vekil üzerindedir; bu yüzden önce vekilin gerçekten cevap
