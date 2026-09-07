@@ -49,10 +49,10 @@ verilebilir: `MAIN_DOMAIN=ornek.com sudo -E ./install.sh`.
 | `composer` | Composer kurar (`vmkit-composer` eklentisinin gereksinimi). *(isteğe bağlı)* |
 | `dns-template` | Yeni domainler için DNS varsayılanları (`bind_master`, `dns_ns`, `dns_prins`, `bind_sub`). |
 | `panel-redirects` | Virtualmin'in her domaine eklediği iki kısayolu kapatır: `admin.<domain>` → panel (`:10000`) ve `webmail.<domain>` → Usermin (`:20000`). Bayraklar: `NO_ADMIN_REDIRECT`, `NO_WEBMAIL_REDIRECT` (ikisi de varsayılan 1). Her anahtar hem DNS kaydını hem Apache yönlendirmesini kapatıyor; **domain oluşmadan önce** çalışmalı, sonradan kapatmak var olanları temizlemiyor. |
-| `main-domain` | Ana domaini oluşturur: web + SSL + DNS (+ `MAIL=1` ise posta). Veritabanı **kapalı**. |
+| `plugins` | Eklentileri `.wbm.gz` olarak paketleyip Webmin'in `install-module.pl`'i ile kurar, Virtualmin'in `plugins=` listesine ekler. Hangileri: `PLUGIN_*` bayrakları. |
+| `main-domain` | Ana domaini **Virtualmin'in kendi varsayılanlarıyla** oluşturur (`--default-features`) — panelden açtığın domainlerle birebir aynı. Açılan özellikler kurulum kaydına yazılır. |
 | `host-dns` | Ana domainin zone'una hostname (`s.<domain>`) için A kaydı ekler. |
 | `ssl` | Ana domain için Let's Encrypt sertifikası + otomatik yenileme. |
-| `plugins` | Eklentileri `.wbm.gz` olarak paketleyip Webmin'in `install-module.pl`'i ile kurar, Virtualmin'in `plugins=` listesine ekler. Hangileri: `PLUGIN_*` bayrakları. |
 | `docker` | Docker Engine + Portainer CE + `docker.<domain>` proxy sitesi. Tek bayrak (`DOCKER=1`); üçü birlikte gelir. *(isteğe bağlı)* |
 | `report` | Araç klasörüne `vmin-kit-rapor.txt` üretir: ne yapıldı, panel adresi, sırada ne var. |
 
@@ -60,16 +60,26 @@ Tüm adımlar **idempotent**: ikinci kez çalıştırmak zarar vermez, kurulu ol
 
 ### Ana domainde ne açık?
 
-Web + SSL + DNS her zaman; posta `MAIL=1` ile (varsayılan açık). **Veritabanı
-kapalı** — domain başına onay kutusu, ihtiyaç olduğunda **Virtualmin → Edit
-Virtual Server → Enabled features** üzerinden açılır.
+Ana domain `--default-features` ile oluşturuluyor: panelden **Create Virtual
+Server** dediğinde ne açılıyorsa aynısı. Ana domain böylece özel bir durum
+olmuyor; sonradan panelden açtığın domainlerle aynı şekilde kuruluyor. Üç
+eklentimiz de o listede (`plugins_inactive`'e yazmadığımız için yeni
+domainlerde varsayılan açıklar) — bu yüzden `plugins` adımı `main-domain`'den
+**önce** çalışıyor.
 
-Posta açıldığında Virtualmin zone'a `mail.<domain>` A kaydı ve MX ekler.
-Ayrıca domain sahibi unix kullanıcısı o anda bir posta kutusuna dönüşür:
-adresi `<kullanıcı>@<domain>` olur (`blnk.tr` için `blnk@blnk.tr`). Ayrı bir
-hesap açılmaz, var olan hesap adres kazanır. Şifresi kurulumda rastgele
-üretilip **atıldığı** için kutuyu kullanmadan önce panelden bir şifre
-belirlemek gerekir: **Edit Virtual Server → Password**.
+Sonuç Virtualmin'in global yapılandırmasından geliyor, ama pratikte sunucudan
+sunucuya değişmiyor: post-install sihirbazı panele **ilk girişte** çalışır,
+kurulum ise domaini ondan önce CLI'dan oluşturur. Yani okunan değerler
+Virtualmin'in paketten gelen varsayılanlarıdır, sihirbaz cevapları değil.
+Yine de varsayım yapmamak için açılan özellik ve eklenti listesi hem kurulum
+çıktısına hem rapora yazılıyor.
+
+Posta açıksa Virtualmin zone'a `mail.<domain>` A kaydı ve MX ekler. Ayrıca
+domain sahibi unix kullanıcısı o anda bir posta kutusuna dönüşür: adresi
+`<kullanıcı>@<domain>` olur (`blnk.tr` için `blnk@blnk.tr`). Ayrı bir hesap
+açılmaz, var olan hesap adres kazanır. Şifresi kurulumda rastgele üretilip
+**atıldığı** için kutuyu kullanmadan önce panelden bir şifre belirlemek
+gerekir: **Edit Virtual Server → Password**.
 
 `webmail.<domain>` kısayolu posta açık olsa bile kapalıdır
 (`NO_WEBMAIL_REDIRECT=1`); Usermin'e panel adresinden girilir.

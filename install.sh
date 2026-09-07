@@ -85,7 +85,6 @@ POSTGRES="${POSTGRES:-1}"
 COMPOSER="${COMPOSER:-1}"
 NO_ADMIN_REDIRECT="${NO_ADMIN_REDIRECT:-1}"
 NO_WEBMAIL_REDIRECT="${NO_WEBMAIL_REDIRECT:-1}"
-MAIL="${MAIL:-1}"
 # Docker ve Portainer tek bayrak: Portainer, Docker olmadan anlamsiz ve
 # Docker'i Portainer'siz kurmak istemedigimiz icin ikisi birlikte gider.
 DOCKER="${DOCKER:-1}"
@@ -143,7 +142,7 @@ if is_truthy "$COMPOSER"; then
   else                                         log "  - Composer    : KURULACAK"; fi
 fi
 log "  - DNS sablonu : NS1=${NS1}  NS2=${NS2}   (bu sunucunun NS cifti)"
-log "  - Ana domain  : $MAIN_DOMAIN  (web + SSL + DNS$(is_truthy "$MAIL" && echo " + POSTA"); veritabani KAPALI)"
+log "  - Ana domain  : $MAIN_DOMAIN  (Virtualmin varsayilan ozellikleriyle)"
 log "  - SSL         : $MAIN_DOMAIN icin Lets Encrypt"
 if is_truthy "$NO_ADMIN_REDIRECT"; then
   log "  - admin.<domain> -> panel yonlendirmesi: KAPATILACAK"
@@ -202,10 +201,13 @@ if is_truthy "$POSTGRES"; then step_postgres; fi
 if is_truthy "$COMPOSER"; then step_composer; fi
 step_dns_template
 step_panel_redirects
+# Eklentiler domainlerden ONCE: boylece domain olusturulurken ozellikleri
+# secilebilir hale geliyor. Virtualmin kurulu oldugu icin BIND de kurulu,
+# senkron servisinin izleyecegi zone dizini bu asamada mevcut.
+step_plugins
 step_main_domain
 step_host_dns
 step_ssl
-step_plugins
 if is_truthy "$DOCKER"; then
   step_docker
   step_portainer

@@ -133,10 +133,19 @@ step_panel_redirects(){
   done
 }
 
-# Ana domaini olusturur: web + SSL + DNS (+ MAIL=1 ise posta).
+# Ana domaini VIRTUALMIN'IN KENDI VARSAYILANLARIYLA olusturur
+# (--default-features): panelden "Create Virtual Server" dediginde ne
+# aciliyorsa aynisi. Boylece ana domain ozel bir durum olmuyor, sonradan
+# panelden actigin domainlerle ayni sekilde kuruluyor.
 #
-# Veritabani BILEREK kapali - domain basina onay kutusu, istendigi an panelden
-# acilir (Edit Virtual Server -> Enabled features).
+# Hangi ozelliklerin varsayilan oldugu Virtualmin'in kendi yapilandirmasindan
+# geliyor (System Settings -> Features and Plugins). Bizim eklentilerimiz de o
+# listede: plugins_inactive'e yazmadigimiz icin yeni domainlerde varsayilan
+# acikler.
+#
+# Bunun bedeli: sonuc o sunucunun global yapilandirmasina bagli. Bu yuzden
+# olusan ozellik listesini asagida LOGA yaziyoruz - ikinci sunucuda fark
+# olursa kurulum kaydindan gorulsun.
 #
 # Posta acildiginda Virtualmin zone'a mail.<domain> A kaydi ve MX ekler; ayrica
 # domain sahibi unix kullanicisi o anda bir posta kutusuna donusur: adresi
@@ -151,19 +160,18 @@ step_main_domain(){
   # Sifre rastgele uretilir ve HICBIR YERE yazilmaz. Kullanilmasi gerekirse
   # (Webmin girisi, FTP) panelden degistirilir; saklanmayan sir sizmaz.
   local pw; pw="$(gen_pass)"
-  # Ozellikler acikca veriliyor: create-domain yalnizca sayilanlari aciyor,
-  # sablon varsayilanlarina bakmiyor.
-  local feats=(--unix --dir --web --ssl --dns --webmin)
-  local what="web + SSL + DNS"
-  if is_truthy "${MAIL:-1}"; then feats+=(--mail); what="$what + posta"; fi
-  log "Ana domain olusturuluyor: $MAIN_DOMAIN  ($what; veritabani kapali)"
+  log "Ana domain olusturuluyor: $MAIN_DOMAIN  (Virtualmin varsayilan ozellikleri)"
   virtualmin create-domain \
     --domain "$MAIN_DOMAIN" \
     --pass   "$pw" \
     --desc   "$MAIN_DOMAIN" \
-    "${feats[@]}"
+    --default-features
   unset pw
   ok "Ana domain olusturuldu."
+  # Ne acildigini kayda gecir: --default-features sunucunun yapilandirmasina
+  # bagli, dolayisiyla sonucu gormek onemli.
+  virtualmin list-domains --domain "$MAIN_DOMAIN" --multiline 2>/dev/null |
+    awk '/^[[:space:]]*(Features|Plugins):/ { sub(/^[[:space:]]*/,""); print "    "$0 }'
 }
 
 # Hostname (or: s.ornek.com) ana domainin zone'unda A kaydi olarak yer almali.
@@ -435,7 +443,7 @@ step_plugins(){
 
 # Kurulum sonrasi hafiza: ne yapildi, sifre nerede, ikinci sunucu icin config.env.
 step_report(){
-  local ip pg dk pt
+  local ip pg dk pt dfeat dplug
   ip="$(detect_ip)"
   if is_truthy "${POSTGRES:-1}"; then pg=kuruldu; else pg=atlandi; fi
   if command -v docker >/dev/null 2>&1; then dk=var; else dk=yok; fi
@@ -465,16 +473,23 @@ step_report(){
     echo "Webmin girisi ya da FTP gerekirse panelden yeni bir sifre belirleyin:"
     echo "  Virtualmin -> Edit Virtual Server -> Password"
     echo
-    if is_truthy "${MAIL:-1}"; then
-      echo "Ana domain: web + SSL + DNS + POSTA. Veritabani kapali."
-      echo "Posta acik: ${MAIN_DOMAIN%%.*}@${MAIN_DOMAIN} adresi hazir. Bu ayri"
-      echo "bir hesap degil, domain sahibi kullanicinin kendisidir; kullanmadan"
-      echo "once yukaridaki nottaki gibi bir sifre belirleyin."
-    else
-      echo "Ana domain SADE olusturuldu: web + SSL + DNS."
-      echo "Mail ve veritabani KAPALI - gerektiginde panelden acilir:"
-      echo "  Virtualmin -> Edit Virtual Server -> Enabled features"
-    fi
+    # Hangi ozelliklerin acildigini Virtualmin'in kendisinden okuyoruz:
+    # domain --default-features ile olusturuldugu icin liste sunucunun
+    # yapilandirmasindan geliyor, varsayimda bulunmuyoruz.
+    dfeat="$(virtualmin list-domains --domain "$MAIN_DOMAIN" --multiline 2>/dev/null |
+             awk -F": " '/^[[:space:]]*Features:/{print $2; exit}')"
+    dplug="$(virtualmin list-domains --domain "$MAIN_DOMAIN" --multiline 2>/dev/null |
+             awk -F": " '/^[[:space:]]*Plugins:/{print $2; exit}')"
+    echo "Ana domain ozellikleri : ${dfeat:-bilinmiyor}"
+    [ -n "$dplug" ] && echo "Ana domain eklentileri : $dplug"
+    case " $dfeat " in
+      *" mail "*)
+        echo
+        echo "Posta acik: ${MAIN_DOMAIN%%.*}@${MAIN_DOMAIN} adresi hazir. Bu ayri bir"
+        echo "hesap degil, domain sahibi kullanicinin kendisidir; sifresi yukarida"
+        echo "yazdigi gibi saklanmadi, kutuyu kullanmadan once panelden belirleyin."
+        ;;
+    esac
     echo
     if [ "${DNS_MODE:-}" = bind ]; then
       echo "Yapilacak (BIND modu): registrar tarafinda ${NS1:-ns1} / ${NS2:-ns2} icin"
