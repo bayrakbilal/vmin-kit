@@ -144,18 +144,12 @@ step_panel_redirects(){
 #                    kullaniyor" diyip kapatmaya izin vermiyor. Ihtiyac olursa
 #                    sihirbazdan ya da Features and Plugins'ten acilir.
 #
-#   append_style=6   Posta kutusu kullanici adlari <ad>@<domain> bicimde
-#                    olusur (userdom_name, deger 6). Boylece webmail'e
-#                    e-posta adresiyle giris yapilir - diger panellerdeki
-#                    standart davranis. Domain sahibi kullanici bunun
-#                    disindadir, onun adi domainin unix kullanicisidir.
-#
-#   newdom_aliases   Rol adresleri (postmaster, abuse, hostmaster, webmaster)
-#                    domain sahibinin kutusu yerine admin@<domain>'a gider.
-#                    Virtualmin bunu sablondan okuyor (feature-mail.pl,
-#                    dom_aliases); hedefte ${DOM} domain adiyla degisiyor.
-#                    Site kullanicisi ile posta kutusunu ayirmak icin: sahibin
-#                    kutusu step_admin_mailbox'ta kapatiliyor.
+# Burada BILEREK olmayanlar: posta kutusu adlandirmasi (append_style) ve rol
+# adreslerinin hedefi (newdom_aliases) Virtualmin'in getirdigi gibi birakiliyor.
+# Domain sahibinin unix hesabi ayni zamanda posta kutusudur; bunu degistirmenin
+# her yolu (unixname=3 gibi) o adi ev dizinine ve veritabani adina da tasiyor.
+# Kendi posta kutularin (ornegin bilal@ornek.com) zaten e-posta adresiyle giris
+# yapiyor; domain sahibi hesabi yalnizca postmaster/abuse okumak icin.
 #
 # Idempotent: deger zaten dogruysa dosyaya dokunulmaz.
 step_domain_defaults(){
@@ -163,82 +157,18 @@ step_domain_defaults(){
   if [ ! -f "$cfg" ]; then err "Virtualmin config yok; domain varsayilanlari atlaniyor."; return 1; fi
   [ -f "${cfg}.vmin-kit.bak" ] || cp -a "$cfg" "${cfg}.vmin-kit.bak"
 
-  # Rol adreslerinin hedefi. ${DOM} Virtualmin'in sablon degiskeni, domain
-  # adiyla degisiyor - bu yuzden kacisli yaziliyor, kabuk genisletmesin.
-  local am="${ADMIN_MAILBOX:-admin}" roles="" r
-  for r in postmaster abuse hostmaster webmaster; do
-    roles="${roles}${roles:+$'\t'}${r}=${am}@\${DOM}"
-  done
-
   local row key val name cur
   for row in "spam|0|Spam taramasi" \
-             "virus|0|Virus taramasi" \
-             "append_style|6|Posta kutusu adi <ad>@<domain>" \
-             "newdom_aliases|${roles}|Rol adresleri -> ${am}@<domain>"; do
+             "virus|0|Virus taramasi"; do
     IFS='|' read -r key val name <<< "$row"
-    # Deger '=' icerebiliyor (newdom_aliases gibi), o yuzden awk -F= degil sed.
     cur="$(sed -n "s/^${key}=//p" "$cfg" | head -1)"
     if [ "$cur" = "$val" ]; then
-      ok "$name: zaten yerinde"
+      ok "$name: zaten kapali"
     else
       set_kv "$cfg" "$key" "$val"
-      ok "$name: yazildi"
+      ok "$name: kapatildi"
     fi
   done
-}
-
-# Ana domainde posta: site kullanicisi ile posta kutusunu ayiriyoruz.
-#
-# Virtualmin mail acikken domain sahibine de kutu aciyor (feature-unix.pl,
-# create_email_for_unix - kosulsuz) ve rol adreslerini ona yonlendiriyor.
-# Biz bunun yerine ayri bir <admin>@<domain> kutusu istiyoruz: rol adresleri
-# sablon sayesinde (step_domain_defaults) zaten oraya bakiyor, burada kutuyu
-# acip sahibin kutusunu kapatiyoruz.
-#
-# Sifre rastgele uretilir ve HICBIR YERE yazilmaz (--random-pass ekrana da
-# basmiyor); kutuyu kullanmadan once panelden bir sifre belirlenir.
-step_admin_mailbox(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; admin kutusu atlaniyor."; return 1; }
-  local am="${ADMIN_MAILBOX:-admin}" info feats owner
-
-  info="$(virtualmin list-domains --domain "$MAIN_DOMAIN" --multiline 2>/dev/null)"
-  feats="$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*Features:[[:space:]]*//p' | head -1)"
-  case " $feats " in
-    *" mail "*) ;;
-    *) log "Ana domainde posta kapali; ${am}@${MAIN_DOMAIN} atlaniyor."; return 0 ;;
-  esac
-  owner="$(printf '%s\n' "$info" | sed -n 's/^[[:space:]]*Username:[[:space:]]*//p' | head -1)"
-
-  # append_style=6 ile kutunun adi <ad>@<domain> olur; ikisini de kontrol et.
-  if virtualmin list-users --domain "$MAIN_DOMAIN" --name-only 2>/dev/null |
-       grep -qxF -e "$am" -e "${am}@${MAIN_DOMAIN}"; then
-    ok "Posta kutusu zaten var: ${am}@${MAIN_DOMAIN}"
-  else
-    log "Posta kutusu olusturuluyor: ${am}@${MAIN_DOMAIN}"
-    if virtualmin create-user --domain "$MAIN_DOMAIN" --user "$am" \
-         --random-pass --real "Domain admin (vmin-kit)"; then
-      ok "Kutu olusturuldu; sifresi saklanmadi, panelden belirleyin."
-    else
-      err "${am}@${MAIN_DOMAIN} olusturulamadi; sahibin kutusu kapatilmiyor."
-      return 1
-    fi
-  fi
-
-  # Sahibin kutusu artik gereksiz. Zaten kapaliysa modify-user hata verir.
-  if [ -z "$owner" ]; then
-    warn "Domain sahibi kullanici adi okunamadi; kutusu kapatilmadi."
-    return 1
-  fi
-  if virtualmin list-users --domain "$MAIN_DOMAIN" --include-owner --email-only 2>/dev/null |
-       grep -qxF "${owner}@${MAIN_DOMAIN}"; then
-    if virtualmin modify-user --domain "$MAIN_DOMAIN" --user "$owner" --disable-email; then
-      ok "Domain sahibinin posta kutusu kapatildi (${owner}@${MAIN_DOMAIN})."
-    else
-      warn "Domain sahibinin kutusu kapatilamadi."
-    fi
-  else
-    ok "Domain sahibinin posta kutusu zaten kapali."
-  fi
 }
 
 # Ana domaini VIRTUALMIN'IN KENDI VARSAYILANLARIYLA olusturur
@@ -803,12 +733,13 @@ step_report(){
     case " $dfeat " in
       *" mail "*)
         echo
-        echo "Posta kutusu : ${ADMIN_MAILBOX:-admin}@${MAIN_DOMAIN}"
-        echo "  Rol adresleri (postmaster, abuse, hostmaster, webmaster) buraya gelir."
-        echo "  Domain sahibinin kendi posta kutusu KAPATILDI: site kullanicisi ile"
-        echo "  posta kutusu ayri tutuluyor."
-        echo "  Sifresi rastgele uretildi ve saklanmadi; kullanmadan once belirleyin:"
-        echo "    Virtualmin -> Edit Users -> ${ADMIN_MAILBOX:-admin}@${MAIN_DOMAIN}"
+        echo "Posta acik. Domain sahibi kullanici ayni zamanda bir posta kutusudur;"
+        echo "rol adresleri (postmaster, abuse, hostmaster, webmaster) oraya gelir."
+        echo "Sifresi saklanmadi - okumak icin once bir sifre belirleyin:"
+        echo "  Virtualmin -> Edit Virtual Server -> Password"
+        echo
+        echo "Kendi adreslerinizi ayri kutular olarak acin (Edit Users -> Add a user);"
+        echo "onlar webmail'e tam e-posta adresiyle giris yapar."
         ;;
     esac
     echo

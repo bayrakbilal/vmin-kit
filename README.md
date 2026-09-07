@@ -49,10 +49,9 @@ verilebilir: `MAIN_DOMAIN=ornek.com sudo -E ./install.sh`.
 | `composer` | Composer kurar (`vmkit-composer` eklentisinin gereksinimi). *(isteğe bağlı)* |
 | `dns-template` | Yeni domainler için DNS varsayılanları (`bind_master`, `dns_ns`, `dns_prins`, `bind_sub`). |
 | `panel-redirects` | Virtualmin'in her domaine eklediği iki kısayolu kapatır: `admin.<domain>` → panel (`:10000`) ve `webmail.<domain>` → Usermin (`:20000`). Bayraklar: `NO_ADMIN_REDIRECT`, `NO_WEBMAIL_REDIRECT` (ikisi de varsayılan 1). Her anahtar hem DNS kaydını hem Apache yönlendirmesini kapatıyor; **domain oluşmadan önce** çalışmalı, sonradan kapatmak var olanları temizlemiyor. |
-| `domain-defaults` | İlk domain oluşmadan önce Virtualmin varsayılanları: **spam ve virüs taraması kapalı** (kurulum sonrası sihirbaz da bunları kapalı öneriyor; domain onlarla oluşursa sihirbaz kapatmaya izin vermiyor) ve `append_style=6` — posta kutusu adları `<ad>@<domain>` olur, webmail'e **e-posta adresiyle** girilir; ve rol adresleri `admin@<domain>`'a yönlenir (`newdom_aliases`). |
+| `domain-defaults` | İlk domain oluşmadan önce: **spam ve virüs taraması kapalı** (`spam=0`, `virus=0`). Kurulum sonrası sihirbaz da bunları kapalı öneriyor, ama domain onlarla oluşursa sihirbaz kapatmaya izin vermiyor. Posta adlandırmasına dokunulmaz — Virtualmin ne getiriyorsa o. |
 | `plugins` | Eklentileri `.wbm.gz` olarak paketleyip Webmin'in `install-module.pl`'i ile kurar, Virtualmin'in `plugins=` listesine ekler. Hangileri: `PLUGIN_*` bayrakları. |
 | `main-domain` | Ana domaini **Virtualmin'in kendi varsayılanlarıyla** oluşturur (`--default-features`) — panelden açtığın domainlerle birebir aynı. Açılan özellikler kurulum kaydına yazılır. |
-| `admin-mailbox` | `admin@<domain>` posta kutusunu açar ve **domain sahibinin kutusunu kapatır** — site kullanıcısı ile posta kutusu ayrılır. Rol adresleri (postmaster, abuse, hostmaster, webmaster) `domain-defaults` sayesinde zaten bu kutuya yönlenmiştir. Şifre rastgele üretilir ve saklanmaz. |
 | `host-dns` | Ana domainin zone'una hostname (`s.<domain>`) için A kaydı ekler. |
 | `ssl` | Ana domain için Let's Encrypt sertifikası + otomatik yenileme. |
 | `panel-sites` | Webmin ve Usermin'i ana domain altında birer alt alan olarak yayınlar: `webmin.<domain>` → `127.0.0.1:10000`, `usermin.<domain>` → `127.0.0.1:20000`. `PANEL_PROXY=1`. |
@@ -67,27 +66,27 @@ Tüm adımlar **idempotent**: ikinci kez çalıştırmak zarar vermez, kurulu ol
 
 Ana domain `--default-features` ile oluşturuluyor: panelden **Create Virtual
 Server** dediğinde ne açılıyorsa aynısı. Ana domain böylece özel bir durum
-olmuyor; sonradan panelden açtığın domainlerle aynı şekilde kuruluyor. Üç
-eklentimiz de o listede (`plugins_inactive`'e yazmadığımız için yeni
-domainlerde varsayılan açıklar) — bu yüzden `plugins` adımı `main-domain`'den
-**önce** çalışıyor.
+olmuyor. Üç eklentimiz de o listede — bu yüzden `plugins` adımı
+`main-domain`'den **önce** çalışıyor.
 
-Sonuç Virtualmin'in global yapılandırmasından geliyor, ama pratikte sunucudan
+Sonuç Virtualmin'in global yapılandırmasından geliyor ama pratikte sunucudan
 sunucuya değişmiyor: post-install sihirbazı panele **ilk girişte** çalışır,
-kurulum ise domaini ondan önce CLI'dan oluşturur. Yani okunan değerler
-Virtualmin'in paketten gelen varsayılanlarıdır, sihirbaz cevapları değil.
-Yine de varsayım yapmamak için açılan özellik ve eklenti listesi hem kurulum
-çıktısına hem rapora yazılıyor.
+kurulum ise domaini ondan önce CLI'dan oluşturur. Açılan özellik ve eklenti
+listesi hem kurulum çıktısına hem rapora yazılıyor.
 
-Posta açıksa Virtualmin zone'a `mail.<domain>` A kaydı ve MX ekler. Ayrıca
-domain sahibi unix kullanıcısı o anda bir posta kutusuna dönüşür: adresi
-`<kullanıcı>@<domain>` olur (`blnk.tr` için `blnk@blnk.tr`). Ayrı bir hesap
-açılmaz, var olan hesap adres kazanır. Şifresi kurulumda rastgele üretilip
-**atıldığı** için kutuyu kullanmadan önce panelden bir şifre belirlemek
-gerekir: **Edit Virtual Server → Password**.
+**Posta:** Virtualmin'de domain sahibi unix hesabı aynı zamanda bir posta
+kutusudur (`<kullanıcı>@<domain>`) ve rol adresleri (postmaster, abuse,
+hostmaster, webmaster) oraya yönlenir. Bunu değiştirmenin her yolu —
+`unixname=3` gibi — aynı adı **ev dizinine ve veritabanı adına** da taşıdığı
+için dokunmuyoruz. Kendi adreslerinizi ayrı kutular olarak açarsınız
+(`bilal@ornek.com`); Virtualmin'in varsayılan `append_style` ayarı sayesinde
+onların kullanıcı adı da e-posta adresidir, yani webmail'e tam adresle
+girilir. Domain sahibi hesabına yalnızca postmaster/abuse okumak için girilir
+ve şifresi kurulumda saklanmadığı için önce **Edit Virtual Server → Password**
+ile belirlenmelidir.
 
-`webmail.<domain>` kısayolu posta açık olsa bile kapalıdır
-(`NO_WEBMAIL_REDIRECT=1`); Usermin'e panel adresinden girilir.
+`webmail.<domain>` kısayolu kapalıdır (`NO_WEBMAIL_REDIRECT=1`); webmail
+`webmail.<ana-domain>` altındaki Roundcube'dur.
 
 ### Yönetim arayüzleri neden port değil alt alan?
 
