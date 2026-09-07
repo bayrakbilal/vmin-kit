@@ -282,9 +282,17 @@ step_portainer_token(){
 }
 
 # docker.<domain> alt sunucusu + Portainer'a proxy.
-# Alt sunucu (--parent) kendi Unix kullanicisini olusturmaz; --break-ssl-cert
-# ile ana domainin sertifikasina baglanmak yerine kendi sertifikasini alir
-# (ana domainin sertifikasi bu ismi kapsamiyor).
+#
+# Ozellikler burada BILEREK tek tek sayiliyor: ana domainin aksine
+# --default-features KULLANILMIYOR. Burasi yalnizca bir ters vekil; posta,
+# DNS, veritabani ve eklentiler bu siteye gereksiz. Liste zaten en kucuk hali:
+#   --dir    web sitesi icin sart (check_depends_web home dizini istiyor)
+#   --web    vekil vhost'unun kendisi
+#   --ssl    https://docker.<domain> icin
+#   --parent alt sunucu: ayri Unix kullanicisi acilmaz, DNS kayitlari ana
+#            domainin zone'una yazilir
+# --break-ssl-cert ile ana domainin sertifikasina baglanmak yerine kendi
+# sertifikasini alir (ana domainin sertifikasi bu ismi kapsamiyor).
 step_docker_site(){
   command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; docker sitesi atlaniyor."; return 1; }
   local site="${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}"
