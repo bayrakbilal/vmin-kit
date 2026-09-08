@@ -51,20 +51,22 @@ if (@projects) {
 	my @table;
 	foreach my $p (@projects) {
 		my $u = "run.cgi?dom=$d->{'id'}&dir=".&urlize($p->{'dir'});
-		# Bu baglantilarin hicbiri bir sey CALISTIRMIYOR: composer
-		# islemleri run.cgi'deki onay sayfasina gidiyor ve komut oradaki
-		# POST ile calisiyor. Baglanti GET demek ve onbellek ya da
-		# tarayicinin onceden getirmesi 'composer update' tetikleyebilirdi.
+		# Bu dugmelerin hicbiri bir sey CALISTIRMIYOR: composer islemleri
+		# run.cgi'deki onay sayfasina goturuyor, komut oradaki POST ile
+		# calisiyor. Onay sayfasini acmak bir GET oldugu icin
+		# ui_link_button uygun - bir sayfa acmaktan baska sey yapmiyor.
+		#
+		# Liste kisa oldugu icin tam boy dugme kullaniliyor, git
+		# listesindeki gibi. Renk ve ikon yine dil anahtarinin adindan:
+		# act_install -> yesil + paket, act_update -> mavi + yenileme.
 		push(@table, [
 			"<tt>".&html_escape($p->{'dir'})."</tt>",
 			$p->{'ver'} ? "PHP ".$p->{'ver'} : $text{'php_default'},
-			&ui_links_row([
-				&ui_link("packages.cgi?dom=$d->{'id'}&dir=".
-					 &urlize($p->{'dir'}), $text{'act_packages'}),
-				&ui_link($u."&action=install", $text{'act_install'}),
-				&ui_link($u."&action=update", $text{'act_update'}),
-				&ui_link($u."&action=dump-autoload", $text{'act_dump'}),
-				]),
+			&ui_link_button("packages.cgi?dom=$d->{'id'}&dir=".
+					&urlize($p->{'dir'}), $text{'act_packages'})." ".
+			&ui_link_button($u."&action=install", $text{'act_install'})." ".
+			&ui_link_button($u."&action=update", $text{'act_update'})." ".
+			&ui_link_button($u."&action=dump-autoload", $text{'act_dump'}),
 			]);
 		}
 	print &ui_columns_table([ $text{'col_dir'}, $text{'col_php'}, "" ],
