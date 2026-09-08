@@ -40,7 +40,7 @@ BEGIN {
 	$main::trust_unknown_referers = 1;
 	$main::no_referers_check = 1;
 	}
-our (%in, %text, $module_root_directory, $module_config_directory);
+our (%in, %text, $module_root_directory);
 
 require './vmkit-deploy-lib.pl';
 &ReadParse();
@@ -77,16 +77,21 @@ if (!-r $runner) {
 	exit(0);
 	}
 
-# Cikti /dev/null'a DEGIL bir kutuge gidiyor. Ilk surumde /dev/null'a
-# gidiyordu ve is hic baslamadiginda ortada tek bir iz kalmiyordu: kanca
-# "accepted" diyor, panelde hicbir sey olmuyor, sebebi hicbir yerde yok.
-my $log = "$module_config_directory/hook.log";
+# Cikti /dev/null'a DEGIL deployment'in KENDI loguna gidiyor - ve ekleyerek
+# degil, USTUNE yazarak ('>'), yani her cagrida buyuyen bir dosya olusmuyor.
+#
+# Ayri bir kutuk (hook.log) da dogru degildi: sonsuza kadar buyuyor ve hatayi
+# panelde bakilan yerden baska bir yere koyuyordu. Is deploy_run'a kadar
+# gelirse o zaten bu dosyayi bastan yaziyor; gelemezse dosyada hic baslamama
+# sebebi kaliyor - ki bakilacak yer yine ayni: deployment'in logu.
+&ensure_log_dir();
+my $log = &deploy_log_path($d, $dep);
 
 # Kabuk yerine dogrudan perl: betigin calistirilabilir biti eksikse ya da
 # shebang'i bu sistemde yoksa is sessizce hic baslamazdi. Yorumlayici olarak
 # $^X, yani SU ANDA calisan perl - PATH'e bagli kalmiyoruz.
 my $cmd = quotemeta($^X)." ".quotemeta($runner)." ".quotemeta($d->{'id'})." ".
 	  quotemeta($dep->{'id'})." ".quotemeta($op);
-system("$cmd </dev/null >>".quotemeta($log)." 2>&1 &");
+system("$cmd </dev/null >".quotemeta($log)." 2>&1 &");
 
 &reply("202 Accepted", "accepted: $op");

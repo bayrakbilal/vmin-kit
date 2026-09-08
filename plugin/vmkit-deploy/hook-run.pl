@@ -6,10 +6,18 @@
 # (GitHub ~10 saniyede baglantiyi keser), oysa dagitim ve dagitim sonrasi
 # komutlar dakikalar surebiliyor.
 #
-# Ciktiyi kimse okumuyor; sonuc her zamanki yere, deployment'in kendi loguna
-# yaziliyor (deploy_run) ve panelden gorunuyor.
+# Cikti deployment'in KENDI loguna gidiyor (hook.cgi ustune yazarak
+# yonlendiriyor): ayri bir kutuk tutup her cagrida sisirmiyoruz, hataya da
+# panelde her zaman bakilan yerden bakiliyor.
 use strict;
 use warnings;
+
+# TAMPONSUZ YAZ. Ciktimiz deployment'in log dosyasina yonlendirilmis durumda
+# ve perl, dosyaya yazarken satir tamponlamasi yerine blok tamponlamasi
+# kullaniyor: baslangic satiri tamponda bekler, deploy_run ayni dosyayi bastan
+# yazar, sonra surec cikarken tampon bosalir ve YAZILMIS LOGUN BASINI EZER.
+# Olculdu: log "igi burada" gibi ortasindan kirpilmis halde kaliyordu.
+$| = 1;
 
 # CGI ORTAMINI TEMIZLE - bu satirlar kutuphaneden ONCE gelmek zorunda.
 #
@@ -45,10 +53,14 @@ require './vmkit-deploy-lib.pl';
 
 my ($domid, $depid, $op) = @ARGV;
 
-# Bu betigin ciktisi hook.log'a gidiyor. Basladigini ve bittigini YAZIYORUZ:
-# "kanca calisti mi hic" sorusunun cevabi baska hicbir yerde yok - islem
-# basarisiz olsa bile deployment logu yazilir ama is hic BASLAMADIYSA ortada
-# tek bir iz olmaz.
+# Bu betigin ciktisi DEPLOYMENT'IN LOGUNA gidiyor: hook.cgi oraya yonlendirdi,
+# ustune yazarak. Yalnizca deploy_run'a GELENE KADAR olanlari yaziyoruz -
+# oraya varirsa deploy_run ayni dosyayi zaten bastan yaziyor. Isin bittigini
+# burada bir daha yazmiyoruz: ayni dosyaya iki yerden yazmak, deploy_run
+# dosyayi kisalttiktan sonra bu surecin eski konumundan devam etmesi olurdu.
+#
+# Basladigini yazmak yine de sart: is deploy_run'a hic ulasamazsa ortada
+# baska hicbir iz kalmaz - kanca "accepted" der, panelde bir sey gorunmez.
 sub hlog { print scalar(localtime()), " hook-run: ", @_, "\n"; }
 sub hbail { &hlog("HATA: ", @_); exit(2); }
 
@@ -66,5 +78,4 @@ $dep || &hbail("deployment bulunamadi: $depid");
 # Kimin tetikledigi listede gorunsun: elle mi, kancadan mi.
 $dep->{'last_trigger'} = 'hook';
 my ($ok, undef) = &deploy_run($d, $dep, $op);
-&hlog("bitti ", $ok ? "OK" : "BASARISIZ", " - ayrinti deployment logunda");
 exit($ok ? 0 : 1);

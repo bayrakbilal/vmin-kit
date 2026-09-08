@@ -329,6 +329,15 @@ my ($d, $dep) = @_;
 return &read_file_contents(&deploy_log_path($d, $dep));
 }
 
+# Log dizini. Kanca isi ciktisini kabuktan yonlendirdigi icin dizin ISIN
+# BASLAMASINDAN once var olmali; deploy_run'in kendi kontrolu gec kalirdi.
+sub ensure_log_dir
+{
+my $dir = "$module_config_directory/logs";
+-d $dir || &make_dir($dir, 0700, 1);
+return $dir;
+}
+
 # ---- dagitim sonrasi komutlar -------------------------------------------
 # Komutlar key=value bicimine sigmiyor (coksatirli), o yuzden log gibi ayri
 # bir dosyada duruyorlar. Icerik kullanicinin yazdigi kabuk satirlari;
@@ -570,8 +579,7 @@ my $ok = !$timed && !$?;
 $out = $text{'err_timeout'} if ($timed);
 
 # Log ayri dosyada: key=value bicimi coksatirli degeri tasiyamaz.
-my $logdir = "$module_config_directory/logs";
--d $logdir || &make_dir($logdir, 0700, 1);
+&ensure_log_dir();
 my $stamp = &make_date(time());
 # Webmin'in tempfile fonksiyonlari bareword dosya tanitici bekliyor; 'use
 # strict' altinda bu yasak oldugu icin Virtualmin eklentilerinin kendi
