@@ -451,15 +451,19 @@ my $B = quotemeta($dep->{'branch'});
 my $env = &git_env($d);
 my @steps;
 push(@steps, "echo ".quotemeta($text{'log_pulling'}));
+# OLDREF KLONDAN ONCE okunuyor: 'git clone --bare' zaten butun commit'leri
+# getirdigi icin klondan sonra okunsaydi ilk cekmede bile dolu olurdu ve
+# ardindan gelen fetch hicbir sey getirmeyeceginden log "yeni commit yok"
+# derdi - ilk cekmede yaniltici. Repo yokken komut hata verir, OLDREF bos
+# kalir, mesaj da dogru olur.
+push(@steps, 'OLDREF=$(git --git-dir='.$R.' rev-parse -q --verify '.$B.
+	     ' 2>/dev/null || true)');
 push(@steps, "if [ ! -d $R ]; then ".
 	     "mkdir -p ".quotemeta($d->{'home'}."/.vmkit/repos")." && ".
 	     "$env git clone --bare -- ".quotemeta($dep->{'repo'})." $R; ".
 	     "fi");
 push(@steps, "git --git-dir=$R remote set-url origin -- ".
 	     quotemeta($dep->{'repo'}));
-# Fetch oncesi ve sonrasi dalin ucunu tutuyoruz ki ne geldigi gorulebilsin.
-push(@steps, 'OLDREF=$(git --git-dir='.$R.' rev-parse -q --verify '.$B.
-	     ' 2>/dev/null || true)');
 push(@steps, "$env git --git-dir=$R fetch --prune origin ".
 	     quotemeta("+refs/heads/*:refs/heads/*"));
 push(@steps, 'NEWREF=$(git --git-dir='.$R.' rev-parse '.$B.')');
