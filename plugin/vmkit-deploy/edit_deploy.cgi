@@ -1,9 +1,15 @@
 #!/usr/bin/perl
 # Deployment ekleme / duzenleme.
 #
-# Iki asamali: once repo adresi girilir ve "Kontrol et" ile uzak repo
-# sorgulanir. Ulasilabiliyorsa dallar listeden secilir, ulasilamiyorsa git'in
-# hatasi gosterilir ve kayit yapilmaz - calismayan bir repo hic eklenmesin.
+# TEK FORM. Repo adresi degistiginde dallarin yeniden okunmasi ve sayfanin
+# yeniden uretilmesi gerekiyor; bu yuzden "Repoyu kontrol et" dugmesi ayni
+# formu formaction ile edit_deploy.cgi'ye gonderiyor. Boylece doldurulan her
+# sey oldugu gibi geri geliyor - alanlar ayri bir formdayken kontrol sonrasi
+# kayboluyorlardi.
+#
+# Repo dogrulanmadan alanlar GIZLENMIYOR, yalnizca dal secimi devre disi
+# kaliyor: gizlemek sayfanin duzenini bozuyordu ve repoya bagli olan tek alan
+# zaten dal.
 use strict;
 use warnings;
 our (%text, %in, %config, $module_name);
@@ -26,9 +32,25 @@ else {
 	$dep || &error($text{'edit_egone'});
 	}
 
-# Kontrol sonrasi forma geri donerken kullanicinin girdiklerini koru.
+# Kontrol turundan donerken kullanicinin girdiklerini koru.
 foreach my $f ('name', 'repo', 'branch', 'target', 'mode') {
 	$dep->{$f} = $in{$f} if (defined($in{$f}) && $in{$f} ne '');
+	}
+my $actions;
+if ($in{'check'}) {
+	$dep->{'actions_on'} = $in{'actions_on'} ? 1 : 0;
+	$actions = $in{'actions'};
+	}
+else {
+	$actions = &actions_read($d, $dep);
+	}
+
+# Kaydedilmis her deployment'in kanca adresi olsun. UUID alani sonradan
+# eklendi, eski kayitlarda yok; kullaniciyi "adres ciksin diye bir kez kaydet"
+# adimina zorlamak yerine ilk goruntulemede uretiliyor.
+if (!$in{'new'} && $dep->{'id'} && !$dep->{'uuid'}) {
+	$dep->{'uuid'} = &new_uuid();
+	&save_deploy($d, $dep);
 	}
 
 &ui_print_header(&virtual_server::domain_in($d),
@@ -42,113 +64,82 @@ if ($dep->{'repo'}) {
 	$dep->{'branch'} ||= $defbranch;
 	}
 
-# ---- 1. asama: repo adresi ----
-print &ui_form_start("edit_deploy.cgi", "post");
-print &ui_hidden("dom", $d->{'id'});
-print &ui_hidden("new", $in{'new'});
-print &ui_hidden("id", $dep->{'id'});
-foreach my $f ('name', 'target', 'mode') {
-	print &ui_hidden($f, $dep->{$f});
-	}
-print &ui_table_start($text{'edit_repo_header'}, "width=100%", 2);
-print &ui_table_row($text{'edit_repo'},
-	&ui_textbox("repo", $dep->{'repo'}, 60)."<br>".
-	"<font size=-1>$text{'edit_repo_help'}</font>");
-print &ui_table_end();
-print &ui_form_end([ [ undef, $text{'edit_check'} ] ]);
-
 if ($rerr) {
 	print "<p><b>$text{'edit_echeck'}</b></p>\n";
 	print "<pre style='white-space:pre-wrap'>",&html_escape($rerr),"</pre>\n";
-	print "<p><font size=-1>$text{'edit_echeck_help'}</font></p>\n";
 	# Ozel repo ise domainin SSH anahtari GitHub/Gitea HESABINA eklenmeli.
-	print "<p>",&ui_link("sshkey.cgi?dom=$d->{'id'}&new=$in{'new'}&id=$in{'id'}&repo=".
-			     &urlize($dep->{'repo'}), $text{'edit_showkey'}),
-	      "</p>\n";
+	print "<p>",&ui_link("sshkey.cgi?dom=$d->{'id'}&new=$in{'new'}&id=$in{'id'}".
+			     "&repo=".&urlize($dep->{'repo'}),
+			     $text{'edit_showkey'}),"</p>\n";
 	}
 
-# ---- web kancasi ----
-# Kaydedilmis her deployment'in adresi VAR ve burada her zaman gorunur:
-# repo o an ulasilamiyor diye (2. asama acilmasa bile) kaybolmamali.
-#
-# UUID'yi burada, gerektiginde uretiyoruz: bu alan sonradan eklendi ve eski
-# kayitlarda yok. Kullaniciyi "adresin cikmasi icin bir kez kaydet" gibi bir
-# adima zorlamak yerine ilk goruntulemede uretilip saklaniyor.
-if (!$in{'new'} && $dep->{'id'}) {
-	if (!$dep->{'uuid'}) {
-		$dep->{'uuid'} = &new_uuid();
-		&save_deploy($d, $dep);
-		}
-	print "<hr>\n";
-	print &ui_table_start($text{'edit_hook'}, "width=100%", 2);
-	print &ui_table_row($text{'edit_hook_url'},
-		"<tt>".&html_escape(&hook_url($dep) || '')."</tt>".
-		"<br><font size=-1>$text{'edit_hook_help'}</font>".
+print &ui_form_start("save_deploy.cgi", "post");
+print &ui_hidden("dom", $d->{'id'});
+print &ui_hidden("new", $in{'new'});
+print &ui_hidden("id", $dep->{'id'});
+print &ui_table_start($text{'edit_header'}, "width=100%", 2);
+
+print &ui_table_row($text{'edit_repo'},
+	&ui_textbox("repo", $dep->{'repo'}, 60)."<br>".
+	"<font size=-1>$text{'edit_repo_help'}</font>");
+
+print &ui_table_row($text{'edit_name'},
+	&ui_textbox("name", $dep->{'name'}, 30));
+
+# Dal, repo okunana kadar secilemez - repoya bagli tek alan bu.
+print &ui_table_row($text{'edit_branch'},
+	$branches ? &ui_select("branch", $dep->{'branch'}, $branches, 1, 0, 0)
+		  : &ui_select("branch", undef, [ ], 1, 0, 0, 1)." ".
+		    "<font size=-1>$text{'edit_branch_check'}</font>");
+
+print &ui_table_row($text{'edit_target'},
+	"<tt>".&deploy_root($d)."/</tt> ".
+	&ui_textbox("target", &target_sub($d, $dep->{'target'}), 25)."<br>".
+	"<font size=-1>$text{'edit_target_help'}</font>");
+
+print &ui_table_row($text{'edit_mode'},
+	&ui_radio("mode", $dep->{'mode'} || 'manual',
+		  [ [ "manual", $text{'mode_manual_desc'} ],
+		    [ "auto",   $text{'mode_auto_desc'} ] ]));
+
+print &ui_table_row($text{'edit_actions'},
+	&ui_checkbox("actions_on", 1, $text{'edit_actions_on'},
+		     $dep->{'actions_on'} ? 1 : 0)."<br>".
+	&ui_textarea("actions", $actions, 6, 70)."<br>".
+	"<font size=-1>".
+	&text('edit_actions_help',
+	      "<tt>".&html_escape(&deploy_target_dir($d, $dep))."</tt>").
+	"</font>");
+
+# Kanca adresi bir BILGI satiri; yeniden uretmek ayri bir eylem ve sayfanin
+# altinda duruyor (form icinde form olmaz).
+if ($dep->{'uuid'}) {
+	print &ui_table_row($text{'edit_hook'},
+		"<tt>".&html_escape(&hook_url($dep) || '')."</tt><br>".
+		"<font size=-1>$text{'edit_hook_help'}</font>".
 		(&hook_path_registered() ? "" :
-			"<br><font size=-1 color=#cc0000>".
-			$text{'edit_hook_notready'}."</font>"));
-	print &ui_table_end();
-	# Yeniden uretme AYRI bir form: kaydet dugmesine basmadan da
-	# calismali ve yanlislikla tiklanan bir kutu olmamali.
-	print &ui_form_start("hook_regen.cgi", "post");
-	print &ui_hidden("dom", $d->{'id'});
-	print &ui_hidden("id", $dep->{'id'});
-	print &ui_submit($text{'edit_hook_regen'});
-	print &ui_form_end();
+			"<br><b>$text{'edit_hook_notready'}</b>"));
 	}
 
-# ---- 2. asama: repo dogrulandiysa gerisi ----
-if ($branches) {
-	print "<hr>\n";
-	print &ui_form_start("save_deploy.cgi", "post");
-	print &ui_hidden("dom", $d->{'id'});
-	print &ui_hidden("new", $in{'new'});
-	print &ui_hidden("id", $dep->{'id'});
-	print &ui_hidden("repo", $dep->{'repo'});
-	print &ui_table_start($text{'edit_header'}, "width=100%", 2);
+print &ui_table_end();
 
-	print &ui_table_row($text{'edit_name'},
-		&ui_textbox("name", $dep->{'name'}, 30));
+# Dugme dizisi: [ ad, etiket, sonrasina eklenecek, devre disi, ek nitelik ]
+# Kaydet, repo dogrulanana kadar devre disi - dal secilmeden kayit anlamsiz.
+# Kontrol dugmesi ayni formu formaction ile bu sayfaya gonderiyor.
+my @buttons = ( [ undef, $in{'new'} ? $text{'create'} : $text{'save'},
+		  undef, $branches ? 0 : 1 ],
+		[ "check", $text{'edit_check'}, undef, 0,
+		  "formaction='edit_deploy.cgi'" ] );
+push(@buttons, [ "delete", $text{'delete'} ]) if (!$in{'new'});
+print &ui_form_end(\@buttons);
 
-	print &ui_table_row($text{'edit_branch'},
-		&ui_select("branch", $dep->{'branch'}, $branches, 1, 0, 0).
-		($defbranch ? "<br><font size=-1>".
-			      &text('edit_branch_default', $defbranch).
-			      "</font>" : ""));
-
-	# Sabit onek belge kokune kadar; kullanicidan yalnizca onun altindaki
-	# klasor isteniyor. Bos birakilirsa kokun kendisine deploy edilir.
-	print &ui_table_row($text{'edit_target'},
-		"<tt>".&deploy_root($d)."/</tt> ".
-		&ui_textbox("target", &target_sub($d, $dep->{'target'}), 25).
-		"<br><font size=-1>$text{'edit_target_help'}</font>");
-
-	# Mod, CEKME SONRASI ne olacagini belirliyor: otomatikte hemen dagitir,
-	# manuelde bekler ve dagitimi sen baslatirsin.
-	print &ui_table_row($text{'edit_mode'},
-		&ui_radio("mode", $dep->{'mode'} || 'manual',
-			  [ [ "manual", $text{'mode_manual_desc'} ],
-			    [ "auto",   $text{'mode_auto_desc'} ] ]).
-		"<br><font size=-1>$text{'edit_mode_help'}</font>");
-
-	# Dagitim sonrasi komutlar. Sablon ya da hazir liste YOK: ne yazarsan o
-	# calisir. Hedef klasorde, domainin kendi yetkileriyle, ilk hatada durur.
-	print &ui_table_row($text{'edit_actions'},
-		&ui_checkbox("actions_on", 1, $text{'edit_actions_on'},
-			     $dep->{'actions_on'} ? 1 : 0)."<br>".
-		&ui_textarea("actions", &actions_read($d, $dep), 6, 70)."<br>".
-		"<font size=-1>".
-		&text('edit_actions_help',
-		      "<tt>".&html_escape(&deploy_target_dir($d, $dep))."</tt>").
-		"</font>");
-
-	print &ui_table_end();
-	print &ui_form_end($in{'new'} ? [ [ undef, $text{'create'} ] ]
-				      : [ [ undef, $text{'save'} ],
-					  [ "delete", $text{'delete'} ] ]);
-	}
-elsif (!$rerr && !$dep->{'repo'}) {
-	print "<p><i>$text{'edit_needcheck'}</i></p>\n";
+# Kanca adresini yenilemek: ayri bir eylem, o yuzden dugme + aciklama kalibi.
+if ($dep->{'uuid'}) {
+	print &ui_buttons_start();
+	print &ui_buttons_row("hook_regen.cgi", $text{'edit_hook_regen'},
+			      $text{'edit_hook_regen_desc'},
+			      [ [ "dom", $d->{'id'} ], [ "id", $dep->{'id'} ] ]);
+	print &ui_buttons_end();
 	}
 
 &ui_print_footer("index.cgi?dom=$d->{'id'}", $text{'edit_return'});
