@@ -44,14 +44,20 @@ my $cf = &get_cf($d);
 # islem oradaki POST ile oluyor. Kural, silme kadar sahiplenme ve iceri
 # aktarma icin de gecerli - tiklamadan hicbir sey olmamali.
 #
-# Renk, baglantinin METNINE veriliyor (ui_text_color). Dugmelerde renk
-# temanin dil anahtarina bagli ve disaridan degistirilemiyor; burada metin
-# oldugu icin dogrudan bizim elimizde ve hicbir tema sinifina dokunmuyoruz.
+# RENK: ui_link'in ucuncu parametresi olan 'class' ile veriliyor.
+#
+# Iki yol denendi ve ikisi de olmadi: etiketi ui_text_color ile sarmak
+# tutmuyor, cunku tema etiketten isaretlemeyi sokup metni kendi <span>'ine
+# sariyor; dugmelerdeki "dil anahtarina gore renk" yontemi de burada
+# gecersiz, uretilen baglantida data-entry bile yok.
+#
+# Sinif tema tarafindan taniniyorsa renk geliyor, tanimiyorsa sessizce yok
+# sayiliyor - baglanti yine calisir, yalnizca renksiz olur. Bu yuzden
+# gorunume bagli bir bozulma riski tasimiyor.
 my $lnk = sub {
-	my ($id, $act, $label, $type) = @_;
-	$label = &ui_text_color($label, $type) if ($type);
+	my ($id, $act, $label, $class) = @_;
 	return &ui_link("action.cgi?dom=$d->{'id'}&id=".&urlize($id).
-			"&act=".&urlize($act), $label);
+			"&act=".&urlize($act), $label, $class);
 	};
 
 # Proxy hucresi: yazili dugme degil BULUT SIMGESI.
@@ -147,7 +153,7 @@ foreach my $e (@$plan) {
 			($state, $type, $note) =
 				($text{'st_blocked'}, 'danger', $text{'st_cnameclash'});
 			push(@links, &$lnk($e->{'blocker'}->{'id'}, 'delete',
-					   $text{'act_delcname'}, 'danger'));
+					   $text{'act_delcname'}, 'btn-danger'));
 			}
 		elsif ($e->{'why'} eq 'notours') {
 			($state, $type) = ($text{'st_notours'}, 'info');
@@ -157,8 +163,8 @@ foreach my $e (@$plan) {
 			foreach my $r (@cr) {
 				next if ($r->{'proxied'});
 				push(@links,
-				     &$lnk($r->{'id'}, 'import', $text{'act_import'}, 'info'),
-				     &$lnk($r->{'id'}, 'delete', $text{'act_delete'}, 'danger'));
+				     &$lnk($r->{'id'}, 'import', $text{'act_import'}, 'btn-info'),
+				     &$lnk($r->{'id'}, 'delete', $text{'act_delete'}, 'btn-danger'));
 				}
 			}
 		else {
@@ -167,8 +173,8 @@ foreach my $e (@$plan) {
 			foreach my $r (@cr) {
 				next if ($r->{'proxied'});
 				push(@links,
-				     &$lnk($r->{'id'}, 'adopt', $text{'act_adopt'}, 'warn'),
-				     &$lnk($r->{'id'}, 'import', $text{'act_import'}, 'info'));
+				     &$lnk($r->{'id'}, 'adopt', $text{'act_adopt'}, 'btn-warning'),
+				     &$lnk($r->{'id'}, 'import', $text{'act_import'}, 'btn-info'));
 				}
 			}
 		# Kucuk cerceveli gorunumu veren sarmalayici bu.
