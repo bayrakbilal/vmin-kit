@@ -35,18 +35,18 @@ print "<p><b>",&html_escape($in{'msg'}),"</b></p>\n" if ($in{'msg'});
 
 my $cf = &get_cf($d);
 
-# Islem dugmesi. Mutasyonlar POST ile gonderiliyor: bir baglantiya tiklamak
-# ya da onu onbelleklemek kayit silmemeli.
-my $btn = sub {
+# Islem baglantisi. Tablo icindeki kucuk cerceveli dugme gorunumunu tema
+# ui_links_row'un icindeki baglantilara veriyor (Virtualmin'in kendi
+# "Features and Plugins" sayfasi da boyle yapiyor).
+#
+# Baglanti GET demek, yani onbellek ya da onceden getirme onu tetikleyebilir.
+# Bu yuzden BAGLANTI HICBIR SEY DEGISTIRMIYOR: yalnizca onay sayfasini aciyor,
+# islem oradaki POST ile oluyor. Kural, silme kadar sahiplenme ve iceri
+# aktarma icin de gecerli - tiklamadan hicbir sey olmamali.
+my $lnk = sub {
 	my ($id, $act, $label) = @_;
-	# Her dugme kendi formu; form blok eleman oldugu icin varsayilan olarak
-	# alt alta diziliyorlar. inline-block ile yan yana duruyorlar.
-	return &ui_form_start("action.cgi", "post", undef, "style='display:inline-block;margin-right:6px'").
-	       &ui_hidden("dom", $d->{'id'}).
-	       &ui_hidden("id", $id).
-	       &ui_hidden("act", $act).
-	       &ui_submit($label).
-	       &ui_form_end();
+	return &ui_link("action.cgi?dom=$d->{'id'}&id=".&urlize($id).
+			"&act=".&urlize($act), $label);
 	};
 
 # Proxy hucresi: yazili dugme degil BULUT SIMGESI.
@@ -137,34 +137,39 @@ foreach my $e (@$plan) {
 	else {
 		# skip: kapsam disi. Neden oldugu 'why' alaninda.
 		$out = 1;
+		my @links;
 		if ($e->{'why'} eq 'cnameclash') {
 			($state, $type, $note) =
 				($text{'st_blocked'}, 'danger', $text{'st_cnameclash'});
-			$acts = &$btn($e->{'blocker'}->{'id'}, 'delete',
-				      $text{'act_delcname'});
+			push(@links, &$lnk($e->{'blocker'}->{'id'}, 'delete',
+					   $text{'act_delcname'}));
 			}
 		elsif ($e->{'why'} eq 'notours') {
 			($state, $type) = ($text{'st_notours'}, 'info');
-			# Proxy'li kayitlara dugme YOK: tipik ornek Cloudflare
+			# Proxy'li kayitlara eylem YOK: tipik ornek Cloudflare
 			# tuneli; icerigi yerel zone'da anlamsiz, silinmesi
 			# calisan bir kurulumu bozar.
-			$acts = join(" ", map {
-				$_->{'proxied'} ? "" :
-					&$btn($_->{'id'}, 'import', $text{'act_import'}).
-					&$btn($_->{'id'}, 'delete', $text{'act_delete'})
-				} @cr);
+			foreach my $r (@cr) {
+				next if ($r->{'proxied'});
+				push(@links,
+				     &$lnk($r->{'id'}, 'import', $text{'act_import'}),
+				     &$lnk($r->{'id'}, 'delete', $text{'act_delete'}));
+				}
 			}
 		else {
 			($state, $type, $note) =
 				($text{'st_conflict'}, 'warn', $text{'st_conflict_note'});
-			$acts = join(" ", map {
-				$_->{'proxied'} ? "" :
-					&$btn($_->{'id'}, 'adopt', $text{'act_adopt'}).
-					&$btn($_->{'id'}, 'import', $text{'act_import'})
-				} @cr);
+			foreach my $r (@cr) {
+				next if ($r->{'proxied'});
+				push(@links,
+				     &$lnk($r->{'id'}, 'adopt', $text{'act_adopt'}),
+				     &$lnk($r->{'id'}, 'import', $text{'act_import'}));
+				}
 			}
-		# Dugme cikmamasinin sebebini not olarak acikla.
-		$note = $text{'st_proxied2'} if (!$acts && $e->{'proxied'});
+		# Kucuk cerceveli gorunumu veren sarmalayici bu.
+		$acts = @links ? &ui_links_row(\@links) : "";
+		# Eylem cikmamasinin sebebini not olarak acikla.
+		$note = $text{'st_proxied2'} if (!@links && $e->{'proxied'});
 		}
 
 	# Not, ayri bir sutun yerine durumun basindaki uyari simgesinde:

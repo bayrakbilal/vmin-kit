@@ -19,6 +19,38 @@ my ($r, $err) = &cf_find_record($d, $in{'id'});
 &error($err) if ($err);
 
 my $act = $in{'act'};
+$act =~ /^(proxy|import|adopt|delete)$/ || &error($text{'act_eunknown'});
+
+# ---- ONAY ----
+# Karsilastirma tablosundan buraya BAGLANTIYLA geliniyor (kucuk cerceveli
+# dugme gorunumunu tema yalnizca baglantilara veriyor). Baglanti GET demek ve
+# onbellek ya da tarayicinin onceden getirmesi onu tetikleyebilir; bu yuzden
+# baglantinin kendisi HICBIR SEY DEGISTIRMIYOR, yalnizca bu sayfayi aciyor.
+# Kural silme kadar sahiplenme ve iceri aktarma icin de gecerli.
+#
+# Proxy bunun disinda: o bir bulut simgesine basmakla oluyor, zaten POST ve
+# tek tikla geri alinabiliyor.
+if ($act ne 'proxy' && !$in{'confirm'}) {
+	&ui_print_header(&virtual_server::domain_in($d),
+			 $text{'conf_title'}, "", undef, 0, 0);
+	print "<p>$text{'conf_'.$act}</p>\n";
+	print &ui_table_start($text{'conf_record'}, "width=100%", 2);
+	print &ui_table_row($text{'cmp_name'}, "<tt>".&html_escape($r->{'name'})."</tt>");
+	print &ui_table_row($text{'cmp_type'}, uc($r->{'type'}));
+	print &ui_table_row($text{'cmp_cf'}, "<tt>".&short_value(&cf_value($r))."</tt>");
+	print &ui_table_end();
+	print &ui_form_start("action.cgi", "post");
+	print &ui_hidden("dom", $d->{'id'});
+	print &ui_hidden("id", $in{'id'});
+	print &ui_hidden("act", $act);
+	print &ui_hidden("confirm", 1);
+	# Dugme rengini temanin DIL ANAHTARINA gore verdigi biliniyor:
+	# delete_ok kirmizi, digerleri _ok ile bittigi icin yesil.
+	print &ui_form_end([ [ $act, $text{$act.'_ok'} ] ]);
+	&ui_print_footer("compare.cgi?dom=$d->{'id'}", $text{'conf_cancel'});
+	exit;
+	}
+
 my $done;
 
 # Proxy'li ve BIZIM OLMAYAN kayitlara dokunulmaz: tipik ornek Cloudflare
