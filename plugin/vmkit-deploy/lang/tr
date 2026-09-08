@@ -138,3 +138,4 @@ delete_warn=$1 deployment'ı silinsin mi?
 delete_goes=Tanımı, reponun yerel kopyası, log'u ve dağıtım sonrası komutları silinir.
 delete_stays=Dağıtılmış dosyalar yerinde kalır: $1 dizinine dokunulmaz.
 delete_cancel=Deployment'a geri dön
+delete_ok=Evet, Sil

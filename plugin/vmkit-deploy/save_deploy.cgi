@@ -45,14 +45,11 @@ if ($in{'delete'} && !$in{'confirm'}) {
 	# Dugmeye STIL VERILMIYOR. Rengi tema veriyor; sinifi elle yazmak
 	# (btn-danger) hem ise yaramadi hem de bizi tek bir temaya baglardi.
 	#
-	# Cagri, duzenleme formumuzdakiyle BIREBIR ayni tutuluyor:
-	#     [ [ "delete", $text{'delete'} ] ]
-	# Orasi kirmizi cikiyor, dolayisiyla burasi da cikmali. Renge neyin
-	# karar verdigi (ad mi etiket mi) HENUZ KESIN DEGIL: Virtualmin'in
-	# delete_domain.cgi'si adi 'confirm' olan bir dugmeyle kirmizi cikiyor,
-	# bizim 'confirm' adli dugmemiz cikmadi - yani "ad belirliyor" aciklamasi
-	# tek basina yetmiyor. Iki sayfanin urettigi HTML karsilastirilmadan
-	# buraya kesin bir kural yazilmayacak.
+	# Belirleyici olan dugmenin ADI: 'confirm' iken renksizdi, 'delete'
+	# olunca kirmizi oldu - duzenleme formundaki Sil dugmesiyle ayni.
+	# Etiket ayri bir anahtarda cunku onay sayfasinda "Sil" degil "Evet,
+	# Sil" yazmali; Virtualmin'in kendi sayfasi da ayni ayrimi yapiyor
+	# (dugme adi ayri, etiketi delete_ok).
 	#
 	# 'delete' dugmenin adi oldugu icin onay isareti ayri bir gizli alanda:
 	# ilk gonderimde 'confirm' yok, ikincisinde var.
@@ -60,7 +57,7 @@ if ($in{'delete'} && !$in{'confirm'}) {
 	print &ui_hidden("dom", $d->{'id'});
 	print &ui_hidden("id", $dep->{'id'});
 	print &ui_hidden("confirm", 1);
-	print &ui_form_end([ [ "delete", $text{'delete'} ] ]);
+	print &ui_form_end([ [ "delete", $text{'delete_ok'} ] ]);
 	# Iki donus yolu, ikisi de ayni bicimde: duzenleme formu ve liste.
 	&ui_print_footer("edit_deploy.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
 			 $text{'delete_cancel'},
