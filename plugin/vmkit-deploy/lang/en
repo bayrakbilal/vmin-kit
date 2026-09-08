@@ -133,4 +133,4 @@ delete_stays=The deployed files stay where they are: $1 is not touched.
 delete_cancel=Return to the deployment
 delete_ok=Yes, Delete It
 edit_branch_check=Check the repository.
-edit_hook_regen_desc=The old address stops working immediately.
+edit_hook_url=URL

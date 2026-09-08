@@ -22,6 +22,22 @@ else {
 	$dep || &error($text{'edit_egone'});
 	}
 
+# ---- "Repoyu kontrol et" ----
+# Kaydetmiyoruz, formu yeniden ciziyoruz: dal listesi taze okunuyor ve
+# kullanicinin doldurduklari (komut kutusu dahil) oldugu gibi geri geliyor.
+# Ayri bir hedefe gondermek (formaction) tema tarafindan yok sayiliyor, o
+# yuzden form her zaman buraya geliyor ve ayrimi burada yapiyoruz.
+if ($in{'check'}) {
+	my ($fdep, $factions, $fnew) = &deploy_from_in($d);
+	$fdep || &error($text{'edit_egone'});
+	&ui_print_header(&virtual_server::domain_in($d),
+			 $fnew ? $text{'edit_title_new'} : $text{'edit_title'},
+			 "", undef, 0, 0);
+	&print_deploy_form($d, $fdep, $factions, $fnew);
+	&ui_print_footer("index.cgi?dom=$d->{'id'}", $text{'edit_return'});
+	exit;
+	}
+
 # ---- silme ----
 # Once ONAY EKRANI: geri donusu olmayan bir islem ve dugme, kaydet dugmesinin
 # hemen yaninda duruyor. Onay metni ayrica NEYIN GITMEDIGINI de soyluyor -
