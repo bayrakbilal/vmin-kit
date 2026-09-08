@@ -67,6 +67,36 @@ if ($rerr) {
 	      "</p>\n";
 	}
 
+# ---- web kancasi ----
+# Kaydedilmis her deployment'in adresi VAR ve burada her zaman gorunur:
+# repo o an ulasilamiyor diye (2. asama acilmasa bile) kaybolmamali.
+#
+# UUID'yi burada, gerektiginde uretiyoruz: bu alan sonradan eklendi ve eski
+# kayitlarda yok. Kullaniciyi "adresin cikmasi icin bir kez kaydet" gibi bir
+# adima zorlamak yerine ilk goruntulemede uretilip saklaniyor.
+if (!$in{'new'} && $dep->{'id'}) {
+	if (!$dep->{'uuid'}) {
+		$dep->{'uuid'} = &new_uuid();
+		&save_deploy($d, $dep);
+		}
+	print "<hr>\n";
+	print &ui_table_start($text{'edit_hook'}, "width=100%", 2);
+	print &ui_table_row($text{'edit_hook_url'},
+		"<tt>".&html_escape(&hook_url($dep) || '')."</tt>".
+		"<br><font size=-1>$text{'edit_hook_help'}</font>".
+		(&hook_path_registered() ? "" :
+			"<br><font size=-1 color=#cc0000>".
+			$text{'edit_hook_notready'}."</font>"));
+	print &ui_table_end();
+	# Yeniden uretme AYRI bir form: kaydet dugmesine basmadan da
+	# calismali ve yanlislikla tiklanan bir kutu olmamali.
+	print &ui_form_start("hook_regen.cgi", "post");
+	print &ui_hidden("dom", $d->{'id'});
+	print &ui_hidden("id", $dep->{'id'});
+	print &ui_submit($text{'edit_hook_regen'});
+	print &ui_form_end();
+	}
+
 # ---- 2. asama: repo dogrulandiysa gerisi ----
 if ($branches) {
 	print "<hr>\n";
@@ -100,23 +130,6 @@ if ($branches) {
 			  [ [ "manual", $text{'mode_manual_desc'} ],
 			    [ "auto",   $text{'mode_auto_desc'} ] ]).
 		"<br><font size=-1>$text{'edit_mode_help'}</font>");
-
-	# Web kancasi. Adres yalnizca kayitli bir deployment icin var: UUID
-	# save_deploy'da uretiliyor.
-	if ($dep->{'uuid'}) {
-		my $url = &hook_url($dep);
-		print &ui_table_row($text{'edit_hook'},
-			($url ? "<tt>".&html_escape($url)."</tt><br>" : "").
-			&ui_checkbox("regen", 1, $text{'edit_hook_regen'}, 0).
-			"<br><font size=-1>$text{'edit_hook_help'}</font>".
-			(&hook_path_registered() ? "" :
-				"<br><font size=-1 color=#cc0000>".
-				$text{'edit_hook_notready'}."</font>"));
-		}
-	elsif (!$in{'new'}) {
-		print &ui_table_row($text{'edit_hook'},
-			"<font size=-1>$text{'edit_hook_none'}</font>");
-		}
 
 	# Dagitim sonrasi komutlar. Sablon ya da hazir liste YOK: ne yazarsan o
 	# calisir. Hedef klasorde, domainin kendi yetkileriyle, ilk hatada durur.
