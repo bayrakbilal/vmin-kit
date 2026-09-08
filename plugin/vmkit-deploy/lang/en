@@ -138,4 +138,4 @@ del_warn=Delete the deployment $1?
 del_goes=Its definition, the local copy of the repository, the log and the post-deploy commands are removed.
 del_stays=The deployed files stay where they are: $1 is not touched.
 del_confirm=Yes, delete it
-del_cancel=Cancel and go back
+del_cancel=Return to the deployment

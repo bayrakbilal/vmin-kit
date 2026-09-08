@@ -38,16 +38,23 @@ if ($in{'delete'} && !$in{'confirmed'}) {
 			      "<tt>".&html_escape(&deploy_target_dir($d, $dep))."</tt>"),
 	      "</b></li>\n";
 	print "</ul>\n";
+	# Duzen Webmin'in kendi "Delete Server" sayfasindan alindi:
+	#   - govdede TEK birincil eylem, tehlike rengiyle
+	#   - vazgecme govdede DEGIL, alt bilgide gezinme baglantisi olarak
+	# Eskiden onay dugmesinin yaninda bir ui_link duruyordu; ikisi kardes
+	# gibi gorunuyor ama farkli bilesenler, bu yuzden boylari tutmuyordu.
 	print &ui_form_start("save_deploy.cgi", "post");
 	print &ui_hidden("dom", $d->{'id'});
 	print &ui_hidden("id", $dep->{'id'});
 	print &ui_hidden("delete", 1);
 	print &ui_hidden("confirmed", 1);
-	print &ui_submit($text{'del_confirm'});
+	print &ui_submit($text{'del_confirm'}, undef, 0,
+			 "class='btn btn-danger'");
 	print &ui_form_end();
-	print "<p>",&ui_link("edit_deploy.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
-			     $text{'del_cancel'}),"</p>\n";
-	&ui_print_footer("index.cgi?dom=$d->{'id'}", $text{'edit_return'});
+	# Iki donus yolu, ikisi de ayni bicimde: duzenleme formu ve liste.
+	&ui_print_footer("edit_deploy.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
+			 $text{'del_cancel'},
+			 "index.cgi?dom=$d->{'id'}", $text{'edit_return'});
 	exit;
 	}
 if ($in{'delete'}) {
