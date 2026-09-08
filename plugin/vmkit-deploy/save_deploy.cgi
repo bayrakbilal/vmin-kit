@@ -27,14 +27,14 @@ else {
 # hemen yaninda duruyor. Onay metni ayrica NEYIN GITMEDIGINI de soyluyor -
 # "sil" deyince site dosyalarinin da gidecegi korkusu en cok burada olur.
 if ($in{'delete'} && !$in{'confirm'}) {
-	&ui_print_header(&virtual_server::domain_in($d), $text{'del_title'},
+	&ui_print_header(&virtual_server::domain_in($d), $text{'delete_title'},
 			 "", undef, 0, 0);
-	print "<p>",&text('del_warn',
+	print "<p>",&text('delete_warn',
 			  "<tt>".&html_escape($dep->{'name'} || $dep->{'id'})."</tt>"),
 	      "</p>\n";
 	print "<ul>\n";
-	print "<li>$text{'del_goes'}</li>\n";
-	print "<li><b>",&text('del_stays',
+	print "<li>$text{'delete_goes'}</li>\n";
+	print "<li><b>",&text('delete_stays',
 			      "<tt>".&html_escape(&deploy_target_dir($d, $dep))."</tt>"),
 	      "</b></li>\n";
 	print "</ul>\n";
@@ -42,13 +42,17 @@ if ($in{'delete'} && !$in{'confirm'}) {
 	# (delete_domain.cgi): govdede TEK birincil eylem, vazgecme ise govdede
 	# degil alt bilgide gezinme baglantisi olarak.
 	#
-	# Dugmeye STIL VERILMIYOR: rengi dugmenin ADINDAN geliyor ve bunu tema
-	# belirliyor. Kanit kendi duzenleme formumuzda - orada da ad 'delete'
-	# ve dugme kirmizi cikiyor:
-	#     [ [ undef, $text{'save'} ], [ "delete", $text{'delete'} ] ]
-	# Bu yuzden burada da AYNI ad ve ayni etiket kullaniliyor. Sinifi elle
-	# yazmak (btn-danger) hem ise yaramadi hem de bizi tek bir temaya
-	# baglardi.
+	# Dugmeye STIL VERILMIYOR. Rengi tema veriyor; sinifi elle yazmak
+	# (btn-danger) hem ise yaramadi hem de bizi tek bir temaya baglardi.
+	#
+	# Cagri, duzenleme formumuzdakiyle BIREBIR ayni tutuluyor:
+	#     [ [ "delete", $text{'delete'} ] ]
+	# Orasi kirmizi cikiyor, dolayisiyla burasi da cikmali. Renge neyin
+	# karar verdigi (ad mi etiket mi) HENUZ KESIN DEGIL: Virtualmin'in
+	# delete_domain.cgi'si adi 'confirm' olan bir dugmeyle kirmizi cikiyor,
+	# bizim 'confirm' adli dugmemiz cikmadi - yani "ad belirliyor" aciklamasi
+	# tek basina yetmiyor. Iki sayfanin urettigi HTML karsilastirilmadan
+	# buraya kesin bir kural yazilmayacak.
 	#
 	# 'delete' dugmenin adi oldugu icin onay isareti ayri bir gizli alanda:
 	# ilk gonderimde 'confirm' yok, ikincisinde var.
@@ -59,7 +63,7 @@ if ($in{'delete'} && !$in{'confirm'}) {
 	print &ui_form_end([ [ "delete", $text{'delete'} ] ]);
 	# Iki donus yolu, ikisi de ayni bicimde: duzenleme formu ve liste.
 	&ui_print_footer("edit_deploy.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
-			 $text{'del_cancel'},
+			 $text{'delete_cancel'},
 			 "index.cgi?dom=$d->{'id'}", $text{'edit_return'});
 	exit;
 	}
