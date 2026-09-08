@@ -28,7 +28,13 @@ use warnings "once";
 # kurulur, durmussa baslatilir. Durum da her zaman gorunur - senkron sessizce
 # durmus olsun istemiyoruz.
 # Islem sonucu mesaji (ac/kapat gibi) herkese gosterilir.
-print &ui_alert_box(&html_escape($in{'msg'}), 'success') if ($in{'msg'});
+# ui_alert_box Webmin'in yeni yardimcilarindan; hedef surumde yoksa sayfayi
+# oldurmesin diye dogrudan cagrilmiyor (ui_badge ile bunu bir kez yasadik).
+if ($in{'msg'}) {
+	my $m = &html_escape($in{'msg'});
+	print defined(&ui_alert_box) ? &ui_alert_box($m, 'success')
+				     : "<p><b>$m</b></p>\n";
+	}
 
 if (&virtual_server::master_admin()) {
 	my $st = &sync_units_status();
@@ -144,14 +150,24 @@ print &ui_table_row($text{'index_token'},
 			: $text{'index_token_none'}).
 	"<br>$text{'index_token_help'}</font>");
 
-# Otomatik senkron anahtari. Token'dan ayri: kapatmak icin token'i silmek
+# Acilir liste, evet/hayir radyosu degil: iki radyo yan yana duruken orada
+# bir ayar oldugu fark edilmiyor. Secenek etiketleri de ayarin ne yaptigini
+# soyluyor, boylece altina ikinci bir aciklama satiri gerekmiyor.
+#
+# Otomatik senkron anahtari token'dan AYRI: kapatmak icin token'i silmek
 # gerekmesin, acmak da tek tik olsun.
 print &ui_table_row($text{'index_enabled'},
-	&ui_yesno_radio("enabled", $cf->{'enabled'} ? 1 : 0)."<br>".
-	"<font size=-1>$text{'index_enabled_help'}</font>");
+	&ui_select("enabled", $cf->{'enabled'} ? 1 : 0,
+		   [ [ 1, $text{'index_enabled_on'} ],
+		     [ 0, $text{'index_enabled_off'} ] ], 1, 0, 0));
 
+# Proxy'de aciklama KALIYOR: ayarin adindan anlasilmayan iki sey var -
+# yalnizca yeni kayitlari etkiliyor ve posta adlari hicbir zaman
+# proxy'lenmiyor. Ikisi de bilinmezse posta kirilir.
 print &ui_table_row($text{'index_proxy'},
-	&ui_yesno_radio("proxy", $cf->{'proxy'} ? 1 : 0)."<br>".
+	&ui_select("proxy", $cf->{'proxy'} ? 1 : 0,
+		   [ [ 1, $text{'index_proxy_on'} ],
+		     [ 0, $text{'index_proxy_off'} ] ], 1, 0, 0)."<br>".
 	"<font size=-1>$text{'index_proxy_help'}</font>");
 
 print &ui_table_row($text{'index_status'}, &zone_status($d));
@@ -160,22 +176,19 @@ print &ui_table_end();
 print &ui_form_end([ [ undef, $text{'save'} ],
 		     $cf->{'token'} ? ( [ "forget", $text{'index_forget'} ] ) : ( ) ]);
 
-# Karsilastir ve Senkronize et: ikisi de ayri birer islem, ayni bicimde ve
-# yan yana. Kaydet/Unut yukaridaki ayar formuna ait, orada kaliyor.
-# Form blok eleman oldugu icin inline-block olmadan alt alta dizilirler.
-my $inl = "style='display:inline-block;margin-right:6px'";
-print "<p>";
-print &ui_form_start("compare.cgi", "get", undef, $inl),
-      &ui_hidden("dom", $d->{'id'}),
-      &ui_submit($text{'index_compare'}),
-      &ui_form_end();
+# Karsilastir ve Senkronize et: ayar formuna ait degiller, sayfanin kendi
+# eylemleri. Webmin'in kalibi dugme + yaninda ne yaptiginin aciklamasi;
+# elle yazilmis iki form ve inline-block hilesi yerine bunu kullaniyoruz.
+print &ui_buttons_start();
+print &ui_buttons_row("compare.cgi", $text{'index_compare'},
+		      $text{'index_compare_desc'},
+		      [ [ "dom", $d->{'id'} ] ], undef, undef, "get");
 if ($cf->{'token'}) {
-	print &ui_form_start("sync.cgi", "post", undef, $inl),
-	      &ui_hidden("dom", $d->{'id'}),
-	      &ui_submit($text{'index_syncnow'}),
-	      &ui_form_end();
+	print &ui_buttons_row("sync.cgi", $text{'index_syncnow'},
+			      $text{'index_syncnow_desc'},
+			      [ [ "dom", $d->{'id'} ] ]);
 	}
-print "</p>\n";
+print &ui_buttons_end();
 
 &ui_print_footer("/virtual-server/summary_domain.cgi?dom=$d->{'id'}",
 		 $text{'index_return'});
