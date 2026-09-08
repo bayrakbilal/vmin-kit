@@ -120,17 +120,18 @@ if (@deps) {
 		my @acts = ( &$btn($dep, '', $text{'act_pull'}) );
 		push(@acts, &$btn($dep, 'deploy', $text{'act_deploy'}))
 			if (-d &deploy_repo_path($d, $dep));
-		# Gezinme de DUGME: ui_link duz bir baglanti uretiyor ve form
-		# dugmelerinin yaninda boyu tutmuyordu. ui_link_button ayni
-		# bilesenden bir dugme veriyor, hepsi ayni sirada duruyor.
-		# Repo yalnizca ilk cekmeden sonra olusuyor; iki dugmeyi de
-		# o zaman gosteriyoruz.
+		# Gezinme icin ui_link: tema onu tablo icinde KUCUK cerceveli bir
+		# dugmeye ceviriyor (uretilen HTML'de sinif 'ui_link_replaced ...
+		# btn-xxs'). ui_link_button tam boy dugme veriyor ve satiri
+		# dikeyde buyutuyordu.
+		# Repo yalnizca ilk cekmeden sonra olusuyor; ikisini de o zaman
+		# gosteriyoruz.
 		if ($dep->{'last_time'}) {
 			push(@acts,
-			     &ui_link_button("commits.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
-					     $text{'act_commits'}),
-			     &ui_link_button("deploylog.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
-					     $text{'act_log'}));
+			     &ui_link("commits.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
+				      $text{'act_commits'}),
+			     &ui_link("deploylog.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
+				      $text{'act_log'}));
 			}
 		push(@table, [
 			# Adi duzenleme sayfasina baglamak Webmin'in kalibi:
