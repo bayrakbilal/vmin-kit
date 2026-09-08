@@ -9,7 +9,8 @@
 # SOA serial'i artiyor (feature-dns.pl icindeki post_records_change), dolayisiyla
 # zone dosyasi degistiyse gercekten bir sey degismistir. Virtualmin'in DNS kod
 # yolunda plugin kancasi YOK, o yuzden dosya izleme en saglam yontem.
-# Bu modul o servisin kontrol panelidir; servisin kendisi ayri gelecek.
+# Servisi (systemd .path + .timer + .service) bu modulun kendisi kuruyor ve
+# denetliyor - bkz. dosyanin sonundaki "otomatik senkron servisi" bolumu.
 #
 # Ayarlar DOMAIN BASINA tutulur. Global token yoktur: her domain baska bir
 # Cloudflare hesabinda olabilir, token da hesap/zone bazlidir.
@@ -92,8 +93,8 @@ return length($t) <= 8 ? ('*' x length($t))
 		       : substr($t, 0, 4).('*' x 8).substr($t, -4);
 }
 
-# ISKELET: gercek uygulamada Cloudflare API'sine sorup zone kimligini ve
-# son senkron durumunu dondurur.
+# Domainin ekranda gosterilecek durumu. API'ye SORMAZ: son senkron turunun
+# biraktigi sonucu okur, boylece sayfa acmak Cloudflare'e istek uretmez.
 sub zone_status
 {
 my ($d) = @_;

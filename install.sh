@@ -5,6 +5,13 @@
 # Amac: bu araci calistiran kisinin kurulum adimlarini HATIRLAMAK zorunda
 # kalmamasi. Tek zorunlu soru ana domaindir; gerisi ya varsayilan ya tespit.
 #
+# KAPSAM KURALI (bu dosyayi buyutmeden once oku):
+#   Buraya yalnizca ILK DOMAIN OLUSMADAN ONCE ya da SUNUCU BASINA BIR KEZ
+#   yapilmasi gereken isler girer. Gunluk kullanimda tekrarlanan, domain
+#   basina degisen ya da panelden yonetilmesi gereken her sey EKLENTIDIR
+#   (plugin/ altina). Yedekleme, saglik kontrolu, deploy sonrasi gorevler
+#   gibi isler bu yuzden burada degil.
+#
 # Akis:
 #   1) Sistem durumu
 #   2) Ayarlar    : config.env (depoda, tercihlerin yeri) + ana domaini sor
@@ -212,40 +219,49 @@ fi
 # set -e acik kalsaydi ilk basarisiz adim tum kurulumu oldururdu - "atlaniyor"
 # yazip duruyordu. Yukaridaki hazirlik ve dogrulama bolumu set -e ile korunmaya
 # devam ediyor, orada durmak DOGRU davranis.
+#
+# Her adim run_step ile cagriliyor: basarisiz olani listeye yaziyor, boylece
+# uzun bir kurulumun sonunda ve raporda "neler tutmadi" acikca gorunuyor.
 set +e
 echo
-step_hostname
-step_virtualmin
-if is_truthy "$POSTGRES"; then step_postgres; fi
-if is_truthy "$COMPOSER"; then step_composer; fi
-step_dns_template
-step_panel_redirects
-step_domain_defaults
-step_dkim
+run_step step_hostname
+run_step step_virtualmin
+if is_truthy "$POSTGRES"; then run_step step_postgres; fi
+if is_truthy "$COMPOSER"; then run_step step_composer; fi
+run_step step_dns_template
+run_step step_panel_redirects
+run_step step_domain_defaults
+run_step step_dkim
 # Eklentiler domainlerden ONCE: boylece domain olusturulurken ozellikleri
 # secilebilir hale geliyor. Virtualmin kurulu oldugu icin BIND de kurulu,
 # senkron servisinin izleyecegi zone dizini bu asamada mevcut.
-step_plugins
-step_main_domain
-step_host_dns
-step_ssl
-if is_truthy "$PANEL_PROXY"; then step_panel_sites; fi
-if is_truthy "$ROUNDCUBE"; then step_webmail; fi
+run_step step_plugins
+run_step step_main_domain
+run_step step_host_dns
+run_step step_ssl
+if is_truthy "$PANEL_PROXY"; then run_step step_panel_sites; fi
+if is_truthy "$ROUNDCUBE"; then run_step step_webmail; fi
 if is_truthy "$DOCKER"; then
-  step_docker
-  step_portainer
-  step_docker_site
+  run_step step_docker
+  run_step step_portainer
+  run_step step_docker_site
 fi
 # Kilitleme EN SON: once vekillerin calistigi dogrulanir, dogrulanamazsa
 # port kapatilmaz. Yanlis sirada yapilirsa panele erisim kaybedilir.
 if is_truthy "$PANEL_PROXY" && is_truthy "$LOCK_PANEL_PORTS"; then
-  step_lock_panel_ports
+  run_step step_lock_panel_ports
 fi
 step_report
 set -e
 
 echo
-ok "Tamamlandi."
+if [ ${#VMINKIT_FAILED[@]} -gt 0 ]; then
+  warn "Tamamlandi, ancak su adimlar basarisiz oldu: ${VMINKIT_FAILED[*]}"
+  warn "Sebebi yukaridaki ciktida ve raporda. Duzeltip ./install.sh'i tekrar"
+  warn "calistirabilirsiniz: tamamlanmis adimlar atlanir."
+else
+  ok "Tamamlandi."
+fi
 if is_truthy "$PANEL_PROXY"; then
   log "Panel : https://${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}/"
 else

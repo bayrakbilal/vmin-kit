@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # Bir domainin Cloudflare ayarlarini kaydet.
-# ISKELET: degerler saklaniyor, henuz API cagrisi ve senkron yok.
+# Yalnizca ayar yazar; senkronu tetiklemez (onu sync.cgi ya da servis yapar).
 use strict;
 use warnings;
 our (%text, %in);

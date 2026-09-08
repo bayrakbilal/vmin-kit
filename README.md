@@ -55,7 +55,7 @@ değiştirin, commit'leyin — sonraki sunucu depoyu çektiğinde aynı şekilde
 
 | Ayar | Ne yapar | Varsayılan |
 |---|---|---|
-| `POSTGRES` | PostgreSQL kurar ve Virtualmin özelliğini açar | 1 |
+| `POSTGRES` | PostgreSQL kurar (Virtualmin onu kendisi görür; veritabanı seçeneklerinde çıkar) | 1 |
 | `COMPOSER` | Composer kurar (Composer eklentisinin gereksinimi) | 1 |
 | `DOCKER` | Docker Engine + Portainer + `docker.<domain>` sitesi | 1 |
 | `PLUGIN_DEPLOY` | Git Deploy eklentisini kurar | 1 |
@@ -70,7 +70,7 @@ değiştirin, commit'leyin — sonraki sunucu depoyu çektiğinde aynı şekilde
 | `HOST_PREFIX` | Hostname ve panel adı | `s` |
 | `NS1_PREFIX` / `NS2_PREFIX` | Zone'un nameserver çifti | `ns1` / `ns2` |
 | `DOCKER_PREFIX` `WEBMIN_PREFIX` `USERMIN_PREFIX` `WEBMAIL_PREFIX` | Arayüzlerin alt alan adları | `docker` `webmin` `usermin` `webmail` |
-| `PORTAINER_IMAGE` / `PORTAINER_PORT` | Portainer konteyneri | `ce:latest` / `9000` |
+| `PORTAINER_IMAGE` / `PORTAINER_PORT` | Portainer konteyneri | `ce:lts` / `9000` |
 
 Eklenti bayrağını 0 yapmak **kurulu olanı sökmez**, yalnızca kurmaz. Kaldırmak
 için: `sudo ./update-plugins.sh --remove`.
@@ -86,7 +86,7 @@ Dosyanın sonunda kaçış kapıları var (`SKIP_DNS_CHECK`, `ALLOW_ANY_OS`,
 |------|----------|
 | `hostname` | Hostname'i `s.<domain>` yapar |
 | `virtualmin` | Resmi installer ile Virtualmin kurar |
-| `postgres` / `composer` | PostgreSQL ve Composer *(isteğe bağlı)* |
+| `postgres` / `composer` | PostgreSQL ve Composer paketleri *(isteğe bağlı)* |
 | `dns-template` | Yeni domainler için DNS varsayılanları |
 | `panel-redirects` | `admin.<domain>` ve `webmail.<domain>` kısayollarını kapatır |
 | `domain-defaults` | Spam/virüs taraması kapalı, SPF + DMARC açık, rol adresleri sınırlı |
@@ -124,7 +124,8 @@ Dışarıya açık yönetim portu bırakılmaz: Webmin, Usermin ve Portainer
 ### İlk yapılacaklar
 
 1. **Raporu okuyun:** araç klasöründeki `vmin-kit-rapor.txt` — ne yapıldı, ne
-   yapılmadı, sırada ne var.
+   yapılmadı, sırada ne var. Başarısız olan adımlar, dışarıya açık dinleyen
+   portlar ve sunucunun hangi vmin-kit sürümüyle kurulduğu da orada.
 2. **Ana domain şifresi** rastgele üretilir ve **saklanmaz**. Panel girişi ya da
    FTP gerekirse *Edit Virtual Server → Password* ile yeni şifre belirleyin.
 3. **Portainer** ilk açılışta bir kurulum token'ı ister ve token kısa ömürlüdür.
@@ -139,8 +140,9 @@ Domain sahibinin unix hesabı aynı zamanda bir posta kutusudur ve rol adresleri
 (*Edit Users → Add a user to this server*). Kullanıcı adı e-posta adresinin
 kendisidir; webmail'e tam adresle girilir.
 
-Giden postalar SPF, DKIM ve DMARC ile imzalanır; kurulum bunları ilk domaindan
-önce açar.
+Giden postalar DKIM ile imzalanır; SPF ve DMARC kayıtları da her yeni domaine
+eklenir. Kurulum bunları ilk domaindan önce açar. DMARC `p=none` ile başlar —
+birkaç hafta sonra panelden `quarantine`'e sıkabilirsiniz.
 
 ### DNS
 
@@ -178,7 +180,9 @@ Uzak bir git reposundan sunucuya deploy eder — repo sunucuda barındırılmaz.
    **Commits** çekilen dalın son commit'lerini gösterir.
 
 Özel (private) repolar için **Domain SSH key** sayfasındaki açık anahtarı
-GitHub'da deploy key olarak ekleyin.
+GitHub'da **hesabınıza** ekleyin (Settings → SSH keys). Tek bir repoya deploy
+key olarak eklemeyin: GitHub bir deploy anahtarını yalnızca tek repoda kabul
+eder, ikinci özel repo eklendiğinde tıkanır.
 
 Uygulama bir alt klasörden yayın yapıyorsa (Laravel gibi) Virtualmin'in kendi
 ayarını kullanın: *Website Options → Website documents sub-directory =

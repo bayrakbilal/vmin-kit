@@ -15,9 +15,30 @@ detect_ip(){
 }
 
 # key=value satirini config dosyasinda ayarla (varsa degistir, yoksa ekle)
+#
+# Deger sed'e VERILMEZ: sed'in degistirme tarafinda '&' tum eslesmeye
+# genisler, '|' de ayraci oldugu icin ifadeyi bitirir. newdom_aliases gibi
+# serbest metin degerlerde bu dosyayi sessizce bozardi. awk degeri veri
+# olarak tasiyor, hicbir karakteri yorumlamiyor.
+#
+# Yazma gecici dosyaya yapilip icerik geri kopyalaniyor ('mv' degil): dosyanin
+# sahipligi, izinleri ve inode'u korunuyor - /etc/webmin altindakiler 0600.
 set_kv(){
-  local f="$1" k="$2" v="$3"
-  if grep -qE "^${k}=" "$f"; then sed -i "s|^${k}=.*|${k}=${v}|" "$f"; else printf '%s=%s\n' "$k" "$v" >> "$f"; fi
+  local f="$1" k="$2" v="$3" tmp
+  if ! grep -qE "^${k}=" "$f"; then
+    printf '%s=%s\n' "$k" "$v" >> "$f"
+    return
+  fi
+  tmp="$(mktemp)"
+  # Deger awk'a -v ile DEGIL, ortamdan geciyor: -v atamalarinda awk ters bolu
+  # kacislarini yorumluyor ('\1' 0x01 oluyor). ENVIRON'dan okununca deger
+  # oldugu gibi geliyor.
+  VMKIT_K="$k" VMKIT_V="$v" awk '
+    BEGIN { k = ENVIRON["VMKIT_K"]; v = ENVIRON["VMKIT_V"] }
+    index($0, k "=") == 1 { print k "=" v; next }
+    { print }
+  ' "$f" > "$tmp" && cat "$tmp" > "$f"
+  rm -f "$tmp"
 }
 
 is_truthy(){ case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in 1|yes|true|on|e|evet) return 0;; *) return 1;; esac; }
@@ -124,12 +145,14 @@ acl_revoke(){
 # kutuyu tiklemekle ayni sey (save_newfeatures.cgi de bu satiri yaziyor).
 #
 # BILEREK yazmadigimiz ikinci bir liste var: 'plugins_inactive'. Bir eklenti
-# orada DEGILSE panelden yeni sanal sunucu olustururken kutusu tikli geliyor
+# orada DEGILSE varsayilan olarak acik sayiliyor
 # (list_available_features: 'default' => !$inactive{$_}). Yeni domainlerde
 # eklentilerin acik gelmesini istiyoruz, o yuzden o listeye dokunmuyoruz.
-# Kurulumun kendi olusturdugu domainler bundan etkilenmiyor: create-domain
-# eklenti ozelliklerini yalnizca acikca --<eklenti> verilirse ya da
-# --default-features kullanilirsa aciyor, biz ikisini de kullanmiyoruz.
+#
+# Bunun dogrudan sonucu: ana domain --default-features ile olusturuldugu icin
+# (step_main_domain) uc eklenti de onda acik geliyor. Vekil alt sunucularinda
+# ise ozellikler tek tek sayildigi icin eklenti acilmiyor - orasi yalnizca bir
+# ters vekil, istedigimiz de bu.
 plugins_add(){
   local mod="$1" cur cfg=/etc/webmin/virtual-server/config
   [ -f "$cfg" ] || return 1
@@ -152,11 +175,12 @@ plugins_remove(){
 # etiketler/ikonlar panelde gorunmez.
 clear_links_cache(){
   perl -e '
+    my ($root) = @ARGV;
     $ENV{WEBMIN_CONFIG} ||= "/etc/webmin"; $ENV{WEBMIN_VAR} ||= "/var/webmin";
-    push(@INC, "/usr/share/webmin"); $main::no_acl_check++;
-    chdir("/usr/share/webmin/virtual-server");
-    $0 = "/usr/share/webmin/virtual-server/clear.pl";
+    push(@INC, $root); $main::no_acl_check++;
+    chdir("$root/virtual-server");
+    $0 = "$root/virtual-server/clear.pl";
     require "./virtual-server-lib.pl";
     &clear_links_cache();
-  ' 2>/dev/null
+  ' "$(webmin_root)" 2>/dev/null
 }

@@ -4,8 +4,9 @@
 # Cloudflare API token'i vardir, cunku token hesap/zone bazlidir ve domainler
 # farkli Cloudflare hesaplarinda olabilir. Global token yoktur.
 #
-# ISKELET: yasam dongusu yerinde, ancak henuz Cloudflare API cagrisi ve
-# senkron servisi yok.
+# Ozelligin bir domainde acilmasi: kayit dosyasini olusturur ve otomatik
+# senkron servisinin ayakta oldugundan emin olur. Senkronun kendisi token
+# girildikten sonra baslar.
 use strict;
 use warnings;
 our (%text, %config);
@@ -60,7 +61,8 @@ return $d->{'dns'} ? undef : $text{'feat_edepdns'};
 }
 
 # feature_setup(&domain)
-# ISKELET: kayit dosyasini olusturur; token panelden girilir.
+# Kayit dosyasini varsayilanlarla olusturur; token panelden girilir. Token
+# girilene kadar domain senkrona hic girmez (sync_domains).
 sub feature_setup
 {
 my ($d) = @_;

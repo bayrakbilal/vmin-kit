@@ -1,8 +1,8 @@
 # vmkit-deploy - Virtualmin feature sozlesmesi.
 #
-# ISKELET: yasam dongusu fonksiyonlari yerinde ve dogru sirada cagriliyor,
-# ancak henuz git islemi yapilmiyor. Amac once panelde nerede nasil
-# gorunecegini netlestirmek.
+# Ozellik domain basina acilir. Ozelligin kendisi bir SEY KURMAZ: bir domainde
+# acilmasi yalnizca "bu domainde deployment tanimlanabilir" demektir. Asil is
+# kullanicinin tanimladigi deployment'larda (bkz. vmkit-deploy-lib.pl).
 use strict;
 use warnings;
 our (%text, %config);
@@ -60,8 +60,8 @@ return $d->{'web'} ? undef : $text{'feat_edepweb'};
 }
 
 # feature_setup(&domain)
-# Domainde ozellik acildiginda. ISKELET: henuz yapilacak bir sey yok;
-# deployment tanimlari sonradan panelden eklenir.
+# Kurulacak bir sey yok: deployment tanimlari panelden, kullanici tarafindan
+# eklenir. Ozellik yalnizca menuye erisim veriyor.
 sub feature_setup
 {
 my ($d) = @_;
@@ -85,7 +85,9 @@ my ($d) = @_;
 }
 
 # feature_disable(&domain) / feature_enable(&domain)
-# ISKELET: tanimlar duruyor, sadece pasif sayiliyor.
+# Domain askiya alinip geri acildiginda cagriliyor. Yapacak isimiz yok:
+# tanimlar dosyada duruyor, deploy zaten yalnizca elle ya da zamanlayiciyla
+# tetikleniyor. Silmek feature_delete'in isi.
 sub feature_disable
 {
 }

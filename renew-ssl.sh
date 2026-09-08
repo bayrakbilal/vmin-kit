@@ -14,6 +14,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "$ROOT_DIR/lib/common.sh"
+# Yalnizca ad onekleri icin (panel adresini dogru yazabilmek adina).
+if [ -f "$ROOT_DIR/config.env" ]; then
+  # shellcheck source=/dev/null
+  source "$ROOT_DIR/config.env"
+fi
 require_root
 
 command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin kurulu degil."; exit 1; }
@@ -51,7 +56,14 @@ fi
 # ---- sertifikayi al / yenile ----
 log "Sertifika isteniyor (otomatik yenileme de acilir)..."
 if virtualmin generate-letsencrypt-cert --domain "$HOST" --renew; then
-  ok "Bitti. Panel: https://${HOST}:10000"
+  ok "Bitti: $HOST icin sertifika alindi."
+  # Panel adresini VARSAYMIYORUZ: LOCK_PANEL_PORTS ile 10000 disariya kapali
+  # olabilir. Neyin gecerli oldugunu miniserv.conf'tan okuyoruz.
+  if [ "$(awk -F= '/^bind=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null)" = "127.0.0.1" ]; then
+    log "Panel yalnizca vekil uzerinden: https://${WEBMIN_PREFIX:-webmin}.${HOST#*.}/"
+  else
+    log "Panel: https://${HOST}:10000"
+  fi
 else
   err "Sertifika alinamadi. 80 ve 443 portlarina disaridan erisildigini dogrulayin."
   exit 1

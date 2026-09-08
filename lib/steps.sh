@@ -7,6 +7,38 @@
 
 VMINKIT_REPORT="$ROOT_DIR/vmin-kit-rapor.txt"
 
+# Basarisiz adimlarin listesi. Adimlar 'set +e' altinda calisiyor: biri hata
+# verirse kurulum devam ediyor ve ekranda tek bir kirmizi satir kaliyor. Uzun
+# bir kurulumda o satir kaybolur, o yuzden sonuclari topluyoruz - hem kapanista
+# hem raporda yaziliyor.
+VMINKIT_FAILED=()
+
+# run_step <adim-fonksiyonu>
+# Adimi calistirir, basarisiz olursa adi listeye yazar. Donus degerini aynen
+# geciriyor ki cagiran taraf isterse ayrica bakabilsin.
+#
+# Donus kodu 'if "$fn"; then' ile YAKALANMAZ: basarisiz ve else'siz bir if
+# bilesik komutu 0 dondurdugu icin $? o noktada adimin degil if'in sonucudur.
+# '|| rc=$?' dogrudan komutun kodunu aliyor.
+run_step(){
+  local fn="$1" rc=0
+  "$fn" || rc=$?
+  [ "$rc" -eq 0 ] || VMINKIT_FAILED+=("${fn#step_}")
+  return "$rc"
+}
+
+# Araci ureten surum: 12 ay sonra "bu sunucu hangi vmin-kit ile kuruldu"
+# sorusunun cevabi. Depo yoksa (arsivden acilmissa) bilinmiyor deriz.
+vminkit_version(){
+  local v
+  v="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || true)"
+  [ -n "$v" ] || { printf 'bilinmiyor'; return; }
+  if [ -n "$(git -C "$ROOT_DIR" status --porcelain 2>/dev/null)" ]; then
+    v="$v (degistirilmis calisma kopyasi)"
+  fi
+  printf '%s' "$v"
+}
+
 step_hostname(){
   local cur; cur="$(hostname -f 2>/dev/null || hostname)"
   if [ "$cur" = "$HOSTNAME_FQDN" ]; then ok "Hostname zaten $HOSTNAME_FQDN."; return; fi
@@ -241,10 +273,11 @@ step_dkim(){
   command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; DKIM atlaniyor."; return 1; }
   local out
   out="$(perl -e '
+    my ($root) = @ARGV;
     $ENV{WEBMIN_CONFIG} ||= q(/etc/webmin); $ENV{WEBMIN_VAR} ||= q(/var/webmin);
-    push(@INC, q(/usr/share/webmin)); $main::no_acl_check++;
-    chdir(q(/usr/share/webmin/virtual-server));
-    $0 = q(/usr/share/webmin/virtual-server/vmkit-dkim.pl);
+    push(@INC, $root); $main::no_acl_check++;
+    chdir("$root/virtual-server");
+    $0 = "$root/virtual-server/vmkit-dkim.pl";
     require q(./virtual-server-lib.pl);
     my $err = &check_dkim();
     if ($err) { print qq(VMKIT-DKIM:SKIP $err\n); exit(0); }
@@ -265,7 +298,7 @@ step_dkim(){
     &unlock_file($module_config_file);
     &run_post_actions();
     print qq(VMKIT-DKIM:OK $dkim->{selector}\n);
-  ' 2>&1)"
+  ' "$(webmin_root)" 2>&1)"
 
   printf '%s\n' "$out" | grep -v '^VMKIT-DKIM:' | sed 's/^/    /'
   # Isaret satirini SATIR bazinda ayikliyoruz; ${out##...} kullanilsaydi
@@ -746,13 +779,26 @@ step_docker(){
 
 step_portainer(){
   command -v docker >/dev/null 2>&1 || { err "Docker yok; portainer atlaniyor."; return 1; }
-  local image="${PORTAINER_IMAGE:-portainer/portainer-ce:latest}" port="${PORTAINER_PORT:-9000}" pub
+  local image="${PORTAINER_IMAGE:-portainer/portainer-ce:lts}" port="${PORTAINER_PORT:-9000}" pub
   if [ "${PORTAINER_BIND_LOCAL:-yes}" = "yes" ]; then pub="127.0.0.1:${port}:9000"; else pub="${port}:9000"; fi
   if docker ps -a --format '{{.Names}}' | grep -qx portainer; then
     if docker ps --format '{{.Names}}' | grep -qx portainer; then ok "Portainer zaten calisiyor (atlaniyor)."; return; fi
     docker start portainer >/dev/null; ok "Portainer baslatildi."; return
   fi
   docker volume inspect portainer_data >/dev/null 2>&1 || docker volume create portainer_data >/dev/null
+  # Imaji once ayrica cekiyoruz: etiket yoksa (ornegin 'lts' bir gun kalkarsa)
+  # bunu ACIKCA gorup 'latest'e dusmek, 'docker run'in anlasilmaz bir hatayla
+  # patlamasindan iyi.
+  if ! docker pull "$image" >/dev/null 2>&1; then
+    warn "Imaj cekilemedi: $image"
+    if [ "$image" != "portainer/portainer-ce:latest" ] &&
+       docker pull portainer/portainer-ce:latest >/dev/null 2>&1; then
+      warn "portainer/portainer-ce:latest ile devam ediliyor."
+      image="portainer/portainer-ce:latest"
+    else
+      err "Portainer imaji indirilemedi."; return 1
+    fi
+  fi
   docker run -d --name portainer --restart=always -p "$pub" \
     -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data "$image" >/dev/null
   ok "Portainer calisiyor -> $pub"
@@ -845,15 +891,19 @@ step_plugins(){
 
 # Kurulum sonrasi hafiza: ne yapildi, sifre nerede, ikinci sunucu icin config.env.
 step_report(){
-  local ip pg dk pt dfeat dplug
+  local ip pg dk pt dfeat dplug dinfo cmp
   ip="$(detect_ip)"
   if is_truthy "${POSTGRES:-1}"; then pg=kuruldu; else pg=atlandi; fi
   if command -v docker >/dev/null 2>&1; then dk=var; else dk=yok; fi
   if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx portainer; then pt=calisiyor; else pt=yok; fi
+  # Domain bilgisi TEK cagrida aliniyor; asagida iki alan bu ciktidan
+  # ayikleniyor (eskiden ayni komut dort kez calisiyordu).
+  dinfo="$(virtualmin list-domains --domain "$MAIN_DOMAIN" --multiline 2>/dev/null)"
 
   {
     echo "vmin-kit kurulum raporu - $(date '+%Y-%m-%d %H:%M:%S %z')"
     echo "======================================================="
+    echo "Arac surumu  : $(vminkit_version)"
     echo "Ana domain   : $MAIN_DOMAIN"
     echo "Hostname     : $HOSTNAME_FQDN"
     echo "Sunucu IP    : ${ip:-bilinmiyor}"
@@ -863,7 +913,19 @@ step_report(){
     echo "PostgreSQL   : $pg"
     echo "Docker       : $dk"
     echo "Portainer    : $pt"
+    if command -v composer >/dev/null 2>&1; then
+      cmp="$(composer --version --no-interaction 2>/dev/null | head -1)"
+      # Composer'i dagitim paketinden kuruyoruz: kendini guncelleyemez.
+      # Yeni cerceveler daha yeni bir composer isterse cevap burada gorunur.
+      echo "Composer     : ${cmp:-kurulu}"
+    fi
     echo
+    if [ ${#VMINKIT_FAILED[@]} -gt 0 ]; then
+      echo "BASARISIZ ADIMLAR: ${VMINKIT_FAILED[*]}"
+      echo "  Sebepleri kurulum ciktisindaydi. Duzeltip ./install.sh'i tekrar"
+      echo "  calistirin; tamamlanmis adimlar atlanir."
+      echo
+    fi
     if [ "$(awk -F= '/^bind=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null)" = "127.0.0.1" ]; then
       echo "Panel        : https://${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}/"
       echo "               (10000 portu disariya KAPALI, yalnizca 127.0.0.1)"
@@ -885,10 +947,8 @@ step_report(){
     # Hangi ozelliklerin acildigini Virtualmin'in kendisinden okuyoruz:
     # domain --default-features ile olusturuldugu icin liste sunucunun
     # yapilandirmasindan geliyor, varsayimda bulunmuyoruz.
-    dfeat="$(virtualmin list-domains --domain "$MAIN_DOMAIN" --multiline 2>/dev/null |
-             awk -F": " '/^[[:space:]]*Features:/{print $2; exit}')"
-    dplug="$(virtualmin list-domains --domain "$MAIN_DOMAIN" --multiline 2>/dev/null |
-             awk -F": " '/^[[:space:]]*Plugins:/{print $2; exit}')"
+    dfeat="$(printf '%s\n' "$dinfo" | awk -F": " '/^[[:space:]]*Features:/{print $2; exit}')"
+    dplug="$(printf '%s\n' "$dinfo" | awk -F": " '/^[[:space:]]*Plugins:/{print $2; exit}')"
     echo "Ana domain ozellikleri : ${dfeat:-bilinmiyor}"
     [ -n "$dplug" ] && echo "Ana domain eklentileri : $dplug"
     case " $dfeat " in
@@ -901,9 +961,27 @@ step_report(){
         echo
         echo "Kendi adreslerinizi ayri kutular olarak acin (Edit Users -> Add a user);"
         echo "onlar webmail'e tam e-posta adresiyle giris yapar."
+        echo
+        echo "DMARC politikasi 'p=none' ile basliyor: kayit yayinlanir ama hicbir"
+        echo "posta engellenmez. Birkac hafta sonra raporlara bakip SPF ve DKIM'in"
+        echo "dogru calistigini gorunce panelden sikin:"
+        echo "  Email Settings -> DMARC Records -> Policy = quarantine"
         ;;
     esac
     echo
+    # Disariya acik dinleyen portlar. Guvenlik duvarini bu arac yonetmiyor;
+    # en azindan sonucun ne oldugu gorunsun - 10000/20000 burada gorunuyorsa
+    # kilitleme adimi calismamis demektir.
+    if command -v ss >/dev/null 2>&1; then
+      echo "Disariya acik dinleyen portlar:"
+      ss -ltnH 2>/dev/null |
+        awk '{print $4}' |
+        grep -v '^127\.0\.0\.1:' | grep -v '^\[::1\]:' |
+        sed 's/.*://' | sort -n -u | tr '\n' ' ' | sed 's/^/  /;s/ $//'
+      echo
+      echo "  (Guvenlik duvari bu arac tarafindan yonetilmiyor.)"
+      echo
+    fi
     if [ "${DNS_MODE:-}" = bind ]; then
       echo "Yapilacak (BIND modu): registrar tarafinda ${NS1:-ns1} / ${NS2:-ns2} icin"
       echo "glue kaydi -> ${ip:-<sunucu-ip>}"

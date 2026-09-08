@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # Deployment kaydet / sil.
-# ISKELET: tanim kaydediliyor, git deploy islemi henuz yapilmiyor.
+# Burasi yalnizca TANIMI yazar; cekme islemi deploy.cgi -> run_deploy().
 use strict;
 use warnings;
 our (%text, %in);
