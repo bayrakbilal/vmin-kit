@@ -723,14 +723,34 @@ foreach my $f ('name', 'repo', 'branch', 'target', 'mode') {
 	$dep->{$f} = $in{$f} if (defined($in{$f}) && $in{$f} ne '');
 	}
 my $actions;
-if ($in{'check'}) {
-	# Kontrol turunden geliyoruz: kullanicinin yazdiklari %in'de.
+if ($in{'check'} || $in{'regen'}) {
+	# Alan eylemi turundan geliyoruz: kullanicinin yazdiklari %in'de.
 	$dep->{'actions_on'} = $in{'actions_on'} ? 1 : 0;
 	$actions = $in{'actions'};
 	}
 else {
 	$actions = &actions_read($d, $dep);
 	}
+
+# Ad bos birakildiysa repo adresinin son parcasindan doldur:
+# ".../vmin-kit.git" -> "vmin-kit.git". Elle bir ad yazmak cogu zaman
+# gereksiz; yazan olursa ona dokunulmuyor.
+if ($dep->{'repo'} && ($dep->{'name'} || '') !~ /\S/) {
+	my $n = $dep->{'repo'};
+	$n =~ s/\/+$//;
+	$n =~ s/^.*[\/:]//;
+	$n =~ s/[^A-Za-z0-9._\- ]//g;
+	$dep->{'name'} = $n if ($n =~ /\S/);
+	}
+
+# Kanca adresi EKLERKEN de gorunsun. Eskiden UUID yalnizca kayittan sonra
+# uretiliyordu, yani adresi almak icin "kaydet, listeye don, tekrar duzenle"
+# gerekiyordu. Artik form acilirken uretiliyor, gizli alanda tasiniyor ve
+# kaydederken ayni deger yaziliyor.
+$dep->{'uuid'} = $in{'uuid'}
+	if ($in{'uuid'} && $in{'uuid'} =~ /^[a-f0-9]{32}$/);
+$dep->{'uuid'} ||= &new_uuid();
+
 return ($dep, $actions, $new);
 }
 
@@ -759,7 +779,12 @@ print &ui_form_start("save_deploy.cgi", "post");
 print &ui_hidden("dom", $d->{'id'});
 print &ui_hidden("new", $new);
 print &ui_hidden("id", $dep->{'id'});
+# Kanca adresi kayittan once uretiliyor; formdan geri gelsin diye gizli alanda.
+print &ui_hidden("uuid", $dep->{'uuid'});
 print &ui_table_start($text{'edit_header'}, "width=100%", 2);
+
+print &ui_table_row($text{'edit_name'},
+	&ui_textbox("name", $dep->{'name'}, 30));
 
 # Kontrol dugmesi ADRESIN YANINDA: o alana ait bir eylem, sayfanin altindaki
 # kaydet/sil dugmeleriyle isi yok. Ayni formun icinde ayri adli bir submit,
@@ -768,9 +793,6 @@ print &ui_table_row($text{'edit_repo'},
 	&ui_textbox("repo", $dep->{'repo'}, 50)." ".
 	&ui_submit($text{'edit_check'}, "check")."<br>".
 	"<font size=-1>$text{'edit_repo_help'}</font>");
-
-print &ui_table_row($text{'edit_name'},
-	&ui_textbox("name", $dep->{'name'}, 30));
 
 # Dal, repo okunana kadar secilemez - repoya bagli tek alan bu.
 print &ui_table_row($text{'edit_branch'},
@@ -805,15 +827,14 @@ print &ui_table_row($text{'edit_actions'},
 #
 # Adres salt okunur bir kutuda: uzun ve kopyalanmasi gereken bir deger, duz
 # yazi olarak metinlerin arasinda durunca hem secmesi zor hem de kayboluyordu.
-if ($dep->{'uuid'}) {
-	print &ui_table_row($text{'edit_hook'},
-		&ui_textbox("hookurl", &hook_url($dep) || '', 60, 0, undef,
-			    "readonly onClick='this.select()'")." ".
-		&ui_submit($text{'edit_hook_regen'}, "regen")."<br>".
-		"<font size=-1>$text{'edit_hook_help'}</font>".
-		(&hook_path_registered() ? "" :
-			"<br><b>$text{'edit_hook_notready'}</b>"));
-	}
+print &ui_table_row($text{'edit_hook'},
+	&ui_textbox("hookurl", &hook_url($dep) || '', 60, 0, undef,
+		    "readonly onClick='this.select()'")." ".
+	&ui_submit($text{'edit_hook_regen'}, "regen")."<br>".
+	"<font size=-1>$text{'edit_hook_help'}</font>".
+	($new ? "<br><font size=-1>$text{'edit_hook_new'}</font>" : "").
+	(&hook_path_registered() ? "" :
+		"<br><b>$text{'edit_hook_notready'}</b>"));
 
 print &ui_table_end();
 

@@ -17,12 +17,13 @@ $d || &error($text{'index_edom'});
 my ($dep, $actions, $new) = &deploy_from_in($d);
 $dep || &error($text{'edit_egone'});
 
-# Kaydedilmis her deployment'in kanca adresi olsun. UUID alani sonradan
-# eklendi, eski kayitlarda yok; kullaniciyi "adres ciksin diye bir kez kaydet"
-# adimina zorlamak yerine ilk goruntulemede uretiliyor.
-if (!$new && $dep->{'id'} && !$dep->{'uuid'}) {
-	$dep->{'uuid'} = &new_uuid();
-	&save_deploy($d, $dep);
+# KAYITLI bir deployment'in adresi ilk kez uretildiyse hemen diske yaziliyor:
+# ekranda gorunen adres calisiyor olmali - kullanici kopyalayip GitHub'a
+# yazdiktan sonra "kaydete basmamistim" diye calismamasi kotu olurdu. Yeni
+# kayitta boyle bir sorun yok, adres kayitla birlikte gecerli oluyor.
+if (!$new && $dep->{'id'}) {
+	my $stored = &get_deploy($d, $dep->{'id'});
+	&save_deploy($d, $dep) if ($stored && !$stored->{'uuid'});
 	}
 
 &ui_print_header(&virtual_server::domain_in($d),

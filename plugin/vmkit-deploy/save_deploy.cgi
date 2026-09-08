@@ -130,8 +130,12 @@ $dep->{'branch'} = $in{'branch'};
 $dep->{'target'} = $target;
 $dep->{'mode'}   = $in{'mode'};
 $dep->{'actions_on'} = $in{'actions_on'} ? 1 : 0;
-# Web kancasinin adresindeki UUID PAROLADIR. Yeni kayitta burada uretiliyor;
-# yenilemek ayri bir eylem: formdaki "regen" dugmesi (yukarida).
+# Kanca adresi form acilirken uretilip gizli alanda tasiniyor, burada da o
+# deger yaziliyor: eklerken gorunen adres ile kaydedilen adres ayni olsun.
+# Bicimi dogruluyoruz - bu deger bir paroladir, formdan geldigi gibi kabul
+# edilmez.
+$dep->{'uuid'} = $in{'uuid'}
+	if ($in{'uuid'} && $in{'uuid'} =~ /^[a-f0-9]{32}$/);
 $dep->{'uuid'} ||= &new_uuid();
 &save_deploy($d, $dep);
 

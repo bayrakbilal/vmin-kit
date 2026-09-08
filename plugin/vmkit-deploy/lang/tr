@@ -133,3 +133,4 @@ delete_goes=Tanımı, reponun yerel kopyası, log'u ve dağıtım sonrası komut
 delete_stays=Dağıtılmış dosyalar yerinde kalır: $1 dizinine dokunulmaz.
 delete_cancel=Deployment'a geri dön
 delete_ok=Evet, Sil
+edit_hook_new=Bu adres, deployment oluşturulduğunda geçerli olur.
