@@ -51,22 +51,36 @@ if (@projects) {
 	my @table;
 	foreach my $p (@projects) {
 		my $u = "run.cgi?dom=$d->{'id'}&dir=".&urlize($p->{'dir'});
-		# Bu dugmelerin hicbiri bir sey CALISTIRMIYOR: composer islemleri
-		# run.cgi'deki onay sayfasina goturuyor, komut oradaki POST ile
-		# calisiyor. Onay sayfasini acmak bir GET oldugu icin
-		# ui_link_button uygun - bir sayfa acmaktan baska sey yapmiyor.
+		# Eylemler ui_submit ile, yani birer kucuk form. Sebep GORUNUM:
+		# renk ve ikon kurali (get_button_style) yalnizca ui_submit
+		# yolunda calisiyor - ui_link_button gercek bir <button> uretiyor
+		# ama renksiz ve ikonsuz kaliyor. Denendi.
+		#   act_install -> yesil + paket ikonu
+		#   act_update  -> mavi + yenileme ikonu
+		#   act_dump    -> uygun bir kural yok, duz kaliyor
 		#
-		# Liste kisa oldugu icin tam boy dugme kullaniliyor, git
-		# listesindeki gibi. Renk ve ikon yine dil anahtarinin adindan:
-		# act_install -> yesil + paket, act_update -> mavi + yenileme.
+		# Yine de hicbiri bir sey CALISTIRMIYOR: run.cgi 'confirm'
+		# gelmedikce yalnizca onay sayfasini gosteriyor.
+		my $btn = sub {
+			my ($action, $label) = @_;
+			return &ui_form_start("run.cgi", "post", undef,
+					      "style='display:inline-block;margin-right:6px'").
+			       &ui_hidden("dom", $d->{'id'}).
+			       &ui_hidden("dir", $p->{'dir'}).
+			       &ui_hidden("action", $action).
+			       &ui_submit($label).
+			       &ui_form_end();
+			};
 		push(@table, [
 			"<tt>".&html_escape($p->{'dir'})."</tt>",
 			$p->{'ver'} ? "PHP ".$p->{'ver'} : $text{'php_default'},
+			&$btn("install", $text{'act_install'}).
+			&$btn("update", $text{'act_update'}).
+			&$btn("dump-autoload", $text{'act_dump'}).
+			# Paketler yalnizca okuyan bir sayfa: eylem degil gezinme,
+			# o yuzden baglanti dugmesi.
 			&ui_link_button("packages.cgi?dom=$d->{'id'}&dir=".
-					&urlize($p->{'dir'}), $text{'act_packages'})." ".
-			&ui_link_button($u."&action=install", $text{'act_install'})." ".
-			&ui_link_button($u."&action=update", $text{'act_update'})." ".
-			&ui_link_button($u."&action=dump-autoload", $text{'act_dump'}),
+					&urlize($p->{'dir'}), $text{'act_packages'}),
 			]);
 		}
 	print &ui_columns_table([ $text{'col_dir'}, $text{'col_php'}, "" ],
