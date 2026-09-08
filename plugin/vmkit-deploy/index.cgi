@@ -107,13 +107,15 @@ if (@deps) {
 			$state = "-";
 			}
 
-		# Ilk dugme MODA uyuyor: otomatikte cekme dagitimi da baslatir,
-		# manuelde yalnizca ceker. Ikinci dugme her zaman yalnizca
-		# dagitir - manuel modun bekleyen isini yayina almak icin.
-		my $auto = ($dep->{'mode'} || 'manual') eq 'auto';
-		my @acts = ( &$btn($dep, $auto ? 'both' : 'pull',
-				   $auto ? $text{'act_pulldeploy'}
-					 : $text{'act_pull'}) );
+		# Dugme adlari SABIT: "Cek" ve "Dagit". Cekme dugmesi otomatik
+		# modda "Cek ve dagit" olurken satirlar farkli genislikte
+		# cikiyordu ve liste tutarsiz gorunuyordu; oysa modun ne yaptigi
+		# zaten Mod sutununda yaziyor.
+		#
+		# Islem degismiyor: op gonderilmiyor, ne yapilacagina deploy.cgi
+		# modun kendisine bakarak karar veriyor - otomatikse cekip
+		# dagitiyor. Boylece bu karar tek yerde, kancayla ayni yerde.
+		my @acts = ( &$btn($dep, '', $text{'act_pull'}) );
 		push(@acts, &$btn($dep, 'deploy', $text{'act_deploy'}))
 			if (-d &deploy_repo_path($d, $dep));
 		# Gezinme de DUGME: ui_link duz bir baglanti uretiyor ve form

@@ -118,7 +118,6 @@ log_pulling=Uzak repodan çekiliyor:
 log_deploying=Dosyalar hedef klasöre yazılıyor:
 log_actions=Dağıtım sonrası komutlar:
 err_nopull=Bu deployment için henüz bir şey çekilmedi, dağıtılacak bir şey yok. Önce Çek deyin.
-act_pulldeploy=Çek ve dağıt
 edit_hook=Web kancası
 edit_hook_regen=Yeni adres üret
 edit_hook_help=Git sunucunuzun webhook ayarına yazın. Adres paroladır, paylaşmayın.

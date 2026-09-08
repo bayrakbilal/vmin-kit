@@ -117,7 +117,6 @@ log_pulling=Pulling from the remote repository:
 log_deploying=Writing files to the target directory:
 log_actions=Post-deploy commands:
 err_nopull=Nothing has been pulled yet for this deployment, so there is nothing to deploy. Press Pull first.
-act_pulldeploy=Pull and deploy
 edit_hook=Web hook
 edit_hook_regen=Generate a new URL
 edit_hook_help=Give this to your Git host. The address is a password - do not share it.
