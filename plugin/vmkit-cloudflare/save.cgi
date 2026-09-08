@@ -16,7 +16,27 @@ $d->{'vmkit-cloudflare'} || &error(&text('index_eoff', $d->{'dom'}));
 
 my $cf = &get_cf($d);
 
-if ($in{'forget'}) {
+# ---- token'i unut ----
+# Dugmenin adi 'delete': rengini tema o ada bakarak veriyor ve bu geri
+# donusu olmayan bir islem - token bir daha gosterilmiyor, Cloudflare'den
+# yeniden uretmek gerekiyor. Once onay, sonra silme.
+if ($in{'delete'} && !$in{'confirm'}) {
+	&ui_print_header(&virtual_server::domain_in($d), $text{'forget_title'},
+			 "", undef, 0, 0);
+	print "<p>",&text('forget_warn', "<tt>".&html_escape($d->{'dom'})."</tt>"),
+	      "</p>\n";
+	print "<ul>\n";
+	print "<li>$text{'forget_goes'}</li>\n";
+	print "<li><b>$text{'forget_stays'}</b></li>\n";
+	print "</ul>\n";
+	print &ui_form_start("save.cgi", "post");
+	print &ui_hidden("dom", $d->{'id'});
+	print &ui_hidden("confirm", 1);
+	print &ui_form_end([ [ "delete", $text{'forget_ok'} ] ]);
+	&ui_print_footer("index.cgi?dom=$d->{'id'}", $text{'forget_cancel'});
+	exit;
+	}
+if ($in{'delete'}) {
 	delete($cf->{'token'});
 	&save_cf($d, $cf);
 	&webmin_log("forget", "cloudflare", $d->{'dom'});

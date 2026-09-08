@@ -173,8 +173,10 @@ print &ui_table_row($text{'index_proxy'},
 print &ui_table_row($text{'index_status'}, &zone_status($d));
 
 print &ui_table_end();
+# Unutma dugmesinin adi 'delete': rengini tema o ada gore veriyor ve islem
+# geri alinamiyor - onayi save.cgi soruyor.
 print &ui_form_end([ [ undef, $text{'save'} ],
-		     $cf->{'token'} ? ( [ "forget", $text{'index_forget'} ] ) : ( ) ]);
+		     $cf->{'token'} ? ( [ "delete", $text{'index_forget'} ] ) : ( ) ]);
 
 # Karsilastir ve Senkronize et: ayar formuna ait degiller, sayfanin kendi
 # eylemleri. Webmin'in kalibi dugme + yaninda ne yaptiginin aciklamasi;
