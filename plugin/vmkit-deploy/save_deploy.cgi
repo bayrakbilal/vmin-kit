@@ -42,15 +42,21 @@ if ($in{'delete'} && !$in{'confirm'}) {
 	# (delete_domain.cgi): govdede TEK birincil eylem, vazgecme ise govdede
 	# degil alt bilgide gezinme baglantisi olarak.
 	#
-	# Dugmeye STIL VERILMIYOR. Orada da verilmiyor; yalnizca adi 'confirm'
-	# olan bir dugme tanimlaniyor ve onu kirmiziya boyamak temanin isi.
-	# Sinifi elle yazmak (btn-danger) hem ise yaramadi hem de bizi tek bir
-	# temaya baglardi - baska temada anlamsiz bir sinif kalirdi.
+	# Dugmeye STIL VERILMIYOR: rengi dugmenin ADINDAN geliyor ve bunu tema
+	# belirliyor. Kanit kendi duzenleme formumuzda - orada da ad 'delete'
+	# ve dugme kirmizi cikiyor:
+	#     [ [ undef, $text{'save'} ], [ "delete", $text{'delete'} ] ]
+	# Bu yuzden burada da AYNI ad ve ayni etiket kullaniliyor. Sinifi elle
+	# yazmak (btn-danger) hem ise yaramadi hem de bizi tek bir temaya
+	# baglardi.
+	#
+	# 'delete' dugmenin adi oldugu icin onay isareti ayri bir gizli alanda:
+	# ilk gonderimde 'confirm' yok, ikincisinde var.
 	print &ui_form_start("save_deploy.cgi", "post");
 	print &ui_hidden("dom", $d->{'id'});
 	print &ui_hidden("id", $dep->{'id'});
-	print &ui_hidden("delete", 1);
-	print &ui_form_end([ [ "confirm", $text{'del_confirm'} ] ]);
+	print &ui_hidden("confirm", 1);
+	print &ui_form_end([ [ "delete", $text{'delete'} ] ]);
 	# Iki donus yolu, ikisi de ayni bicimde: duzenleme formu ve liste.
 	&ui_print_footer("edit_deploy.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
 			 $text{'del_cancel'},
