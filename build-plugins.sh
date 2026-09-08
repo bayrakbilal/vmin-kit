@@ -40,11 +40,22 @@ for mod in "${MODULES[@]}"; do
   cp -a "$src" "$STAGE/$mod"
 
   # Izinleri pakette sabitliyoruz: git calisma kopyasinda calistirilabilir bit
-  # tasinmayabiliyor (ozellikle Windows'ta duzenlenmisse). Yalnizca CGI'ler
-  # calistirilabilir olmali; *.pl dosyalari kutuphane.
+  # tasinmayabiliyor (ozellikle Windows'ta duzenlenmisse).
+  #
+  # Calistirilabilir olanlar: butun CGI'ler ve SHEBANG ILE BASLAYAN .pl
+  # dosyalari. Ikinci kural sart: sync-all.pl ile hook-run.pl birer komut,
+  # systemd ve web kancasi onlari dogrudan calistiriyor. Once yalnizca *.cgi
+  # 0755 yapiliyordu ve bu dosyalar pakette 0644 kaliyordu - temiz kurulumda
+  # Cloudflare zamanlayicisi "Permission denied" ile durur, elle kopyalayan
+  # update-plugins.sh'de ise (cp -a izni koruyor) sorun gorunmezdi.
+  # Kutuphane .pl dosyalarinda shebang yok, onlar 0644 kaliyor.
   find "$STAGE/$mod" -type d -exec chmod 0755 {} +
   find "$STAGE/$mod" -type f -exec chmod 0644 {} +
   chmod 0755 "$STAGE/$mod"/*.cgi 2>/dev/null || true
+  for f in "$STAGE/$mod"/*.pl; do
+    [ -f "$f" ] || continue
+    case "$(head -c 2 "$f")" in "#!") chmod 0755 "$f" ;; esac
+  done
 
   out="$DIST/$mod.wbm.gz"
   tar -czf "$out" -C "$STAGE" "$mod"

@@ -68,7 +68,12 @@ if (@deps) {
 			? &op_label($dep->{'last_op'} || 'both')." - ".
 			  ($dep->{'last_status'} eq 'ok' ? $text{'st_ok'}
 							 : $text{'st_failed'}).
-			  " - ".&make_date($dep->{'last_time'})
+			  " - ".&make_date($dep->{'last_time'}).
+			  # Elle mi kancadan mi tetiklendi: kanca calisiyor mu
+			  # sorusunun cevabi listede gorunsun.
+			  (($dep->{'last_trigger'} || '') eq 'hook'
+				? " <font size=-1>(".$text{'trigger_hook'}.")</font>"
+				: "")
 			: $text{'never'};
 
 		# Yayindaki ve cekilmis ucu ayri gosteriyoruz: manuel modun butun

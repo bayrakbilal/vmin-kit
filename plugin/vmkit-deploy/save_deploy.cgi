@@ -63,6 +63,9 @@ $dep->{'branch'} = $in{'branch'};
 $dep->{'target'} = $target;
 $dep->{'mode'}   = $in{'mode'};
 $dep->{'actions_on'} = $in{'actions_on'} ? 1 : 0;
+# Web kancasinin adresindeki UUID PAROLADIR: kayitla birlikte uretiliyor,
+# yeniden uretmek eskisini aninda gecersiz kiliyor.
+$dep->{'uuid'} = &new_uuid() if (!$dep->{'uuid'} || $in{'regen'});
 &save_deploy($d, $dep);
 
 # Komut metni DOGRULANMIYOR: serbest bicimli kabuk satirlari, sablon yok.

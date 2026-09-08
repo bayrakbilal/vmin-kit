@@ -33,6 +33,7 @@ if ($op !~ /^(pull|deploy|both)$/) {
 &ui_print_header(&virtual_server::domain_in($d), &op_label($op),
 		 "", undef, 0, 0);
 
+$dep->{'last_trigger'} = 'panel';
 my ($ok, $out) = &deploy_run($d, $dep, $op);
 &webmin_log($op, "deploy", $dep->{'name'} || $dep->{'id'},
 	    { 'status' => $ok ? "ok" : "failed" });

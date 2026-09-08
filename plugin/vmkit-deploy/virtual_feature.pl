@@ -66,6 +66,9 @@ sub feature_setup
 {
 my ($d) = @_;
 &$virtual_server::first_print($text{'setup_start'});
+# Ilk domainde kanca yolunun kayitli oldugundan emin ol: modul elle
+# kopyalanmis, yani postinstall.pl hic calismamis olabilir.
+&ensure_hook_path();
 &$virtual_server::second_print($virtual_server::text{'setup_done'});
 }
 

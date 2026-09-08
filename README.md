@@ -191,6 +191,16 @@ Dağıtım sonrası komutlar hedef klasörde, domainin kendi kullanıcısı olar
 `composer install` olduğu gibi çalışır, tam yol yazmanız gerekmez. Hata veren
 ilk komutta dağıtım durur ve başarısız işaretlenir.
 
+**Web kancası.** Formda her deployment için bir kanca adresi görünür:
+`https://webmin.<ana-domain>/vmkit-deploy/hook.cgi?uuid=...`. Bu adresi git
+sunucunuzun webhook ayarına yazın — sağlayıcı fark etmez (GitHub, GitLab,
+Gitea) ve `curl` ile elle de çağırabilirsiniz. Çağrıldığında dağıtım moduna
+uyar: otomatikse çeker ve dağıtır, manuelse yalnızca çeker.
+
+Adresteki UUID **paroladır**: giriş istemez, adresi bilen tetikler. Sunucu
+loglarına düştüğü için paylaşmayın; sızarsa formdaki "yeni adres üret" ile
+eskisi anında geçersiz olur.
+
 Özel (private) repolar için **Domain SSH key** sayfasındaki açık anahtarı
 GitHub'da **hesabınıza** ekleyin (Settings → SSH keys). Tek bir repoya deploy
 key olarak eklemeyin: GitHub bir deploy anahtarını yalnızca tek repoda kabul

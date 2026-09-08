@@ -101,6 +101,23 @@ if ($branches) {
 			    [ "auto",   $text{'mode_auto_desc'} ] ]).
 		"<br><font size=-1>$text{'edit_mode_help'}</font>");
 
+	# Web kancasi. Adres yalnizca kayitli bir deployment icin var: UUID
+	# save_deploy'da uretiliyor.
+	if ($dep->{'uuid'}) {
+		my $url = &hook_url($dep);
+		print &ui_table_row($text{'edit_hook'},
+			($url ? "<tt>".&html_escape($url)."</tt><br>" : "").
+			&ui_checkbox("regen", 1, $text{'edit_hook_regen'}, 0).
+			"<br><font size=-1>$text{'edit_hook_help'}</font>".
+			(&hook_path_registered() ? "" :
+				"<br><font size=-1 color=#cc0000>".
+				$text{'edit_hook_notready'}."</font>"));
+		}
+	elsif (!$in{'new'}) {
+		print &ui_table_row($text{'edit_hook'},
+			"<font size=-1>$text{'edit_hook_none'}</font>");
+		}
+
 	# Dagitim sonrasi komutlar. Sablon ya da hazir liste YOK: ne yazarsan o
 	# calisir. Hedef klasorde, domainin kendi yetkileriyle, ilk hatada durur.
 	print &ui_table_row($text{'edit_actions'},

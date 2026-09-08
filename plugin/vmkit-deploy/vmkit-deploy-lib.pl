@@ -13,7 +13,8 @@ use warnings;
 BEGIN { push(@INC, ".."); };
 use WebminCore;
 
-our (%config, %text, $module_name, $module_config_directory);
+our (%config, %text, $module_name, $module_config_directory,
+     $root_directory);
 
 &init_config();
 &foreign_require("virtual-server", "virtual-server-lib.pl");
@@ -612,6 +613,151 @@ foreach my $l (split(/\r?\n/, $out)) {
 		    'date' => $ad, 'subject' => $s });
 	}
 return (\@rv, undef);
+}
+
+
+# ---- web kancasi --------------------------------------------------------
+# Plesk'teki ile ayni model: adresin icindeki UUID PAROLADIR. Adresi bilen
+# tetikler, bilmeyen tetikleyemez.
+#
+# Bilerek YAPMADIKLARIMIZ ve nedenleri:
+#   - Imza dogrulama (GitHub'in X-Hub-Signature-256'si) yok. Eklersek kanca
+#     GitHub'a OZEL olurdu; Gitea, GitLab ya da elle 'curl' calismazdi.
+#     UUID her yerde calisir.
+#   - Gelen govde HIC OKUNMAZ. Hangi repo, hangi dal, hangi klasor zaten
+#     kayitli; payload'da bize yeni bir sey yok.
+#
+# Bedeli: adres bir parola oldugu icin sunucunun erisim gunluklerine duser ve
+# paylasmak onu paylasmak demektir. Sizdiginda formdan yeniden uretilir,
+# eskisi aninda gecersiz olur. Plesk'te de durum aynidir.
+
+# new_uuid() -> 128 bitlik rastgele kimlik (32 onaltilik karakter)
+sub new_uuid
+{
+my $h;
+if (open($h, "<", "/dev/urandom")) {
+	my $b;
+	my $n = read($h, $b, 16);
+	close($h);
+	return unpack("H*", $b) if ($n == 16);
+	}
+# /dev/urandom her Linux'ta var; buraya dusmemiz beklenmiyor ama sessizce
+# bos bir kimlik uretmektense zayif da olsa bir sey uretelim.
+return sprintf("%08x%08x%08x%08x", time(), $$, int(rand(0xffffffff)),
+	       int(rand(0xffffffff)));
+}
+
+# find_by_uuid(uuid) -> (&domain, &deploy) ya da bos
+# Butun domainlerdeki deployment'lar taranir: kanca kimlik dogrulamasi
+# yapmadan calistigi icin hangi domain oldugunu yalnizca UUID soyluyor.
+sub find_by_uuid
+{
+my ($uuid) = @_;
+return ( ) if (!$uuid || $uuid !~ /^[a-f0-9]{16,64}$/);
+foreach my $dep (&list_deploys()) {
+	next if (($dep->{'uuid'} || '') ne $uuid);
+	my $d = &virtual_server::get_domain($dep->{'dom'});
+	next if (!$d || !$d->{'vmkit-deploy'});
+	return ($d, $dep);
+	}
+return ( );
+}
+
+# hook_url(&deploy) -> tam adres
+# Konak adini TAHMIN ETMIYORUZ: sayfayi hangi adresten actiysan kancanin
+# adresi de odur. Panele vekil uzerinden girildiginde ProxyPreserveHost
+# sayesinde bu zaten dis adres (webmin.<domain>) oluyor.
+sub hook_url
+{
+my ($dep) = @_;
+return undef if (!$dep->{'uuid'});
+my $host = $ENV{'HTTP_HOST'} || $ENV{'SERVER_NAME'} || "";
+return undef if (!$host);
+return "https://$host/$module_name/hook.cgi?uuid=$dep->{'uuid'}";
+}
+
+# ---- miniserv: kimlik dogrulamasi istemeyen yol -------------------------
+# Kanca adresine giris yapmadan erisilebilmesi gerekiyor. Webmin'in kendi
+# ayari bunu sagliyor; ayarin ADINI TAHMIN ETMIYORUZ, miniserv.pl'in hangi
+# anahtari okudugunu kaynaktan buluyoruz. Webmin surumleri arasinda
+# degisirse burasi kendiliginden dogru olani secer.
+sub unauth_key
+{
+my $mp = "$root_directory/miniserv.pl";
+my $src = -r $mp ? &read_file_contents($mp) : undef;
+return "unauthenticated"
+	if ($src && $src =~ /config\{["']unauthenticated["']\}/);
+return "unauth";
+}
+
+sub hook_path
+{
+return "/$module_name/hook.cgi";
+}
+
+sub miniserv_conf
+{
+return "$ENV{'WEBMIN_CONFIG'}/miniserv.conf";
+}
+
+# hook_path_registered() -> yol listede mi
+sub hook_path_registered
+{
+my $conf = &miniserv_conf();
+return 0 if (!-r $conf);
+my $key = &unauth_key();
+my $cur = "";
+foreach my $l (split(/\n/, &read_file_contents($conf))) {
+	$cur = $1 if ($l =~ /^\Q$key\E=(.*)$/);
+	}
+my $p = &hook_path();
+return (grep { $_ eq $p } split(/\s+/, $cur)) ? 1 : 0;
+}
+
+# ensure_hook_path() -> (degisti mi, hata)
+# Yolu listeye ekler ve miniserv'i yeniden yukler. Idempotent: zaten varsa
+# hicbir sey yapmaz, dolayisiyla her kurulumda cagrilabilir.
+sub ensure_hook_path
+{
+return (0, undef) if (&hook_path_registered());
+my $conf = &miniserv_conf();
+return (0, &text('hook_econf', $conf)) if (!-w $conf);
+my $key = &unauth_key();
+my %mc;
+&read_file($conf, \%mc);
+$mc{$key} = join(" ", grep { $_ ne '' }
+			(split(/\s+/, $mc{$key} || ''), &hook_path()));
+&lock_file($conf);
+&write_file($conf, \%mc);
+&unlock_file($conf);
+# Ayar yalnizca miniserv yeniden yuklenince gecerli oluyor. Webmin'in kendi
+# fonksiyonu bunu calisan istegi oldurmeden yapiyor (ayni seyi Webmin
+# Configuration sayfalari da kullaniyor).
+if (defined(&restart_miniserv)) {
+	eval { &restart_miniserv(1); };
+	}
+return (1, undef);
+}
+
+# remove_hook_path() - modul kaldirilirken listeden cikar.
+sub remove_hook_path
+{
+my $conf = &miniserv_conf();
+return 0 if (!-w $conf);
+my $key = &unauth_key();
+my %mc;
+&read_file($conf, \%mc);
+my $p = &hook_path();
+my @keep = grep { $_ ne '' && $_ ne $p } split(/\s+/, $mc{$key} || '');
+return 0 if (join(" ", @keep) eq ($mc{$key} || ''));
+$mc{$key} = join(" ", @keep);
+&lock_file($conf);
+&write_file($conf, \%mc);
+&unlock_file($conf);
+if (defined(&restart_miniserv)) {
+	eval { &restart_miniserv(1); };
+	}
+return 1;
 }
 
 1;
