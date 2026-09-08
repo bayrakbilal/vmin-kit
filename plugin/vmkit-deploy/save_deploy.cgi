@@ -23,6 +23,33 @@ else {
 	}
 
 # ---- silme ----
+# Once ONAY EKRANI: geri donusu olmayan bir islem ve dugme, kaydet dugmesinin
+# hemen yaninda duruyor. Onay metni ayrica NEYIN GITMEDIGINI de soyluyor -
+# "sil" deyince site dosyalarinin da gidecegi korkusu en cok burada olur.
+if ($in{'delete'} && !$in{'confirmed'}) {
+	&ui_print_header(&virtual_server::domain_in($d), $text{'del_title'},
+			 "", undef, 0, 0);
+	print "<p>",&text('del_warn',
+			  "<tt>".&html_escape($dep->{'name'} || $dep->{'id'})."</tt>"),
+	      "</p>\n";
+	print "<ul>\n";
+	print "<li>$text{'del_goes'}</li>\n";
+	print "<li><b>",&text('del_stays',
+			      "<tt>".&html_escape(&deploy_target_dir($d, $dep))."</tt>"),
+	      "</b></li>\n";
+	print "</ul>\n";
+	print &ui_form_start("save_deploy.cgi", "post");
+	print &ui_hidden("dom", $d->{'id'});
+	print &ui_hidden("id", $dep->{'id'});
+	print &ui_hidden("delete", 1);
+	print &ui_hidden("confirmed", 1);
+	print &ui_submit($text{'del_confirm'});
+	print &ui_form_end();
+	print "<p>",&ui_link("edit_deploy.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
+			     $text{'del_cancel'}),"</p>\n";
+	&ui_print_footer("index.cgi?dom=$d->{'id'}", $text{'edit_return'});
+	exit;
+	}
 if ($in{'delete'}) {
 	&delete_deploy($d, $dep);
 	&webmin_log("delete", "deploy", $dep->{'name'} || $dep->{'id'});
