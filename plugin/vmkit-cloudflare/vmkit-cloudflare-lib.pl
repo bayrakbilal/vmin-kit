@@ -100,7 +100,15 @@ sub zone_status
 my ($d) = @_;
 my $cf = &get_cf($d);
 return $text{'status_notoken'} if (!$cf->{'token'});
-return $cf->{'last_status'} || $text{'status_unknown'};
+
+# Diskte KOD duruyor ('ok' / 'partial'), cevrilmis metin degil: dil
+# degistiginde eski kayitlar eski dilde gorunuyordu. Ceviri burada, gosterim
+# aninda yapiliyor. Taninmayan bir deger (eski surumden kalan cumleler)
+# "bilinmiyor" sayiliyor ve ilk senkronda kendiliginden duzeliyor.
+my $st = $cf->{'last_status'} || '';
+return $text{'status_ok'}      if ($st eq 'ok');
+return $text{'status_partial'} if ($st eq 'partial');
+return $text{'status_unknown'};
 }
 
 # ---- Cloudflare API ------------------------------------------------------
@@ -653,7 +661,8 @@ foreach my $e (@$plan) {
 	}
 
 &$cb($text{'sync_nothing'}) if (!$n);
-$cf->{'last_status'} = $ok ? $text{'sync_ok'} : $text{'sync_partial'};
+# Kod saklaniyor, metin degil - ceviri zone_status'ta yapiliyor.
+$cf->{'last_status'} = $ok ? "ok" : "partial";
 $cf->{'last_time'} = time();
 &save_cf($d, $cf);
 return ($ok, undef);
