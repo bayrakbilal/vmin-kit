@@ -12,3 +12,8 @@ vmin-kit-rapor.txt
 
 # build-plugins.sh çıktısı: paketler kaynaktan üretilir, depoda tutulmaz
 dist/
+
+# Inceleme icin gecici olarak kopyalanan ucuncu parti dosyalar
+# (ornek: temanin bundle.js kaynagi) - depoya girmesinler.
+bundle*.js
+*.min.js
