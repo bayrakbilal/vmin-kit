@@ -14,6 +14,7 @@ require './vmkit-deploy-lib.pl';
 my $d = &virtual_server::get_domain($in{'dom'});
 $d || &error($text{'index_edom'});
 &can_edit_domain($d) || &error($text{'index_eaccess'});
+$d->{'vmkit-deploy'} || &error(&text('index_eoff', $d->{'dom'}));
 
 &ui_print_header(&virtual_server::domain_in($d), $text{'key_title'},
 		 "", undef, 0, 0);

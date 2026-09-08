@@ -669,15 +669,17 @@ return $op eq 'pull'   ? $text{'op_pull'} :
 # gecebilir, metin bir ayirici guvenli olmaz.
 sub deploy_commits
 {
-my ($d, $dep, $count) = @_;
-$count = 20 if (!$count || $count !~ /^\d+$/);
+my ($d, $dep) = @_;
 my $repo = &deploy_repo_path($d, $dep);
 return (undef, $text{'commits_norepo'}) if (!-d $repo);
 
+# Dalin TAMAMI listeleniyor, son N tanesi degil: bu sayfa gecmise bakmak
+# icin var ve nerede kesilecegini bilmiyoruz. Cikti tek satirlik kayitlar
+# oldugu icin binlerce commit'te bile kucuk kaliyor.
 my $fmt = '%h%x1f%an%x1f%ad%x1f%s';
 my $inner = "git --git-dir=".quotemeta($repo).
 	    " log --no-decorate --date=short --format=".quotemeta($fmt).
-	    " -n ".int($count)." ".quotemeta($dep->{'branch'});
+	    " ".quotemeta($dep->{'branch'});
 my $cmd = &command_as_user($d->{'user'}, 1, $inner);
 my ($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 30);
 return (undef, $text{'err_timeout'}) if ($timed);

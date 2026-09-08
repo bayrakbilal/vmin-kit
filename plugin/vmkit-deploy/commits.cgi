@@ -20,7 +20,7 @@ $dep || &error($text{'edit_egone'});
 		 &text('commits_title', $dep->{'name'} || $dep->{'id'},
 		       $dep->{'branch'}), "", undef, 0, 0);
 
-my ($commits, $err) = &deploy_commits($d, $dep, $in{'count'} || 20);
+my ($commits, $err) = &deploy_commits($d, $dep);
 if ($err) {
 	print "<p><b>",&html_escape($err),"</b></p>\n";
 	}
