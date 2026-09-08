@@ -82,9 +82,10 @@ if (!-r $runner) {
 # "accepted" diyor, panelde hicbir sey olmuyor, sebebi hicbir yerde yok.
 my $log = "$module_config_directory/hook.log";
 
-# Kabuk yerine dogrudan 'perl': betigin calistirilabilir biti eksikse ya da
-# shebang'i bu sistemde yoksa is sessizce hic baslamazdi.
-my $cmd = "perl ".quotemeta($runner)." ".quotemeta($d->{'id'})." ".
+# Kabuk yerine dogrudan perl: betigin calistirilabilir biti eksikse ya da
+# shebang'i bu sistemde yoksa is sessizce hic baslamazdi. Yorumlayici olarak
+# $^X, yani SU ANDA calisan perl - PATH'e bagli kalmiyoruz.
+my $cmd = quotemeta($^X)." ".quotemeta($runner)." ".quotemeta($d->{'id'})." ".
 	  quotemeta($dep->{'id'})." ".quotemeta($op);
 system("$cmd </dev/null >>".quotemeta($log)." 2>&1 &");
 
