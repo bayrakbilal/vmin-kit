@@ -173,8 +173,11 @@ print &ui_table_row($text{'index_proxy'},
 print &ui_table_row($text{'index_status'}, &zone_status($d));
 
 print &ui_table_end();
-# Unutma dugmesinin adi 'delete': rengini tema o ada gore veriyor ve islem
-# geri alinamiyor - onayi save.cgi soruyor.
+# Silme dugmesi. Rengi tema veriyor ve ETIKETE bakiyor: Ingilizce etiketinde
+# "Delete" gecen dugme kirmizi oluyor, gecmeyen yesil. Dugmenin ADI degil -
+# once oyle sanmistik, ama ayni adla "Forget token" yazan dugme kirmizi
+# olmadi. Bu yuzden eylemin adi "unut" degil "sil": zaten yaptigi da bu.
+# Islem geri alinamiyor, onayi save.cgi soruyor.
 print &ui_form_end([ [ undef, $text{'save'} ],
 		     $cf->{'token'} ? ( [ "delete", $text{'index_forget'} ] ) : ( ) ]);
 

@@ -17,8 +17,8 @@ $d->{'vmkit-cloudflare'} || &error(&text('index_eoff', $d->{'dom'}));
 my $cf = &get_cf($d);
 
 # ---- token'i unut ----
-# Dugmenin adi 'delete': rengini tema o ada bakarak veriyor ve bu geri
-# donusu olmayan bir islem - token bir daha gosterilmiyor, Cloudflare'den
+# Rengi tema ETIKETTEKI "Delete" kelimesine bakarak veriyor (ad degil). Bu
+# islem geri alinamiyor: token bir daha gosterilmiyor, Cloudflare'den
 # yeniden uretmek gerekiyor. Once onay, sonra silme.
 if ($in{'delete'} && !$in{'confirm'}) {
 	&ui_print_header(&virtual_server::domain_in($d), $text{'forget_title'},
