@@ -13,8 +13,33 @@
 use strict;
 use warnings;
 
-# Giris yapilmadan calistigi icin ACL baglami yok.
-BEGIN { $main::no_acl_check++; }
+# Iki KONTROLUN DISINDA kalmamiz gerekiyor ve ikisi ayri seyler:
+#
+#   no_acl_check           Giris yapilmadan calistigimiz icin ACL baglami yok.
+#                          Yolun giris istememesi ayrica miniserv'de ayarli
+#                          (ensure_hook_path).
+#
+#   trust_unknown_referers Webmin her istegin Referer basligini kendi adresiyle
+#                          karsilastiriyor; referer hic yoksa referers_none
+#                          kurali devreye girip istegi "Security Warning" ile
+#                          reddediyor. Kancayi cagiran GitHub'in (ya da adresi
+#                          adres cubuguna yapistiran kisinin) referer'i yok,
+#                          dolayisiyla bu sayfa o kontrolun disinda kalmali.
+#
+# Guvenligi ZAYIFLATMIYOR: referer kontrolu CSRF'e karsidir, yani giris yapmis
+# bir yoneticinin tarayicisinin kandirilmasina. Burada yetki oturumdan degil
+# adresteki UUID'den geliyor; UUID'yi bilen zaten dogrudan cagirabilir.
+# Ayarin kendisi (referers_none) sunucu genelinde ACIK kaliyor, yalnizca bu
+# sayfa muaf.
+# Webmin surumleri bu muafiyeti iki farkli adla tasidi; ikisini de
+# yaziyoruz. Kullanilmayan bir global zararsiz, eksik olani ise sayfayi
+# calismaz kilardi.
+BEGIN {
+	no warnings 'once';
+	$main::no_acl_check++;
+	$main::trust_unknown_referers = 1;
+	$main::no_referers_check = 1;
+	}
 our (%in, $module_root_directory);
 
 require './vmkit-deploy-lib.pl';
