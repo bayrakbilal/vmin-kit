@@ -74,12 +74,14 @@ if (@deps) {
 
 	my @table;
 	foreach my $dep (@deps) {
-		# Durum renkleri: good yesil, warn sari, bad kirmizi.
+		# Gecerli renk tipleri: success, info, warn, danger. Baska bir ad
+		# verilince ui_text_color hicbir renk uygulamiyor - 'good'/'bad'
+		# yazmistim ve sessizce renksiz kaliyordu.
 		my $last = $dep->{'last_time'}
 			? &colour($dep->{'last_status'} eq 'ok'
 					 ? $text{'st_ok'} : $text{'st_failed'},
 					 $dep->{'last_status'} eq 'ok'
-					 ? 'good' : 'bad')." - ".
+					 ? 'success' : 'danger')." - ".
 			  &op_label($dep->{'last_op'} || 'both')." - ".
 			  &make_date($dep->{'last_time'}).
 			  # Elle mi kancadan mi tetiklendi: kanca calisiyor mu

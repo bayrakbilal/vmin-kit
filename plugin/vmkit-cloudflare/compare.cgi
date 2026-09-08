@@ -85,18 +85,21 @@ foreach my $e (@$plan) {
 	my $lcol = @lv ? "<tt>".&short_value(join(", ", sort @lv))."</tt>" : "-";
 	my $ccol = @cv ? "<tt>".&short_value(join(", ", sort @cv))."</tt>" : "-";
 
+	# Durum renkleri Webmin'in tiplerinden: success / info / warn / danger.
+	# Baska bir ad verilirse ui_text_color sessizce renksiz birakiyor.
 	my ($state, $note, $out, $acts) = ("", "", 0, "");
 	my $op = $e->{'op'};
-	if    ($op eq 'create') { $state = $text{'st_willcreate'}; }
-	elsif ($op eq 'delete') { $state = $text{'st_willdelete'}; }
-	elsif ($op eq 'update') { $state = $text{'st_willupdate'}; }
-	elsif ($op eq 'adopt')  { $state = $text{'st_willadopt'}; }
+	if    ($op eq 'create') { $state = &ui_text_color($text{'st_willcreate'}, 'success'); }
+	elsif ($op eq 'delete') { $state = &ui_text_color($text{'st_willdelete'}, 'danger'); }
+	elsif ($op eq 'update') { $state = &ui_text_color($text{'st_willupdate'}, 'warn'); }
+	elsif ($op eq 'adopt')  { $state = &ui_text_color($text{'st_willadopt'}, 'info'); }
 	elsif ($op eq 'none')   { $state = $text{'st_insync'}; }
 	else {
 		# skip: kapsam disi. Neden oldugu 'why' alaninda.
 		$out = 1;
 		if ($e->{'why'} eq 'cnameclash') {
-			($state, $note) = ($text{'st_blocked'}, $text{'st_cnameclash'});
+			($state, $note) = (&ui_text_color($text{'st_blocked'}, 'danger'),
+					   $text{'st_cnameclash'});
 			$acts = &$btn($e->{'blocker'}->{'id'}, 'delete',
 				      $text{'act_delcname'});
 			}
@@ -112,7 +115,8 @@ foreach my $e (@$plan) {
 				} @cr);
 			}
 		else {
-			($state, $note) = ($text{'st_conflict'}, $text{'st_conflict_note'});
+			($state, $note) = (&ui_text_color($text{'st_conflict'}, 'warn'),
+					   $text{'st_conflict_note'});
 			$acts = join(" ", map {
 				$_->{'proxied'} ? "" :
 					&$btn($_->{'id'}, 'adopt', $text{'act_adopt'}).

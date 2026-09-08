@@ -318,7 +318,9 @@ return &norm_value($t, $r->{'content'});
 sub short_value
 {
 my ($v, $max) = @_;
-$max ||= 60;
+# 40 karakter: tablo yedi sutunlu, uzun degerler satirlari sisiriyordu.
+# Tamami zaten title'da - uzerine gelince gorunuyor.
+$max ||= 40;
 return &html_escape($v) if (length($v) <= $max);
 return "<span title=\"".&quote_escape($v)."\">".
        &html_escape(substr($v, 0, $max))."...</span>";
