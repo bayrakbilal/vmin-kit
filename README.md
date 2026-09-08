@@ -1,12 +1,17 @@
 # vmin-kit
 
-**Debian 12** üzerinde Virtualmin (GPL) tabanlı bir hosting sunucusunu tek komutla
-kuran taşınabilir araç. Kurulum bittiğinde ana domain hazır, SSL'li ve yayında olur.
+**Debian 12** üzerinde Virtualmin (GPL) tabanlı bir hosting sunucusunu tek
+komutla kurar. Kurulum bittiğinde ana domain hazır, SSL'li ve yayında olur;
+panel, webmail ve Docker arayüzü kendi alt alanlarından erişilebilir olur.
 
-Amaç basit: **kurulum adımlarını hatırlamak zorunda kalmamak.** Yeni bir VDS'e
-taşınırken ya da ikinci sunucuyu açarken tek komut yeter.
+Yanında üç Webmin eklentisi gelir: **Git Deploy**, **Composer**, **Cloudflare
+DNS** — üçü de Virtualmin panelinde domain başına çalışır.
 
-## Kurulumdan önce
+---
+
+## 1. Kurulum
+
+### Önce DNS
 
 Ana domain ve hostname için **A kayıtları sunucunun IP'sini göstermeli**:
 
@@ -18,10 +23,10 @@ s.ornek.com      A   <sunucu-ip>
 Cloudflare kullanıyorsanız kurulum sırasında **proxy kapalı (gri bulut)** olsun;
 sertifika alındıktan sonra açabilirsiniz.
 
-Araç bunu kendisi kontrol eder — yanlışsa hiçbir şey çalıştırmadan ne yapmanız
+Kurulum bunu kendisi kontrol eder; yanlışsa hiçbir şey çalıştırmadan ne yapmanız
 gerektiğini yazar.
 
-## Kullanım
+### Çalıştır
 
 ```bash
 git clone <repo-url>
@@ -30,244 +35,246 @@ sudo ./install.sh
 ```
 
 Tek soru sorulur: **ana domain**. Ardından kullanılacak ayarların özeti gösterilir
-ve onay istenir; yanlış bir şey görürseniz iptal edip `config.env`'i düzeltir,
-yeniden çalıştırırsınız.
+ve onay istenir.
 
-Diğer her şey `config.env`'den gelir. O dosya **depoda durur** ve tercihlerin
-yeridir: değiştirin, commit'leyin — sonraki sunucu depoyu çektiğinde aynı şekilde
-kurulur, hatırlanacak bir şey kalmaz. Ana domain orada tutulmaz; her sunucuda
-farklı olan tek değer odur. Betikten çalıştırmak için ortam değişkeni olarak
-verilebilir: `MAIN_DOMAIN=ornek.com sudo -E ./install.sh`.
+Betikten çalıştırmak için domain ortam değişkeni olarak verilebilir:
 
-## Ne yapar
+```bash
+MAIN_DOMAIN=ornek.com sudo -E ./install.sh
+```
+
+**Tekrar çalıştırmak zararsızdır.** Bütün adımlar idempotent: kurulu olanı atlar,
+eksik olanı tamamlar. Yarıda kalan bir kurulumu sürdürmenin yolu da budur.
+
+---
+
+## 2. Ayarlar — `config.env`
+
+Ana domain dışındaki her şey bu dosyadan gelir. Dosya **depoda durur**:
+değiştirin, commit'leyin — sonraki sunucu depoyu çektiğinde aynı şekilde kurulur.
+
+| Ayar | Ne yapar | Varsayılan |
+|---|---|---|
+| `POSTGRES` | PostgreSQL kurar ve Virtualmin özelliğini açar | 1 |
+| `COMPOSER` | Composer kurar (Composer eklentisinin gereksinimi) | 1 |
+| `DOCKER` | Docker Engine + Portainer + `docker.<domain>` sitesi | 1 |
+| `PLUGIN_DEPLOY` | Git Deploy eklentisini kurar | 1 |
+| `PLUGIN_COMPOSER` | Composer eklentisini kurar | 1 |
+| `PLUGIN_CLOUDFLARE` | Cloudflare DNS eklentisini kurar | 1 |
+| `PANEL_PROXY` | `webmin.<domain>` ve `usermin.<domain>` alt alanlarını yayınlar | 1 |
+| `LOCK_PANEL_PORTS` | 10000/20000 portlarını yalnızca `127.0.0.1`'e bağlar | 1 |
+| `ROUNDCUBE` | `webmail.<domain>` alt sunucusu + Roundcube | 1 |
+| `ROLE_ALIASES` | Yeni domainlerde açık kalacak rol adresleri | `postmaster abuse` |
+| `NO_ADMIN_REDIRECT` | Virtualmin'in `admin.<domain>` → panel kısayolunu kapatır | 1 |
+| `NO_WEBMAIL_REDIRECT` | `webmail.<domain>` → Usermin kısayolunu kapatır | 1 |
+| `HOST_PREFIX` | Hostname ve panel adı | `s` |
+| `NS1_PREFIX` / `NS2_PREFIX` | Zone'un nameserver çifti | `ns1` / `ns2` |
+| `DOCKER_PREFIX` `WEBMIN_PREFIX` `USERMIN_PREFIX` `WEBMAIL_PREFIX` | Arayüzlerin alt alan adları | `docker` `webmin` `usermin` `webmail` |
+| `PORTAINER_IMAGE` / `PORTAINER_PORT` | Portainer konteyneri | `ce:latest` / `9000` |
+
+Eklenti bayrağını 0 yapmak **kurulu olanı sökmez**, yalnızca kurmaz. Kaldırmak
+için: `sudo ./update-plugins.sh --remove`.
+
+Dosyanın sonunda kaçış kapıları var (`SKIP_DNS_CHECK`, `ALLOW_ANY_OS`,
+`SERVER_IP`, `DNS_RESOLVER`) — normalde gerekmez, yorum satırında dururlar.
+
+---
+
+## 3. Kurulum ne yapar
 
 | Adım | Ne yapar |
 |------|----------|
-| `hostname` | Hostname'i `s.<domain>` yapar + `/etc/hosts` kaydı. **Virtualmin'den önce** — yoksa varsayılan site, SSL isimlendirmesi ve mail kimliği yanlış oturur. |
-| `virtualmin` | Resmi installer ile kurar (kuruluysa atlar). |
-| `postgres` | PostgreSQL kurar ve Virtualmin özelliğini açar — Virtualmin kurulumuyla gelmiyor. *(isteğe bağlı)* |
-| `composer` | Composer kurar (`vmkit-composer` eklentisinin gereksinimi). *(isteğe bağlı)* |
-| `dns-template` | Yeni domainler için DNS varsayılanları (`bind_master`, `dns_ns`, `dns_prins`, `bind_sub`). |
-| `panel-redirects` | Virtualmin'in her domaine eklediği iki kısayolu kapatır: `admin.<domain>` → panel (`:10000`) ve `webmail.<domain>` → Usermin (`:20000`). Bayraklar: `NO_ADMIN_REDIRECT`, `NO_WEBMAIL_REDIRECT` (ikisi de varsayılan 1). Her anahtar hem DNS kaydını hem Apache yönlendirmesini kapatıyor; **domain oluşmadan önce** çalışmalı, sonradan kapatmak var olanları temizlemiyor. |
-| `domain-defaults` | İlk domain oluşmadan önce yazılan Virtualmin varsayılanları: **spam/virüs taraması kapalı**; **SPF ve DMARC açık** (`bind_spf=yes`, `bind_spfall=1` → `~all`, `bind_dmarc=yes`, politika `p=none` ile başlar); rol adresleri `ROLE_ALIASES` ile sınırlanır (varsayılan `postmaster abuse`). Posta adlandırmasına dokunulmaz. |
-| `dkim` | Giden postaları imzalamak için **DKIM**'i açar: anahtar üretir, OpenDKIM'i yapılandırır, DKIM açıkken oluşan her domaine `<seçici>._domainkey` TXT kaydı eklenir. Panelde *Email Settings → DomainKeys Identified Mail* ile aynı iş. İlk domaindan önce çalışır. |
-| `plugins` | Eklentileri `.wbm.gz` olarak paketleyip Webmin'in `install-module.pl`'i ile kurar, Virtualmin'in `plugins=` listesine ekler. Hangileri: `PLUGIN_*` bayrakları. |
-| `main-domain` | Ana domaini **Virtualmin'in kendi varsayılanlarıyla** oluşturur (`--default-features`) — panelden açtığın domainlerle birebir aynı. Açılan özellikler kurulum kaydına yazılır. |
-| `host-dns` | Ana domainin zone'una hostname (`s.<domain>`) için A kaydı ekler. |
-| `ssl` | Ana domain için Let's Encrypt sertifikası + otomatik yenileme. |
-| `panel-sites` | Webmin ve Usermin'i ana domain altında birer alt alan olarak yayınlar: `webmin.<domain>` → `127.0.0.1:10000`, `usermin.<domain>` → `127.0.0.1:20000`. `PANEL_PROXY=1`. |
-| `docker` | Docker Engine + Portainer CE + `docker.<domain>` proxy sitesi. Tek bayrak (`DOCKER=1`); üçü birlikte gelir. *(isteğe bağlı)* |
-| `webmail` | `webmail.<domain>` alt sunucusu + Virtualmin'in kendi Install Scripts'i ile **Roundcube**. Domain sahibinin kimlik adresi Postfix'in `virtual` haritasından çözülür (`virtuser_file` eklentisi). `ROUNDCUBE=1`. |
-| `lock-panel-ports` | Vekilin çalıştığı **doğrulandıktan sonra** 10000/20000 portlarını yalnızca `127.0.0.1`'e bağlar. `LOCK_PANEL_PORTS=1`. Doğrulanamazsa kilitlemez. |
-| `report` | Araç klasörüne `vmin-kit-rapor.txt` üretir: ne yapıldı, panel adresi, sırada ne var. |
+| `hostname` | Hostname'i `s.<domain>` yapar |
+| `virtualmin` | Resmi installer ile Virtualmin kurar |
+| `postgres` / `composer` | PostgreSQL ve Composer *(isteğe bağlı)* |
+| `dns-template` | Yeni domainler için DNS varsayılanları |
+| `panel-redirects` | `admin.<domain>` ve `webmail.<domain>` kısayollarını kapatır |
+| `domain-defaults` | Spam/virüs taraması kapalı, SPF + DMARC açık, rol adresleri sınırlı |
+| `dkim` | DKIM'i açar; bundan sonra oluşan her domain giden postayı imzalar |
+| `plugins` | Eklentileri paketleyip kurar ve Virtualmin'e tanıtır |
+| `main-domain` | Ana domaini Virtualmin'in kendi varsayılanlarıyla oluşturur |
+| `host-dns` | Hostname için A kaydı ekler |
+| `ssl` | Let's Encrypt sertifikası + otomatik yenileme |
+| `panel-sites` | `webmin.` ve `usermin.` alt alanlarını yayınlar |
+| `docker` | Docker + Portainer + `docker.` alt alanı *(isteğe bağlı)* |
+| `webmail` | `webmail.` alt alanı + Roundcube *(isteğe bağlı)* |
+| `lock-panel-ports` | Vekilin çalıştığı doğrulandıktan **sonra** panel portlarını kapatır |
+| `report` | `vmin-kit-rapor.txt` üretir |
 
-Tüm adımlar **idempotent**: ikinci kez çalıştırmak zarar vermez, kurulu olanı atlar.
+Bir adım hata verirse kurulum durmaz; o adım atlanır, kalanlar çalışır ve durum
+raporda görünür.
 
-### Ana domainde ne açık?
+---
 
-Ana domain `--default-features` ile oluşturuluyor: panelden **Create Virtual
-Server** dediğinde ne açılıyorsa aynısı. Ana domain böylece özel bir durum
-olmuyor. Üç eklentimiz de o listede — bu yüzden `plugins` adımı
-`main-domain`'den **önce** çalışıyor.
+## 4. Kurulumdan sonra
 
-Sonuç Virtualmin'in global yapılandırmasından geliyor ama pratikte sunucudan
-sunucuya değişmiyor: post-install sihirbazı panele **ilk girişte** çalışır,
-kurulum ise domaini ondan önce CLI'dan oluşturur. Açılan özellik ve eklenti
-listesi hem kurulum çıktısına hem rapora yazılıyor.
+### Adresler
 
-**Posta:** Virtualmin'de domain sahibi unix hesabı aynı zamanda bir posta
-kutusudur (`<kullanıcı>@<domain>`) ve rol adresleri (postmaster, abuse,
-hostmaster, webmaster) oraya yönlenir. Bunu değiştirmenin her yolu —
-`unixname=3` gibi — aynı adı **ev dizinine ve veritabanı adına** da taşıdığı
-için dokunmuyoruz. Kendi adreslerinizi ayrı kutular olarak açarsınız
-(`bilal@ornek.com`); Virtualmin'in varsayılan `append_style` ayarı sayesinde
-onların kullanıcı adı da e-posta adresidir, yani webmail'e tam adresle
-girilir. Domain sahibi hesabına yalnızca postmaster/abuse okumak için girilir
-ve şifresi kurulumda saklanmadığı için önce **Edit Virtual Server → Password**
-ile belirlenmelidir.
-
-`webmail.<domain>` kısayolu kapalıdır (`NO_WEBMAIL_REDIRECT=1`); webmail
-`webmail.<ana-domain>` altındaki Roundcube'dur.
-
-### Yönetim arayüzleri neden port değil alt alan?
-
-Dışarıya açık yönetim portu bırakmıyoruz. Webmin, Usermin ve Portainer
-`127.0.0.1`'de dinler; dışarıya Apache üzerinden, her biri kendi alt alanı ve
-kendi sertifikasıyla çıkar:
-
-| Adres | Arkasında |
+| Adres | Ne |
 |---|---|
-| `webmin.<ana-domain>` | `127.0.0.1:10000` |
-| `usermin.<ana-domain>` | `127.0.0.1:20000` |
-| `docker.<ana-domain>` | `127.0.0.1:9000` (Portainer) |
+| `https://webmin.<domain>` | Virtualmin / Webmin paneli |
+| `https://usermin.<domain>` | Usermin (kullanıcı arayüzü) |
+| `https://webmail.<domain>` | Roundcube |
+| `https://docker.<domain>` | Portainer |
+| `https://s.<domain>:10000` | Panelin doğrudan adresi — `LOCK_PANEL_PORTS=1` ise kapalıdır |
 
-Üçü de aynı kalıp (`ensure_proxy_site`): alt sunucu + `create-proxy --websockets`.
-Webmin ve Usermin kendi SSL'lerinde kalır, vekil onlara `https://127.0.0.1:<port>`
-ile gider.
+Dışarıya açık yönetim portu bırakılmaz: Webmin, Usermin ve Portainer
+`127.0.0.1`'de dinler, dışarıya Apache üzerinden kendi sertifikalarıyla çıkar.
 
-Webmin ve Usermin sitelerinde iki ek ayar gerekiyor (Portainer'da gerekmiyor):
+### İlk yapılacaklar
 
-- **`ProxyPreserveHost On`** — panelde *Server Configuration → Website Options →
-  "Forward original HTTP hostname when proxying?"*, CLI'da `modify-web
-  --proxy-host`. Olmadan Webmin'e giden `Host` başlığı `127.0.0.1:<port>` olur
-  ve panel vekilin arkasında düzgün çalışmaz.
-- **Güvenilen referer** — adres `/etc/webmin/config` içindeki `referers` satırına
-  eklenir (panelde Webmin Configuration → Trusted Referrers). Referer kontrolü
-  adı **ve portu** karşılaştırıyor; referer 443'ten, panel kendi portundan
-  (10000) geldiği için eşleşmiyor ve istek "Security Warning" ile reddediliyor.
-- **`redirect_port=443`** (`miniserv.conf`) — dışarıdan görünen port. miniserv
-  izin verilen websocket origin listesini buradan kuruyor
-  (`get_websocket_allowed_origins`, "canonical externally-visible URL");
-  bildirilmezse tarayıcının gönderdiği `https://webmin.<domain>` origin'i
-  `…:10000` beklentisiyle eşleşmiyor ve bağlantı **403 Invalid Websockets
-  origin** ile reddediliyor. Authentic tema panosu, dosya yöneticisi ve
-  terminali websocket kullanıyor.
+1. **Raporu okuyun:** araç klasöründeki `vmin-kit-rapor.txt` — ne yapıldı, ne
+   yapılmadı, sırada ne var.
+2. **Ana domain şifresi** rastgele üretilir ve **saklanmaz**. Panel girişi ya da
+   FTP gerekirse *Edit Virtual Server → Password* ile yeni şifre belirleyin.
+3. **Portainer** ilk açılışta bir kurulum token'ı ister ve token kısa ömürlüdür.
+   Token kurulum çıktısındadır; kaçırırsanız `sudo ./configure-docker.sh`.
+4. **BIND modundaysanız** registrar tarafında `ns1` / `ns2` için glue kaydı
+   gerekir.
 
-**Kilitleme adımı en sonda ve koşulludur.** `bind=127.0.0.1` yazıldıktan sonra
-panele tek erişim vekil üzerindedir; bu yüzden önce vekilin gerçekten cevap
-verdiği doğrulanır (`curl --resolve` ile doğrudan yerel Apache'ye, DNS'e
-bağlı olmadan). Doğrulanamazsa port kapatılmaz. Kurtarma: SSH ile
-`/etc/webmin/miniserv.conf` içindeki `bind=` satırını silip
-`systemctl restart webmin`.
+### Posta
 
-## DNS modları
+Domain sahibinin unix hesabı aynı zamanda bir posta kutusudur ve rol adresleri
+(postmaster, abuse) oraya düşer. Kendi adreslerinizi ayrı kutular olarak açın
+(*Edit Users → Add a user to this server*). Kullanıcı adı e-posta adresinin
+kendisidir; webmail'e tam adresle girilir.
 
-Araç, domainin NS kayıtlarına bakıp modu **kendisi tespit eder**:
+Giden postalar SPF, DKIM ve DMARC ile imzalanır; kurulum bunları ilk domaindan
+önce açar.
 
-- **Harici DNS** (Cloudflare vb.) — otoriter dışarıda. A kayıtlarını orada yönetirsiniz.
-- **BIND** — NS kayıtları bu sunucuyu gösteriyor, sunucu otoriter. Registrar tarafında
-  `ns1`/`ns2` için glue kaydı gerekir; rapor bunu hatırlatır.
+### DNS
 
-Her iki modda da Virtualmin'in DNS özelliği **açık kalır** ve zone her zaman
-**"NS yönetimi bizde"** modeline göre üretilir: nameserver çifti `ns1.<domain>` /
-`ns2.<domain>`, modun ne olduğuna bakılmaksızın. Yerel zone, Virtualmin'in
-kayıtları (www, MX, SPF, DKIM, alt domain A kayıtları) doğru üretip güncellediği
-çalışma alanıdır; harici modda yayınlanan kopya dışarıdadır ve senkronda NS/SOA
-kayıtları gönderilmez, geri kalan her şey aynen gider.
+Araç, domainin NS kayıtlarına bakıp modu kendisi tespit eder:
 
-## Yapı
+- **Harici DNS** (Cloudflare vb.) — A kayıtlarını orada yönetirsiniz; Cloudflare
+  eklentisi yerel zone'u oraya senkronlayabilir.
+- **BIND** — sunucu otoriter, kayıtlar panelden yönetilir.
 
-```
-install.sh           # tek giriş: durum → ayarlar+domain → DNS kontrol → onay → sırayla uygula
-config.env           # varsayılan ayarlar (depoda; ana domain burada tutulmaz)
-lib/common.sh        # yardımcılar (log, ask, set_kv, detect_ip, resolve_a/ns, webmin/plugins)
-lib/steps.sh         # adım fonksiyonları (install.sh açık sırayla çağırır)
-plugin/              # Webmin modüllerinin kaynağı (düzenlenen yer)
-build-plugins.sh     # plugin/ → dist/<modül>.wbm.gz  (dist/ depoda tutulmaz)
-update-plugins.sh    # GELİŞTİRME döngüsü: dosyaları doğrudan /usr/share/webmin'e kopyalar
-renew-ssl.sh         # hostname sanal sunucusu için SSL al/yenile
-configure-docker.sh  # Portainer kurulum ekranını yeniden açar (yeni setup_token)
-```
+İki modda da yerel zone her zaman üretilir ve nameserver çifti
+`ns1.<domain>` / `ns2.<domain>`'dir.
 
-## `renew-ssl.sh` — hostname sertifikası
+---
 
-Kurulum sırasında domain henüz çözümlemiyorsa (örneğin NS'ler bu sunucuya
-delege edilmeden önce) Virtualmin sertifika alamaz, self-signed ile devam eder.
-DNS oturduktan sonra:
+## 5. Eklentiler
+
+Üçü de **domain başına** çalışır. Bir domainde kullanmak için *Edit Virtual
+Server* içinde ilgili onay kutusu açık olmalı (yeni domainlerde varsayılan
+açıktır). Açıkken sol menüde domainin altında görünürler.
+
+Root bütün domainleri yönetir; domain sahibi kendi hesabıyla girip yalnızca
+kendi domainini görür.
+
+### Git Deploy
+
+Uzak bir git reposundan sunucuya deploy eder — repo sunucuda barındırılmaz.
+
+1. **Git Deploy → Add a deployment.**
+2. Repo adresini yazıp **Kontrol et** deyin; ulaşılabiliyorsa dallar listeden
+   seçilir, ulaşılamıyorsa kayıt hiç oluşmaz.
+3. **Hedef dizin:** web dizininin altındaki bir klasör. Formda sabit önek
+   (`/home/<kullanıcı>/public_html/`) yazar, siz yalnızca alt klasörü
+   yazarsınız; boş bırakırsanız o dizinin kendisine deploy edilir.
+4. **Update and Deploy** ile çeker. **Deploy log** son çalıştırmanın çıktısını,
+   **Commits** çekilen dalın son commit'lerini gösterir.
+
+Özel (private) repolar için **Domain SSH key** sayfasındaki açık anahtarı
+GitHub'da deploy key olarak ekleyin.
+
+Uygulama bir alt klasörden yayın yapıyorsa (Laravel gibi) Virtualmin'in kendi
+ayarını kullanın: *Website Options → Website documents sub-directory =
+`public_html/public`*. Deploy kökü yine `public_html` kalır.
+
+### Composer
+
+Web dizini altında `composer.json` içeren klasörleri kendiliğinden bulur ve her
+birini **kendi PHP sürümüyle** çalıştırır (Virtualmin klasör başına PHP sürümü
+tutabilir).
+
+- **İşlemler:** install, update, dump-autoload.
+- **Paketler** sayfası kurulu paketleri, son sürümlerini ve güncellenebilir
+  olanları listeler — yalnızca okur, bir şey değiştirmez.
+
+Ev dizininin tamamı değil yalnızca web dizini taranır; alt sunucuların dizinleri
+kendi panellerinde görünür.
+
+### Cloudflare DNS
+
+Yerel BIND zone'u modeldir, Cloudflare yayınlanan kopyadır.
+
+1. **Cloudflare DNS** sayfasında domainin **API token**'ını girin. Token domain
+   başınadır — her domain kendi hesabının token'ını taşır.
+2. **Senkronizasyon** anahtarı o domainin takibini açıp kapatır; token kayıtlı
+   kalır. Token boşsa domain zaten işleme alınmaz.
+3. **Local zone vs Cloudflare** sayfası ne olacağını **önce gösterir**, hiçbir şey
+   yazmaz. Kapsam dışı kayıtlar için içe aktar / sahiplen / sil düğmeleri vardır.
+   Proxy sütunundaki duruma tıklayarak turuncu/gri bulutu değiştirebilirsiniz.
+
+Yalnızca `vmkit` etiketli kayıtlara dokunulur: elle eklediğiniz kayıtlar,
+tüneller ve Email Routing kayıtları etkilenmez.
+
+Senkron elle çalıştırılabilir ama asıl çalışma biçimi otomatiktir: eklenti
+kurulduğunda kendi systemd birimlerini oluşturur, zone dosyası değiştiği anda
+tetiklenir ve ayrıca 15 dakikada bir kontrol eder. Zone değişmediyse hiçbir API
+çağrısı yapılmaz. Eklentinin ana sayfası servisin durumunu gösterir ve durmuşsa
+yeniden başlatır.
+
+---
+
+## 6. Yardımcı betikler
 
 ```bash
-sudo ./renew-ssl.sh
+sudo ./install.sh                    # kurulum (tekrar çalıştırmak zararsız)
+sudo ./update-plugins.sh             # eklentileri güncelle (git pull sonrası)
+sudo ./update-plugins.sh --remove    # eklentileri kaldır
+sudo ./renew-ssl.sh                  # hostname sertifikasını al/yenile
+sudo ./configure-docker.sh           # Portainer kurulum ekranını yeni token'la aç
+./build-plugins.sh [modül]           # eklentileri .wbm.gz olarak paketle (dist/)
 ```
 
-Hostname sanal sunucusu için gerçek sertifikayı alır ve otomatik yenilemeyi açar.
-Ana domain için ayrıca bir şey gerekmez — `./install.sh` tekrar çalıştırıldığında
-sertifikası olmayan ana domain için zaten istekte bulunur.
+**`renew-ssl.sh` ne zaman gerekir:** kurulum sırasında domain henüz
+çözümlemiyorsa Virtualmin sertifika alamaz ve self-signed ile devam eder. DNS
+oturduktan sonra bu betiği çalıştırın. Ana domain için ayrıca bir şey gerekmez —
+`install.sh` tekrar çalıştırıldığında sertifikayı zaten ister.
 
-## Portainer
+**`update-plugins.sh` ne yapar:** eklenti dosyalarını doğrudan Webmin'in modül
+dizinine kopyalar. Derleme yoktur, sayfayı yenilemeniz yeterlidir. Geliştirme
+döngüsü: `git pull && sudo ./update-plugins.sh`.
 
-`DOCKER=1` ise kurulum şunları yapar: Docker Engine, Portainer CE (yalnızca
-`127.0.0.1:9000`'e bağlı) ve `docker.<domain>` alt sunucusu — kökünden
-Portainer'a websocket destekli proxy, kendi SSL sertifikasıyla.
+---
 
-Portainer ilk açılışta bir **setup_token** ister ve bu token kısa ömürlüdür;
-birkaç dakika içinde yönetici hesabı oluşturulmazsa kurulum kilitlenir.
-Kurulum çıktısında token yazılır. Kaçırırsanız:
+## 7. Sorun giderme
 
-```bash
-sudo ./configure-docker.sh
+**Panele erişemiyorum — portlar kilitli, vekil de çalışmıyor.**
+SSH ile girin, `/etc/webmin/miniserv.conf` içindeki `bind=` satırını silin ve
+`systemctl restart webmin` deyin. Panel yine `:10000`'den açılır.
+
+**Sertifika alınamadı, self-signed kaldı.**
+DNS'in sunucuyu gösterdiğinden emin olun (Cloudflare'de gri bulut), sonra
+`sudo ./install.sh` tekrar çalıştırın.
+
+**Portainer kurulum ekranı "timed out" diyor.**
+`sudo ./configure-docker.sh` — konteyneri yeniden başlatır ve yeni token verir.
+
+**Cloudflare senkronu çalışmıyor.**
+Eklentinin ana sayfasındaki servis durumuna bakın; durmuşsa sayfa açıldığında
+yeniden başlatılır. Ayrıca: `systemctl status vmkit-cloudflare-sync.path`.
+
+**Bir kurulum adımı hata verdi.**
+Hatayı düzeltip `sudo ./install.sh` tekrar çalıştırın; tamamlanmış adımlar
+atlanır.
+
+---
+
+## 8. Dosya düzeni
+
 ```
-
-Konteyneri yeniden başlatır, yeni token'ı okur ve adresle birlikte yazar.
-
-## Kurulum sonrası
-
-- Panel: `https://s.<domain>:10000`
-- Rapor: araç klasöründe `vmin-kit-rapor.txt`
-- Ana domain sahibinin şifresi rastgele üretilir ve **saklanmaz**. Webmin girişi
-  veya FTP gerekirse panelden yeni bir şifre belirleyin
-  (*Edit Virtual Server → Password*).
-
-## Plugin'ler (iskelet)
-
-`plugin/` altında iki Webmin modülü var:
-
-| Modül | Panelde nerede |
-|---|---|
-| `vmkit-deploy` | Edit Virtual Server'da onay kutusu; açıkken domain menüsünde **Git Deploy** |
-| `vmkit-composer` | Edit Virtual Server'da onay kutusu; açıkken domain menüsünde **Composer** |
-| `vmkit-cloudflare` | Edit Virtual Server'da onay kutusu; açıkken domain menüsünde **Cloudflare DNS** |
-
-İkisi de **domain başına** feature. Ayrı modüller olmalarının sebebi: bir Webmin
-modülü tek bir feature tanımlayabiliyor.
-
-**Her domain kendi Cloudflare API token'ını taşır.** Global token yok — bir
-Cloudflare token'ı tek bir hesaba ve onun zone'larına bağlıdır, domainler farklı
-hesaplarda olabilir.
-
-**Yetki:** root bütün domainleri yönetir; domain sahibi kendi hesabıyla girip
-yalnızca kendi domaininin ayarlarını görür (`feature_webmin` + `can_edit_domain`).
-
-**Kurulum — `install.sh` hallediyor.** `step_plugins` modülleri kurulum anında
-kaynaktan `.wbm.gz` olarak paketler (`build-plugins.sh`) ve Webmin'in kendi
-`install-module.pl`'i ile kurar. Bu standart yol; dosyaları yerine koymak,
-`webmin.acl`, `/etc/webmin/<modül>/config` (mevcut değerleri koruyarak
-birleştirir), önbellek temizliği ve `postinstall.pl` hepsi ona ait.
-Virtualmin'in `plugins=` listesine ekleme onda yok, onu `install.sh` yapıyor.
-
-Hangilerinin kurulacağı `config.env`'den: `PLUGIN_DEPLOY`, `PLUGIN_COMPOSER`,
-`PLUGIN_CLOUDFLARE` (varsayılan 1). **0 yapmak kurulu olanı sökmez**, yalnızca
-kurmaz — kaldırmak için `sudo ./update-plugins.sh --remove`.
-
-Paketler depoda tutulmaz, her zaman kaynaktan üretilir; `dist/` altında durur.
-Elle paketlemek için: `./build-plugins.sh` (ya da tek modül adıyla).
-
-**Geliştirme döngüsü:** `git pull && sudo ./update-plugins.sh`. Bu script
-paketlemeyi atlayıp dosyaları doğrudan `/usr/share/webmin/` altına **kopyalar**
-(symlink değil — symlink olsaydı Webmin'in yazdıkları git deposunu kirletirdi).
-Webmin her
-isteği taze bir Perl process'inde çalıştırdığı için derleme yoktur; script
-yalnızca `module.info` değiştiğinde Webmin'i yeniden başlatır, diğer
-durumlarda dosyaları kopyalar ve sayfayı yenilemeniz yeterlidir.
-
-**Cloudflare DNS:** yerel BIND zone'u model, Cloudflare yayınlanan kopya.
-Yalnızca `vmkit` etiketli kayıtlara dokunulur — elle eklenenler, tüneller ve
-Email Routing kayıtları hiç etkilenmez. Karşılaştırma sayfası ne olacağını
-önce gösterir; kapsam dışı kayıtlar için içe aktar / sahiplen / sil düğmeleri
-vardır.
-
-Senkron elle çalıştırılabilir, ama asıl çalışma biçimi otomatiktir: modül
-kurulduğunda kendi systemd birimlerini kendisi oluşturup başlatır
-(`postinstall.pl`). `vmkit-cloudflare-sync.path` zone dosyası değiştiği anda
-tetikler — DNS-01 wildcard doğrulaması için gereken hız buradan gelir;
-`.timer` yalnızca kaçan bir olayı yakalamak için 15 dakikada bir çalışır.
-Zone değişmediyse hiçbir API çağrısı yapılmaz. Modülün kendi sayfası servisin
-durumunu gösterir ve durmuşsa açılışta yeniden başlatır.
-
-**Composer:** yalnızca **web dizini** altını tarar — ev dizininde panelin kendi klasörleri ve alt sunucuların dizinleri var. Web dizini, *Website documents sub-directory* değerinin **ilk parçasıdır**: `public_html/public` ayarlıysa kök yine `public_html`'dir, çünkü `composer.json` orada durur. Her projede **Paketler** sayfası kurulu paketleri, son sürümlerini ve güncellenebilir olanları listeler (`composer show --latest`, yalnızca okur). Domainin ana dizini altında `composer.json` içeren klasörleri
-kendiliğinden bulur ve her birini **kendi PHP sürümüyle** çalıştırır (Virtualmin
-klasör başına PHP sürümü tutabiliyor). İşlemler: install, update, dump-autoload.
-
-**Git Deploy:** her deployment için **Commit'ler** sayfası, son deploy'un çektiği yerel kopyadan dalın son commit'lerini listeler. Kaynak her zaman **uzak repodur** — sunucuda repo barındırmıyoruz.
-Repo adresi girilip *Kontrol et* denince `git ls-remote` ile sorgulanır; dallar
-listeden seçilir, ulaşılamayan bir repo hiç kaydedilmez. Bir domainde birden çok
-deployment olabilir. Hedef alanı **web dizininin altındaki bir klasör**: formda
-sabit önek (`/home/blnk/public_html/`) gösterilir, sen yalnızca alt klasörü
-yazarsın, boş bırakırsan o dizinin kendisine deploy edilir. Uygulama bir alt
-klasörden yayın yapıyorsa (Laravel gibi) Virtualmin'in kendi ayarı kullanılır:
-*Website Options → Website documents sub-directory = `public_html/public`* —
-kök yine `public_html` kalır.
-
-## Yol haritası
-
-Kurulum tarafı tamamlandıktan sonra asıl iş **Virtualmin plugin'i**: panelde
-domain başına çalışan işler (git deploy, composer, Cloudflare DNS senkronu).
+install.sh           # tek giriş noktası
+config.env           # ayarlar (depoda tutulur)
+lib/common.sh        # yardımcı fonksiyonlar
+lib/steps.sh         # kurulum adımları
+plugin/              # Webmin eklentilerinin kaynağı
+build-plugins.sh     # plugin/ -> dist/<modül>.wbm.gz
+update-plugins.sh    # eklentileri sunucuya kopyala (geliştirme)
+renew-ssl.sh         # hostname sertifikası
+configure-docker.sh  # Portainer kurulum ekranı
+```
