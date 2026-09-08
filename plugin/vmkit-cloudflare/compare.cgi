@@ -85,26 +85,32 @@ foreach my $e (@$plan) {
 	my $lcol = @lv ? "<tt>".&short_value(join(", ", sort @lv))."</tt>" : "-";
 	my $ccol = @cv ? "<tt>".&short_value(join(", ", sort @cv))."</tt>" : "-";
 
-	# Durum renkleri Webmin'in tiplerinden: success / info / warn / danger.
-	# Baska bir ad verilirse ui_text_color sessizce renksiz birakiyor.
-	my ($state, $note, $out, $acts) = ("", "", 0, "");
+	# Durum METNI ve RENK TIPI ayri tutuluyor; renk en sonda, uyari
+	# simgesiyle BIRLIKTE uygulaniyor. Eskiden simge renkli metnin disinda
+	# kaliyordu ve tek basina renksiz duruyordu.
+	#
+	# Gecerli tipler: success / info / warn / danger. Baska bir ad verilirse
+	# ui_text_color sessizce renksiz birakiyor.
+	my ($state, $type, $note, $out, $acts) = ("", "", "", 0, "");
 	my $op = $e->{'op'};
-	if    ($op eq 'create') { $state = &ui_text_color($text{'st_willcreate'}, 'success'); }
-	elsif ($op eq 'delete') { $state = &ui_text_color($text{'st_willdelete'}, 'danger'); }
-	elsif ($op eq 'update') { $state = &ui_text_color($text{'st_willupdate'}, 'warn'); }
-	elsif ($op eq 'adopt')  { $state = &ui_text_color($text{'st_willadopt'}, 'info'); }
-	elsif ($op eq 'none')   { $state = $text{'st_insync'}; }
+	if    ($op eq 'create') { ($state, $type) = ($text{'st_willcreate'}, 'success'); }
+	elsif ($op eq 'delete') { ($state, $type) = ($text{'st_willdelete'}, 'danger'); }
+	elsif ($op eq 'update') { ($state, $type) = ($text{'st_willupdate'}, 'warn'); }
+	elsif ($op eq 'adopt')  { ($state, $type) = ($text{'st_willadopt'}, 'info'); }
+	# Senkron olan satirlar da yesil: tablonun cogunlugu bunlar ve "her sey
+	# yerinde" bilgisi renksiz birakilinca gorunmuyordu.
+	elsif ($op eq 'none')   { ($state, $type) = ($text{'st_insync'}, 'success'); }
 	else {
 		# skip: kapsam disi. Neden oldugu 'why' alaninda.
 		$out = 1;
 		if ($e->{'why'} eq 'cnameclash') {
-			($state, $note) = (&ui_text_color($text{'st_blocked'}, 'danger'),
-					   $text{'st_cnameclash'});
+			($state, $type, $note) =
+				($text{'st_blocked'}, 'danger', $text{'st_cnameclash'});
 			$acts = &$btn($e->{'blocker'}->{'id'}, 'delete',
 				      $text{'act_delcname'});
 			}
 		elsif ($e->{'why'} eq 'notours') {
-			$state = $text{'st_notours'};
+			($state, $type) = ($text{'st_notours'}, 'info');
 			# Proxy'li kayitlara dugme YOK: tipik ornek Cloudflare
 			# tuneli; icerigi yerel zone'da anlamsiz, silinmesi
 			# calisan bir kurulumu bozar.
@@ -115,8 +121,8 @@ foreach my $e (@$plan) {
 				} @cr);
 			}
 		else {
-			($state, $note) = (&ui_text_color($text{'st_conflict'}, 'warn'),
-					   $text{'st_conflict_note'});
+			($state, $type, $note) =
+				($text{'st_conflict'}, 'warn', $text{'st_conflict_note'});
 			$acts = join(" ", map {
 				$_->{'proxied'} ? "" :
 					&$btn($_->{'id'}, 'adopt', $text{'act_adopt'}).
@@ -129,9 +135,12 @@ foreach my $e (@$plan) {
 
 	# Not, ayri bir sutun yerine durumun basindaki uyari simgesinde:
 	# ilk tabloda not hic olmuyordu, ikincide uzun metin satiri sisiriyordu.
-	my $scell = $note
-		? "<span title=\"".&quote_escape($note)."\">&#9888;</span> ".$state
-		: $state;
+	#
+	# Simge metnin ICINDE renklendiriliyor, ipucu ise disaridaki sarmalayicida.
+	my $scell = $note ? "&#9888; ".$state : $state;
+	$scell = &ui_text_color($scell, $type) if ($type);
+	$scell = "<span title=\"".&quote_escape($note)."\">".$scell."</span>"
+		if ($note);
 	my $row = [ $e->{'name'}, $e->{'type'}, $lcol, $ccol, &$proxy_cell($e), $scell ];
 	if ($out) { push(@outside, [ @$row, $acts ]); }
 	else      { push(@insync,  $row); }
