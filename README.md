@@ -176,8 +176,20 @@ Uzak bir git reposundan sunucuya deploy eder — repo sunucuda barındırılmaz.
 3. **Hedef dizin:** web dizininin altındaki bir klasör. Formda sabit önek
    (`/home/<kullanıcı>/public_html/`) yazar, siz yalnızca alt klasörü
    yazarsınız; boş bırakırsanız o dizinin kendisine deploy edilir.
-4. **Update and Deploy** ile çeker. **Deploy log** son çalıştırmanın çıktısını,
-   **Commits** çekilen dalın son commit'lerini gösterir.
+4. **Dağıtım modu:** *Manuel* — çekmek siteye dokunmaz, dağıtımı siz
+   başlatırsınız. *Otomatik* — her çekmeden hemen sonra dağıtır.
+5. İsterseniz **dağıtım sonrası komutlar** yazın (her komut ayrı satırda).
+
+**Çekme ve dağıtım ayrı işlemlerdir.** Çekme uzak repodan yerel kopyaya alır,
+site değişmez; **Commits** sayfasından ne geldiğine bakıp sonra **Dağıt**
+dersiniz. Listedeki *Durum* sütunu yayındaki ve çekilmiş commit'i ayrı gösterir,
+yani bekleyen bir dağıtım olduğunu oradan görürsünüz. **Log** son işlemin
+çıktısıdır.
+
+Dağıtım sonrası komutlar hedef klasörde, domainin kendi kullanıcısı olarak
+çalışır. O klasörün PHP sürümü `php` adıyla hazırdır — `php artisan migrate` ve
+`composer install` olduğu gibi çalışır, tam yol yazmanız gerekmez. Hata veren
+ilk komutta dağıtım durur ve başarısız işaretlenir.
 
 Özel (private) repolar için **Domain SSH key** sayfasındaki açık anahtarı
 GitHub'da **hesabınıza** ekleyin (Settings → SSH keys). Tek bir repoya deploy

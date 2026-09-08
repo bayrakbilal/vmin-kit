@@ -83,6 +83,7 @@ if ($dep->{'id'} && -d $repo) {
 	&backquote_with_timeout("$cmd 2>&1", 60);
 	}
 unlink(&deploy_log_path($d, $dep));
+unlink(&actions_path($d, $dep));
 &lock_file($file);
 unlink($file);
 &unlock_file($file);
@@ -291,7 +292,7 @@ my ($d) = @_;
 return "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new".
        " -o ConnectTimeout=10";
 }
-# ---- deploy islemi ------------------------------------------------------
+# ---- calistirma ---------------------------------------------------------
 # Git verisi web kokunun DISINDA durur:
 #     ~/.vmkit/repos/<id>.git      (bare)
 #         |  git --work-tree=<hedef> checkout -f <dal>
@@ -301,6 +302,14 @@ return "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new".
 # Hedefe dogrudan klonlasaydik public_html/.git olusur ve yanlis bir Apache
 # ayarinda repo gecmisi internete acilirdi. Ayrica '~/.git' adini bilerek
 # kullanmiyoruz: ev dizini git tarafindan calisma kopyasi sanilirdi.
+#
+# CEKME ile DAGITIM ayri iki islem:
+#   pull    uzak repodan bare repoya fetch. Site DEGISMEZ; ne geldigini
+#           Commit'ler sayfasindan gorup sonra dagitmaya karar verirsin.
+#   deploy  bare repodaki dali hedefe yazar ve varsa dagitim sonrasi
+#           komutlari calistirir.
+# Otomatik moddaki deployment (ve webhook) 'both' kullanir: ceker ve dagitir.
+# Manuel modda cekme dagitimi tetiklemez.
 sub deploy_repo_path
 {
 my ($d, $dep) = @_;
@@ -319,33 +328,134 @@ my ($d, $dep) = @_;
 return &read_file_contents(&deploy_log_path($d, $dep));
 }
 
-# run_deploy(&domain, &deploy) -> (basarili?, cikti)
-# Tum git komutlari domainin kendi kullanicisi olarak calisir.
-sub run_deploy
+# ---- dagitim sonrasi komutlar -------------------------------------------
+# Komutlar key=value bicimine sigmiyor (coksatirli), o yuzden log gibi ayri
+# bir dosyada duruyorlar. Icerik kullanicinin yazdigi kabuk satirlari;
+# standart bir liste ya da sablon YOK - ne yazarsa o calisir.
+sub actions_path
 {
 my ($d, $dep) = @_;
-my $repo   = &deploy_repo_path($d, $dep);
-my $target = &deploy_target_dir($d, $dep);
-my $url    = $dep->{'repo'};
-my $branch = $dep->{'branch'};
+return "$module_config_directory/actions/$d->{'id'}-$dep->{'id'}";
+}
 
-my $R = quotemeta($repo);
-my $T = quotemeta($target);
-my $B = quotemeta($branch);
-my $env = "GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND=".
-	  quotemeta(&git_ssh_command($d));
+sub actions_read
+{
+my ($d, $dep) = @_;
+my $t = &read_file_contents(&actions_path($d, $dep));
+return defined($t) ? $t : "";
+}
 
+sub actions_write
+{
+my ($d, $dep, $text) = @_;
+my $dir = "$module_config_directory/actions";
+-d $dir || &make_dir($dir, 0700, 1);
+my $file = &actions_path($d, $dep);
+if (!defined($text) || $text !~ /\S/) {
+	unlink($file);
+	return;
+	}
+$text =~ s/\r\n/\n/g;
+$text .= "\n" if ($text !~ /\n$/);
+no strict "subs";
+&open_tempfile(ACT, ">".$file);
+&print_tempfile(ACT, $text);
+&close_tempfile(ACT);
+use strict "subs";
+}
+
+# domain_php_bin(&domain, mutlak-dizin) -> (surum, php-binary)
+# Klasore en ozel eslesen Virtualmin PHP tanimini bulur. vmkit-composer ayni
+# mantigi kendi icinde tasiyor: iki modul birbirinden bagimsiz kurulabilsin
+# diye bilerek paylasmiyoruz.
+sub domain_php_bin
+{
+my ($d, $dir) = @_;
+my @pd = eval { &virtual_server::list_domain_php_directories($d) };
+return (undef, undef) if ($@ || !@pd || !ref($pd[0]));
+my $best;
+foreach my $p (@pd) {
+	next if (index($dir."/", $p->{'dir'}."/") != 0);
+	$best = $p if (!$best || length($p->{'dir'}) > length($best->{'dir'}));
+	}
+return (undef, undef) if (!$best || !$best->{'version'});
+# cgimode 2 = komut satiri PHP'si. Varsayilan mod php<ver>-cgi'yi de aday
+# gorup CGI SAPI ile calistirabiliyor; composer o durumda hicbir sey yapmadan
+# "should be invoked via the CLI version" diyor.
+return ($best->{'version'},
+	&virtual_server::php_command_for_version($best->{'version'}, 2));
+}
+
+# ensure_php_path_dir(&domain, dizin) -> PATH'in basina eklenecek dizin
+# Icinde tek bir 'php' baglantisi var: hedef klasorun Virtualmin PHP surumu.
+# Boylece kullanicinin komutlari ('php artisan migrate', 'composer install' -
+# composer'in shebang'i de 'env php') dogru surumle calisir ve kimse
+# /usr/bin/php8.3 gibi tam yol yazmak zorunda kalmaz.
+sub ensure_php_path_dir
+{
+my ($d, $dir) = @_;
+my (undef, $php) = &domain_php_bin($d, $dir);
+return undef if (!$php);
+my $bindir = $d->{'home'}."/.vmkit/bin";
+my $inner = "mkdir -p ".quotemeta($bindir)." && ".
+	    "ln -sfn ".quotemeta($php)." ".quotemeta($bindir."/php");
+my $cmd = &command_as_user($d->{'user'}, 1, $inner);
+my (undef, $timed) = &backquote_with_timeout("$cmd 2>&1", 20);
+return $timed || $? ? undef : $bindir;
+}
+
+# current_ref(&domain, &deploy) -> bare repodaki dalin ucu (kisa hash)
+sub current_ref
+{
+my ($d, $dep) = @_;
+my $repo = &deploy_repo_path($d, $dep);
+return undef if (!-d $repo);
+my $inner = "git --git-dir=".quotemeta($repo)." rev-parse --short ".
+	    quotemeta($dep->{'branch'});
+my $cmd = &command_as_user($d->{'user'}, 1, $inner);
+my ($out, $timed) = &backquote_with_timeout("$cmd 2>/dev/null", 20);
+return undef if ($timed || $?);
+$out =~ s/\s+//g;
+return $out eq '' ? undef : $out;
+}
+
+# pending(&domain, &deploy) -> cekilmis ama dagitilmamis bir sey var mi
+sub pending
+{
+my ($d, $dep) = @_;
+return 0 if (!$dep->{'pulled_ref'});
+return ($dep->{'deployed_ref'} || '') ne $dep->{'pulled_ref'} ? 1 : 0;
+}
+
+# ---- adim uretenler ------------------------------------------------------
+# Her biri kabuk satirlari dondurur; deploy_run hepsini 'set -e' altinda tek
+# bir kullanici oturumunda calistirir.
+
+sub git_env
+{
+my ($d) = @_;
+return "GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND=".
+       quotemeta(&git_ssh_command($d));
+}
+
+# Cekme: ilk seferde bare klon, sonrakilerde fetch.
+# Repo BARE kalmali: core.bare false yapilirsa git deponun kendi dizinini
+# calisma kopyasi sanar ve "refusing to fetch into branch ... checked out at"
+# diyerek fetch'i reddeder. Bare halde --work-tree ile checkout zaten calisiyor.
+sub pull_steps
+{
+my ($d, $dep) = @_;
+my $R = quotemeta(&deploy_repo_path($d, $dep));
+my $B = quotemeta($dep->{'branch'});
+my $env = &git_env($d);
 my @steps;
-# Ilk deploy'da bare klon, sonrakilerde fetch. Repo BARE kalmali: core.bare
-# false yapilirsa git deponun kendi dizinini calisma kopyasi sanar ve
-# "refusing to fetch into branch ... checked out at ..." diyerek fetch'i
-# reddeder. Bare halde --work-tree ile checkout zaten calisiyor.
+push(@steps, "echo ".quotemeta($text{'log_pulling'}));
 push(@steps, "if [ ! -d $R ]; then ".
 	     "mkdir -p ".quotemeta($d->{'home'}."/.vmkit/repos")." && ".
-	     "$env git clone --bare -- ".quotemeta($url)." $R; ".
+	     "$env git clone --bare -- ".quotemeta($dep->{'repo'})." $R; ".
 	     "fi");
-push(@steps, "git --git-dir=$R remote set-url origin -- ".quotemeta($url));
-
+push(@steps, "git --git-dir=$R remote set-url origin -- ".
+	     quotemeta($dep->{'repo'}));
 # Fetch oncesi ve sonrasi dalin ucunu tutuyoruz ki ne geldigi gorulebilsin.
 push(@steps, 'OLDREF=$(git --git-dir='.$R.' rev-parse -q --verify '.$B.
 	     ' 2>/dev/null || true)');
@@ -360,20 +470,78 @@ push(@steps, 'if [ -z "$OLDREF" ]; then echo; echo '.
 	     'git --git-dir='.$R.' log --oneline --no-decorate "$OLDREF..$NEWREF"; '.
 	     'echo; echo '.quotemeta($text{'log_changed'}).'; '.
 	     'git --git-dir='.$R.' diff --stat "$OLDREF" "$NEWREF"; fi');
+return @steps;
+}
 
-push(@steps, "mkdir -p $T");
+# Dagitim: bare repodaki dali hedefe yaz.
 # checkout -f: calisma kopyasi bu dalla ayni hale gelir. IZLENEN dosyalardan
 # repoda silinmis olanlar buradan da silinir; IZLENMEYEN dosyalara (yuklemeler,
 # .env) dokunulmaz - onlari yalnizca 'git clean' silerdi, kullanmiyoruz.
 # Yol belirtmiyoruz ('-- .' yok) ki HEAD de dala tasinsin.
+sub deploy_steps
+{
+my ($d, $dep) = @_;
+my $R = quotemeta(&deploy_repo_path($d, $dep));
+my $T = quotemeta(&deploy_target_dir($d, $dep));
+my $B = quotemeta($dep->{'branch'});
+my @steps;
+push(@steps, "echo; echo ".quotemeta($text{'log_deploying'}));
+push(@steps, "mkdir -p $T");
 push(@steps, "git --git-dir=$R --work-tree=$T checkout -f $B");
 push(@steps, "echo; echo ".quotemeta($text{'log_deployed'}));
 push(@steps, "git --git-dir=$R --work-tree=$T log -1 --date=short --pretty=".
 	     quotemeta("format:%h  %ad  %an  %s"));
+return @steps;
+}
+
+# Dagitim sonrasi komutlar. Kullanicinin yazdigi satirlar hedef klasorde,
+# domainin kendi yetkileriyle calisir. 'set -e' altinda oldugu icin ILK
+# HATADA durur: yarim kalmis bir dagitimi basarili saymiyoruz.
+sub action_steps
+{
+my ($d, $dep) = @_;
+return ( ) if (!$dep->{'actions_on'});
+my $cmds = &actions_read($d, $dep);
+return ( ) if ($cmds !~ /\S/);
+my $target = &deploy_target_dir($d, $dep);
+my @steps;
+push(@steps, "echo; echo ".quotemeta($text{'log_actions'}));
+push(@steps, "cd ".quotemeta($target));
+my $bindir = &ensure_php_path_dir($d, $target);
+push(@steps, "PATH=".quotemeta($bindir).':"$PATH"') if ($bindir);
+foreach my $l (split(/\n/, $cmds)) {
+	$l =~ s/\r$//;
+	next if ($l !~ /\S/ || $l =~ /^\s*#/);
+	push(@steps, "echo; echo ".quotemeta("\$ $l"));
+	push(@steps, $l);
+	}
+return @steps;
+}
+
+# deploy_run(&domain, &deploy, op) -> (basarili?, cikti)
+#   op 'pull'   yalnizca cek
+#   op 'deploy' yalnizca dagit (once cekilmis olmali)
+#   op 'both'   cek ve dagit
+# Tum komutlar domainin kendi kullanicisi olarak, tek bir kabuk oturumunda ve
+# 'set -e' altinda calisir.
+sub deploy_run
+{
+my ($d, $dep, $op) = @_;
+$op ||= 'both';
+my @steps;
+push(@steps, &pull_steps($d, $dep))   if ($op eq 'pull' || $op eq 'both');
+if ($op eq 'deploy' || $op eq 'both') {
+	if ($op eq 'deploy' && !-d &deploy_repo_path($d, $dep)) {
+		return (0, $text{'err_nopull'});
+		}
+	push(@steps, &deploy_steps($d, $dep));
+	push(@steps, &action_steps($d, $dep));
+	}
 
 my $inner = "set -e; ".join("; ", @steps);
 my $cmd = &command_as_user($d->{'user'}, 1, $inner);
-my ($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 600);
+# Dagitim sonrasi komutlar (composer install gibi) uzun surebiliyor.
+my ($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 900);
 my $ok = !$timed && !$?;
 $out = $text{'err_timeout'} if ($timed);
 
@@ -386,15 +554,32 @@ my $stamp = &make_date(time());
 # kullandigi kalipla kisa sureligine kapatiyoruz.
 no strict "subs";
 &open_tempfile(LOG, ">".&deploy_log_path($d, $dep));
-&print_tempfile(LOG, "[$stamp] ".($ok ? "OK" : "FAILED")."\n\n".$out."\n");
+&print_tempfile(LOG, "[$stamp] ".&op_label($op)." - ".
+		     ($ok ? "OK" : "FAILED")."\n\n".$out."\n");
 &close_tempfile(LOG);
 use strict "subs";
 
 $dep->{'last_time'}   = time();
 $dep->{'last_status'} = $ok ? "ok" : "failed";
+$dep->{'last_op'}     = $op;
+if ($ok) {
+	# Cekilen ve dagitilan ucu ayri tutuyoruz: manuel modda "cekildi ama
+	# daha yayinlanmadi" durumunu bundan goruyoruz.
+	my $ref = &current_ref($d, $dep);
+	$dep->{'pulled_ref'} = $ref if ($ref && $op ne 'deploy');
+	$dep->{'deployed_ref'} = ($dep->{'pulled_ref'} || $ref)
+		if ($op ne 'pull');
+	}
 &save_deploy($d, $dep);
 
 return ($ok, $out);
+}
+
+sub op_label
+{
+my ($op) = @_;
+return $op eq 'pull'   ? $text{'op_pull'} :
+       $op eq 'deploy' ? $text{'op_deploy'} : $text{'op_both'};
 }
 
 # deploy_commits(&domain, &deploy, [adet]) -> (\@commit, hata)

@@ -62,7 +62,17 @@ $dep->{'repo'}   = $in{'repo'};
 $dep->{'branch'} = $in{'branch'};
 $dep->{'target'} = $target;
 $dep->{'mode'}   = $in{'mode'};
+$dep->{'actions_on'} = $in{'actions_on'} ? 1 : 0;
 &save_deploy($d, $dep);
+
+# Komut metni DOGRULANMIYOR: serbest bicimli kabuk satirlari, sablon yok.
+# Yetki acisindan yeni bir sey acmiyor - komutlar domainin kendi kullanicisi
+# olarak calisiyor ve bu formu yalnizca root ya da domainin sahibi aciyor;
+# domain sahibi ayni komutlari zaten SSH ya da cron ile calistirabiliyor.
+#
+# Kayit save_deploy'dan SONRA: yeni deployment'in kimligi orada uretiliyor ve
+# komut dosyasinin adi o kimlige bagli.
+&actions_write($d, $dep, $in{'actions'});
 
 &webmin_log($in{'new'} ? "create" : "modify", "deploy",
 	    $dep->{'name'} || $dep->{'id'});

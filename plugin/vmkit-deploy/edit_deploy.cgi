@@ -93,10 +93,24 @@ if ($branches) {
 		&ui_textbox("target", &target_sub($d, $dep->{'target'}), 25).
 		"<br><font size=-1>$text{'edit_target_help'}</font>");
 
+	# Mod, CEKME SONRASI ne olacagini belirliyor: otomatikte hemen dagitir,
+	# manuelde bekler ve dagitimi sen baslatirsin.
 	print &ui_table_row($text{'edit_mode'},
-		&ui_radio("mode", $dep->{'mode'},
+		&ui_radio("mode", $dep->{'mode'} || 'manual',
 			  [ [ "manual", $text{'mode_manual_desc'} ],
-			    [ "auto",   $text{'mode_auto_desc'} ] ]));
+			    [ "auto",   $text{'mode_auto_desc'} ] ]).
+		"<br><font size=-1>$text{'edit_mode_help'}</font>");
+
+	# Dagitim sonrasi komutlar. Sablon ya da hazir liste YOK: ne yazarsan o
+	# calisir. Hedef klasorde, domainin kendi yetkileriyle, ilk hatada durur.
+	print &ui_table_row($text{'edit_actions'},
+		&ui_checkbox("actions_on", 1, $text{'edit_actions_on'},
+			     $dep->{'actions_on'} ? 1 : 0)."<br>".
+		&ui_textarea("actions", &actions_read($d, $dep), 6, 70)."<br>".
+		"<font size=-1>".
+		&text('edit_actions_help',
+		      "<tt>".&html_escape(&deploy_target_dir($d, $dep))."</tt>").
+		"</font>");
 
 	print &ui_table_end();
 	print &ui_form_end($in{'new'} ? [ [ undef, $text{'create'} ] ]

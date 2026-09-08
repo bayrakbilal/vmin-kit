@@ -41,4 +41,4 @@ else {
 	print "<p><font size=-1>$text{'commits_note'}</font></p>\n";
 	}
 
-&ui_print_footer("index.cgi?dom=$d->{'id'}", $text{'index_return2'});
+&ui_print_footer("index.cgi?dom=$d->{'id'}", $text{'edit_return'});
