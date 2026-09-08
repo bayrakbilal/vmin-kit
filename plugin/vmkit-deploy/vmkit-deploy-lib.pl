@@ -85,6 +85,7 @@ if ($dep->{'id'} && -d $repo) {
 	}
 unlink(&deploy_log_path($d, $dep));
 unlink(&actions_path($d, $dep));
+unlink(&actions_script_path($d, $dep)) if ($dep->{'id'});
 &lock_file($file);
 unlink($file);
 &unlock_file($file);
@@ -518,29 +519,74 @@ return ( ) if (!$dep->{'actions_on'});
 my $cmds = &actions_read($d, $dep);
 return ( ) if ($cmds !~ /\S/);
 my $target = &deploy_target_dir($d, $dep);
-my @steps;
-push(@steps, "echo");
-push(@steps, "echo ".quotemeta($text{'log_actions'}));
-push(@steps, "cd ".quotemeta($target));
+
+# Kullanicinin blogu bir BETIK DOSYASINA yaziliyor ve tek satirla
+# calistiriliyor. Sebebi: komut dizesine satir sonu koyamiyoruz
+# (command_as_user quotemeta'liyor, bash ters-bolu + satir sonunu satir
+# devami sayip siliyor), oysa 'if'/'for' gibi yapilar satir sonu ister.
+# Dosyaya yazinca kutuya ne yazildiysa aynen o calisiyor.
+#
+# Dosya domainin KENDI dizininde ve KENDI kullanicisinin: betigi calistiran
+# da o. Ayrica orada durmasi ise yariyor - ne calistigi SSH ile de gorulebilir.
+my $file = &actions_script_path($d, $dep);
+my $script = "set -e
+".
+	     "cd ".quotemeta($target)."
+";
 my $bindir = &ensure_php_path_dir($d, $target);
-push(@steps, "PATH=".quotemeta($bindir).':"$PATH"') if ($bindir);
+$script .= "PATH=".quotemeta($bindir).":\"\$PATH\"
+" if ($bindir);
+# Kabugun kendi izlemesi: her komut calisirken loga dusuyor, dongulerin ve
+# kosullarin ici dahil. Elle yankilamak cok satirli yapilari bozardi.
+$script .= "set -x
+";
+my $body = $cmds;
+$body =~ s/
+/
+/g;
+$body .= "
+" if ($body !~ /
+$/);
+$script .= $body;
 
-# Komutlari tek tek yankilamak yerine kabugun KENDI izlemesini aciyoruz.
-# Her satirin onune "echo $ <satir>" koymak cok satirli yapilari bozuyordu:
-#   if [ -f .env ]
-#   echo $ then      <-- araya giren yanki
-#   then
-# 'set -x' hem bu sorunu ortadan kaldiriyor hem de dongulerin ve kosullarin
-# icini de gosteriyor, yani log gercekten konsol gibi okunuyor.
-push(@steps, "set -x");
+&write_user_script($d, $file, $script) || return ( );
 
-# Kullanicinin yazdigi blok OLDUGU GIBI geciyor: bos satirlar ve yorumlar
-# dahil, hicbir satir ayiklanmiyor. Kutuya ne yazdiysan calisan o.
-foreach my $l (split(/\n/, $cmds, -1)) {
-	$l =~ s/\r$//;
-	push(@steps, $l);
-	}
+my @steps;
+push(@steps, "echo; echo ".quotemeta($text{'log_actions'}));
+# Betik kendi icinde 'set -e' tasiyor; hata verirse cikis kodu sifirdan
+# farkli oluyor ve disaridaki 'set -e' dagitimi durduruyor.
+push(@steps, "bash ".quotemeta($file));
 return @steps;
+}
+
+# actions_script_path(&domain, &deploy) -> calistirilacak betigin yolu
+sub actions_script_path
+{
+my ($d, $dep) = @_;
+return $d->{'home'}."/.vmkit/actions-".$dep->{'id'}.".sh";
+}
+
+# write_user_script(&domain, yol, icerik) -> basarili mi
+# Dosyayi domainin kullanicisina ait ve yalnizca ona okunur/calistirilir
+# olarak yazar (0700). Root yazip sahipligi devrediyoruz: icerigi baska
+# kullanicilar gormesin, calistiran ise domainin kendisi olsun.
+sub write_user_script
+{
+my ($d, $file, $text) = @_;
+my $dir = $file;
+$dir =~ s/\/[^\/]+$//;
+if (!-d $dir) {
+	&make_dir($dir, 0700, 1) || return 0;
+	&set_ownership_permissions($d->{'uid'}, $d->{'gid'}, 0700, $dir);
+	}
+eval {
+	no warnings 'once';
+	local $main::error_must_die = 1;
+	&write_file_contents($file, $text);
+	};
+return 0 if ($@);
+&set_ownership_permissions($d->{'uid'}, $d->{'gid'}, 0700, $file);
+return 1;
 }
 
 # deploy_run(&domain, &deploy, op) -> (basarili?, cikti)
@@ -563,15 +609,16 @@ if ($op eq 'deploy' || $op eq 'both') {
 	push(@steps, &action_steps($d, $dep));
 	}
 
-# Adimlar '; ' ile DEGIL SATIR SATIR birlestiriliyor. Ikisi de tek bir kabuk
-# oturumu verir (cd ve degiskenler bir sonraki satira gecer), ama noktali
-# virgulle birlestirmek kullanicinin cok satirli yazdigi bir yapiyi bozardi:
-#   if [ -f .env ]     ->  if [ -f .env ]; then; php artisan migrate; fi
-#   then                   (then'den sonraki ';' sozdizimi hatasi)
-#   php artisan migrate
-#   fi
-# Satir satir birlestirince kutu bir kabuk betigi gibi davraniyor.
-my $inner = "set -e\n".join("\n", @steps);
+# Adimlar TEK SATIRDA, ';' ile birlestiriliyor - araya satir sonu KOYULAMAZ.
+# Komut command_as_user'dan gecerken quotemeta'lanıyor ve quotemeta bir satir
+# sonunu ters-bolu + satir sonu yapiyor; bash bunu SATIR DEVAMI sayip siliyor,
+# yani butun betik tek satira yapisiyor: "set -e" + "echo" -> "set -eecho".
+# (Olculdu: 'bash -c' ayni hatayi veriyor.)
+#
+# Kullanicinin cok satirli yazabilmesi bu yuzden baska turlu cozuluyor: onun
+# blogu ayri bir betik DOSYASINA yaziliyor ve buradan tek satirla
+# calistiriliyor (bkz. action_steps).
+my $inner = "set -e; ".join("; ", @steps);
 my $cmd = &command_as_user($d->{'user'}, 1, $inner);
 # Dagitim sonrasi komutlar (composer install gibi) uzun surebiliyor.
 my ($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 900);
