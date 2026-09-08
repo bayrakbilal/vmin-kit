@@ -61,26 +61,26 @@ if (@projects) {
 		#
 		# Yine de hicbiri bir sey CALISTIRMIYOR: run.cgi 'confirm'
 		# gelmedikce yalnizca onay sayfasini gosteriyor.
+		# Paketler sayfasi da AYNI kalipla: ayni satirdaki dugmeler ayni
+		# bilesenden olmali, yoksa boylari tutmuyor. packages.cgi
+		# yalnizca okuyor, POST ile gelmesi bir sey degistirmiyor.
 		my $btn = sub {
-			my ($action, $label) = @_;
-			return &ui_form_start("run.cgi", "post", undef,
+			my ($cgi, $action, $label) = @_;
+			return &ui_form_start($cgi, "post", undef,
 					      "style='display:inline-block;margin-right:6px'").
 			       &ui_hidden("dom", $d->{'id'}).
 			       &ui_hidden("dir", $p->{'dir'}).
-			       &ui_hidden("action", $action).
+			       ($action ? &ui_hidden("action", $action) : "").
 			       &ui_submit($label).
 			       &ui_form_end();
 			};
 		push(@table, [
 			"<tt>".&html_escape($p->{'dir'})."</tt>",
 			$p->{'ver'} ? "PHP ".$p->{'ver'} : $text{'php_default'},
-			&$btn("install", $text{'act_install'}).
-			&$btn("update", $text{'act_update'}).
-			&$btn("dump-autoload", $text{'act_dump'}).
-			# Paketler yalnizca okuyan bir sayfa: eylem degil gezinme,
-			# o yuzden baglanti dugmesi.
-			&ui_link_button("packages.cgi?dom=$d->{'id'}&dir=".
-					&urlize($p->{'dir'}), $text{'act_packages'}),
+			&$btn("run.cgi", "install", $text{'act_install'}).
+			&$btn("run.cgi", "update", $text{'act_update'}).
+			&$btn("run.cgi", "dump-autoload", $text{'act_dump'}).
+			&$btn("packages.cgi", undef, $text{'act_packages'}),
 			]);
 		}
 	print &ui_columns_table([ $text{'col_dir'}, $text{'col_php'}, "" ],
