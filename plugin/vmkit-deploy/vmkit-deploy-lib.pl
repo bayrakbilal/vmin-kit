@@ -761,8 +761,12 @@ print &ui_hidden("new", $new);
 print &ui_hidden("id", $dep->{'id'});
 print &ui_table_start($text{'edit_header'}, "width=100%", 2);
 
+# Kontrol dugmesi ADRESIN YANINDA: o alana ait bir eylem, sayfanin altindaki
+# kaydet/sil dugmeleriyle isi yok. Ayni formun icinde ayri adli bir submit,
+# save_deploy.cgi ona bakip kaydetmek yerine formu yeniden ciziyor.
 print &ui_table_row($text{'edit_repo'},
-	&ui_textbox("repo", $dep->{'repo'}, 60)."<br>".
+	&ui_textbox("repo", $dep->{'repo'}, 50)." ".
+	&ui_submit($text{'edit_check'}, "check")."<br>".
 	"<font size=-1>$text{'edit_repo_help'}</font>");
 
 print &ui_table_row($text{'edit_name'},
@@ -779,10 +783,12 @@ print &ui_table_row($text{'edit_target'},
 	&ui_textbox("target", &target_sub($d, $dep->{'target'}), 25)."<br>".
 	"<font size=-1>$text{'edit_target_help'}</font>");
 
+# Acilir liste, radyo dugmesi degil: iki radyo yan yana duruken orada bir
+# ayar oldugu bile fark edilmiyordu.
 print &ui_table_row($text{'edit_mode'},
-	&ui_radio("mode", $dep->{'mode'} || 'manual',
-		  [ [ "manual", $text{'mode_manual_desc'} ],
-		    [ "auto",   $text{'mode_auto_desc'} ] ]));
+	&ui_select("mode", $dep->{'mode'} || 'manual',
+		   [ [ "manual", $text{'mode_manual_desc'} ],
+		     [ "auto",   $text{'mode_auto_desc'} ] ], 1, 0, 0));
 
 print &ui_table_row($text{'edit_actions'},
 	&ui_checkbox("actions_on", 1, $text{'edit_actions_on'},
@@ -793,35 +799,32 @@ print &ui_table_row($text{'edit_actions'},
 	      "<tt>".&html_escape(&deploy_target_dir($d, $dep))."</tt>").
 	"</font>");
 
-print &ui_table_end();
-
-# Dugme dizisi: [ ad, etiket, sonrasina eklenecek, devre disi, ek nitelik ]
-# Kaydet, repo dogrulanana kadar devre disi - dal secilmeden kayit anlamsiz.
-my @buttons = ( [ undef, $new ? $text{'create'} : $text{'save'},
-		  undef, $branches ? 0 : 1 ],
-		[ "check", $text{'edit_check'} ] );
-push(@buttons, [ "delete", $text{'delete'} ]) if (!$new);
-print &ui_form_end(\@buttons);
-
-# ---- kanca adresi ----
-# Ayri bir bolum: form icinde form olamayacagi icin yenileme dugmesi ana
-# formun icine giremiyor, ama adresin HEMEN ALTINDA duruyor.
-# Adres salt okunur bir kutuda: uzun ve kopyalanmasi gereken bir deger,
-# metnin arasinda duz yazi olarak durunca hem seciliyor hem karisiyordu.
+# Kanca adresi AYNI TABLODA. Ayri bir forma alinca sayfanin dibine dusuyordu;
+# oysa deployment'in bir alani ve digerleriyle birlikte durmasi gerekiyor.
+# Yenileme dugmesi de kendi alaninin yaninda - ayni formda, ayri adli submit.
+#
+# Adres salt okunur bir kutuda: uzun ve kopyalanmasi gereken bir deger, duz
+# yazi olarak metinlerin arasinda durunca hem secmesi zor hem de kayboluyordu.
 if ($dep->{'uuid'}) {
-	print &ui_form_start("hook_regen.cgi", "post");
-	print &ui_hidden("dom", $d->{'id'});
-	print &ui_hidden("id", $dep->{'id'});
-	print &ui_table_start($text{'edit_hook'}, "width=100%", 2);
-	print &ui_table_row($text{'edit_hook_url'},
-		&ui_textbox("hookurl", &hook_url($dep) || '', 70, 0, undef,
-			    "readonly onClick='this.select()'")."<br>".
+	print &ui_table_row($text{'edit_hook'},
+		&ui_textbox("hookurl", &hook_url($dep) || '', 60, 0, undef,
+			    "readonly onClick='this.select()'")." ".
+		&ui_submit($text{'edit_hook_regen'}, "regen")."<br>".
 		"<font size=-1>$text{'edit_hook_help'}</font>".
 		(&hook_path_registered() ? "" :
 			"<br><b>$text{'edit_hook_notready'}</b>"));
-	print &ui_table_end();
-	print &ui_form_end([ [ undef, $text{'edit_hook_regen'} ] ]);
 	}
+
+print &ui_table_end();
+
+# Sayfanin altinda YALNIZCA kaydet ve sil: alanlara ait eylemler kendi
+# satirlarinda duruyor.
+# Dugme dizisi: [ ad, etiket, sonrasina eklenecek, devre disi, ek nitelik ]
+# Kaydet, repo dogrulanana kadar devre disi - dal secilmeden kayit anlamsiz.
+my @buttons = ( [ undef, $new ? $text{'create'} : $text{'save'},
+		  undef, $branches ? 0 : 1 ] );
+push(@buttons, [ "delete", $text{'delete'} ]) if (!$new);
+print &ui_form_end(\@buttons);
 }
 
 # ---- web kancasi --------------------------------------------------------

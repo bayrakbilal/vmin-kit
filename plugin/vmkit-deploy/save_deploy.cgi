@@ -22,14 +22,24 @@ else {
 	$dep || &error($text{'edit_egone'});
 	}
 
-# ---- "Repoyu kontrol et" ----
-# Kaydetmiyoruz, formu yeniden ciziyoruz: dal listesi taze okunuyor ve
-# kullanicinin doldurduklari (komut kutusu dahil) oldugu gibi geri geliyor.
-# Ayri bir hedefe gondermek (formaction) tema tarafindan yok sayiliyor, o
-# yuzden form her zaman buraya geliyor ve ayrimi burada yapiyoruz.
-if ($in{'check'}) {
+# ---- alan basina eylemler: "Repoyu kontrol et" ve "Yeni adres uret" ----
+# Ikisi de kendi alaninin yanindaki birer submit. Kaydetmiyoruz, formu
+# yeniden ciziyoruz; kullanicinin doldurduklari (komut kutusu dahil) oldugu
+# gibi geri geliyor.
+#
+# Ayri bir hedefe gondermek (dugmede formaction) tema tarafindan yok
+# sayiliyor - form her zaman buraya geliyor, ayrimi burada yapiyoruz.
+if ($in{'check'} || $in{'regen'}) {
 	my ($fdep, $factions, $fnew) = &deploy_from_in($d);
 	$fdep || &error($text{'edit_egone'});
+	if ($in{'regen'} && $fdep->{'id'}) {
+		# Adresteki UUID paroladir: yenilemek eskisini aninda gecersiz
+		# kilar, o yuzden hemen diske yaziliyor.
+		$fdep->{'uuid'} = &new_uuid();
+		&save_deploy($d, $fdep);
+		&webmin_log("hookregen", "deploy",
+			    $fdep->{'name'} || $fdep->{'id'});
+		}
 	&ui_print_header(&virtual_server::domain_in($d),
 			 $fnew ? $text{'edit_title_new'} : $text{'edit_title'},
 			 "", undef, 0, 0);
@@ -121,7 +131,7 @@ $dep->{'target'} = $target;
 $dep->{'mode'}   = $in{'mode'};
 $dep->{'actions_on'} = $in{'actions_on'} ? 1 : 0;
 # Web kancasinin adresindeki UUID PAROLADIR. Yeni kayitta burada uretiliyor;
-# yeniden uretmek ayri bir islem (hook_regen.cgi).
+# yenilemek ayri bir eylem: formdaki "regen" dugmesi (yukarida).
 $dep->{'uuid'} ||= &new_uuid();
 &save_deploy($d, $dep);
 
