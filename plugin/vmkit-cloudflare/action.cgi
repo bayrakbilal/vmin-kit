@@ -44,9 +44,15 @@ if ($act ne 'proxy' && !$in{'confirm'}) {
 	print &ui_hidden("id", $in{'id'});
 	print &ui_hidden("act", $act);
 	print &ui_hidden("confirm", 1);
-	# Dugme rengini temanin DIL ANAHTARINA gore verdigi biliniyor:
-	# delete_ok kirmizi, digerleri _ok ile bittigi icin yesil.
-	print &ui_form_end([ [ $act, $text{$act.'_ok'} ] ]);
+	# Onay dugmesinin rengi ve ikonu, temanin dil anahtarinda aradigi
+	# kelimeden geliyor (get_button_style -> string_contains):
+	#   delete_ok        -> kirmizi + carpi
+	#   keys_import_ok   -> yesil + iceri aktarma
+	#   adopt_update_ok  -> mavi + yenileme
+	my %okkey = ( 'delete' => 'delete_ok',
+		      'import' => 'keys_import_ok',
+		      'adopt'  => 'adopt_update_ok' );
+	print &ui_form_end([ [ $act, $text{$okkey{$act}} ] ]);
 	&ui_print_footer("compare.cgi?dom=$d->{'id'}", $text{'conf_cancel'});
 	exit;
 	}

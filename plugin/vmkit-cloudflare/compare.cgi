@@ -35,30 +35,33 @@ print "<p><b>",&html_escape($in{'msg'}),"</b></p>\n" if ($in{'msg'});
 
 my $cf = &get_cf($d);
 
-# Islem baglantisi. Tablo icindeki kucuk cerceveli dugme gorunumunu tema
-# ui_links_row'un icindeki baglantilara veriyor (Virtualmin'in kendi
-# "Features and Plugins" sayfasi da boyle yapiyor).
+# Islem dugmesi. Mutasyon oldugu icin POST: bir baglantiyi onbellek ya da
+# tarayicinin onceden getirmesi tetikleyebilir, tiklamadan hicbir sey
+# olmamali. Yine de dogrudan calistirmiyor, onay sayfasini aciyor.
 #
-# Baglanti GET demek, yani onbellek ya da onceden getirme onu tetikleyebilir.
-# Bu yuzden BAGLANTI HICBIR SEY DEGISTIRMIYOR: yalnizca onay sayfasini aciyor,
-# islem oradaki POST ile oluyor. Kural, silme kadar sahiplenme ve iceri
-# aktarma icin de gecerli - tiklamadan hicbir sey olmamali.
+# RENK VE IKON DIL ANAHTARININ ADINDAN GELIYOR. Temanin get_button_style'i
+# once etiketi %text icinde arayip hangi anahtardan geldigini buluyor, sonra
+# ANAHTAR ADININ ICINDE kelime ariyor (string_contains):
+#   'delete' geciyorsa  -> kirmizi + carpi ikonu
+#   'keys_import'       -> yesil + iceri aktarma ikonu
+#   'update'            -> mavi + yenileme ikonu
+# Anahtar adlari bu yuzden boyle secildi; ikonu da tema kendisi ekliyor,
+# etikete elle simge koymuyoruz.
 #
-# RENK BURADA MUMKUN DEGIL, uc yol denendi ve ucu de olmadi:
-#   - etiketi ui_text_color ile sarmak: tema etiketten isaretlemeyi sokup
-#     metni kendi <span>'ine sariyor
-#   - dil anahtarina gore renk (dugmelerde calisiyor): uretilen baglantida
-#     data-entry yok
-#   - ui_link'in 'class' parametresi: tema kendi sinifini da ekliyor ve
-#     bizimki etkisiz kaliyor
-#
-# Ayirt etme isini bu yuzden ETIKETIN BASINDAKI SIMGE yapiyor - duz metin
-# oldugu icin tema ona dokunmuyor. Oklar yonu gosteriyor: iceri aktarma
-# Cloudflare'den yerele, sahiplenme yerelden Cloudflare'e.
-my $lnk = sub {
+# Baglanti denendi ve birakildi: kucuk cerceveli gorunumu veriyor ama
+# renklendirilemiyor - temada baglanti renkleri modul ve href'e gore ELLE
+# yazilmis, ucuncu parti bir modul icin kanca yok.
+my $btn = sub {
 	my ($id, $act, $label) = @_;
-	return &ui_link("action.cgi?dom=$d->{'id'}&id=".&urlize($id).
-			"&act=".&urlize($act), $label);
+	# Her dugme kendi formu; form blok eleman oldugu icin inline-block
+	# olmadan alt alta dizilirler.
+	return &ui_form_start("action.cgi", "post", undef,
+			      "style='display:inline-block;margin-right:6px'").
+	       &ui_hidden("dom", $d->{'id'}).
+	       &ui_hidden("id", $id).
+	       &ui_hidden("act", $act).
+	       &ui_submit($label).
+	       &ui_form_end();
 	};
 
 # Proxy hucresi: yazili dugme degil BULUT SIMGESI.
@@ -153,8 +156,8 @@ foreach my $e (@$plan) {
 		if ($e->{'why'} eq 'cnameclash') {
 			($state, $type, $note) =
 				($text{'st_blocked'}, 'danger', $text{'st_cnameclash'});
-			push(@links, &$lnk($e->{'blocker'}->{'id'}, 'delete',
-					   $text{'act_delcname'}));
+			push(@links, &$btn($e->{'blocker'}->{'id'}, 'delete',
+					   $text{'cf_delete_cname'}));
 			}
 		elsif ($e->{'why'} eq 'notours') {
 			($state, $type) = ($text{'st_notours'}, 'info');
@@ -164,8 +167,8 @@ foreach my $e (@$plan) {
 			foreach my $r (@cr) {
 				next if ($r->{'proxied'});
 				push(@links,
-				     &$lnk($r->{'id'}, 'import', $text{'act_import'}),
-				     &$lnk($r->{'id'}, 'delete', $text{'act_delete'}));
+				     &$btn($r->{'id'}, 'import', $text{'keys_import'}),
+				     &$btn($r->{'id'}, 'delete', $text{'cf_delete'}));
 				}
 			}
 		else {
@@ -174,12 +177,17 @@ foreach my $e (@$plan) {
 			foreach my $r (@cr) {
 				next if ($r->{'proxied'});
 				push(@links,
-				     &$lnk($r->{'id'}, 'adopt', $text{'act_adopt'}),
-				     &$lnk($r->{'id'}, 'import', $text{'act_import'}));
+				     &$btn($r->{'id'}, 'adopt', $text{'adopt_update'}),
+				     &$btn($r->{'id'}, 'import', $text{'keys_import'}));
 				}
 			}
-		# Kucuk cerceveli gorunumu veren sarmalayici bu.
-		$acts = @links ? &ui_links_row(\@links) : "";
+		$acts = join("", @links);
+		# Eylemi olmayan satirlar da ayni yukseklikte dursun: gorunmez
+		# ve devre disi bir dugme yer tutuyor. Yoksa proxy'li satirlar
+		# digerlerinden alcak kalip tabloyu tirtikli gosteriyor.
+		$acts = "<span style='visibility:hidden'>".
+			&ui_submit($text{'cf_delete'}, undef, 1)."</span>"
+			if (!@links);
 		# Eylem cikmamasinin sebebini not olarak acikla.
 		$note = $text{'st_proxied2'} if (!@links && $e->{'proxied'});
 		}
