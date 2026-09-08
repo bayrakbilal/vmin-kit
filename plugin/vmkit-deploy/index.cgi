@@ -125,6 +125,13 @@ if (@deps) {
 		#   'install' -> yesil + paket ikonu     (dagitim)
 		#   'delete'  -> kirmizi + carpi ikonu
 		# Etiketler yine "Cek" ve "Dagit"; degisen yalnizca anahtar adi.
+		#
+		# DIKKAT: bir dugmenin ETIKET METNI dil dosyasinda BENZERSIZ
+		# olmali. Tema anahtari soyle buluyor:
+		#     ($keys) = grep { $module_text{$_} eq $label } keys %module_text
+		# Ayni metne sahip iki anahtar varsa 'keys' her istekte farkli
+		# sirada geldigi icin bazen digeri secilir ve renk gelip gider.
+		# Bunu yasadik: 'Pull' hem pull_update hem op_pull idi.
 		my @acts = ( &$btn($dep, '', $text{'pull_update'}) );
 		push(@acts, &$btn($dep, 'deploy', $text{'deploy_install'}))
 			if (-d &deploy_repo_path($d, $dep));
