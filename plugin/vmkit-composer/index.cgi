@@ -51,6 +51,10 @@ if (@projects) {
 	my @table;
 	foreach my $p (@projects) {
 		my $u = "run.cgi?dom=$d->{'id'}&dir=".&urlize($p->{'dir'});
+		# Bu baglantilarin hicbiri bir sey CALISTIRMIYOR: composer
+		# islemleri run.cgi'deki onay sayfasina gidiyor ve komut oradaki
+		# POST ile calisiyor. Baglanti GET demek ve onbellek ya da
+		# tarayicinin onceden getirmesi 'composer update' tetikleyebilirdi.
 		push(@table, [
 			"<tt>".&html_escape($p->{'dir'})."</tt>",
 			$p->{'ver'} ? "PHP ".$p->{'ver'} : $text{'php_default'},
