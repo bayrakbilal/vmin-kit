@@ -64,31 +64,36 @@ if (@deps) {
 
 	my @table;
 	foreach my $dep (@deps) {
+		# Durumlar duz metin degil ROZET: Webmin'in kendi renk sozlugu
+		# (success/warning/danger/neutral) her temada ayni anlama geliyor,
+		# elle <b> ve <font> yazmak yerine onu kullaniyoruz.
 		my $last = $dep->{'last_time'}
-			? &op_label($dep->{'last_op'} || 'both')." - ".
-			  ($dep->{'last_status'} eq 'ok' ? $text{'st_ok'}
-							 : $text{'st_failed'}).
-			  " - ".&make_date($dep->{'last_time'}).
+			? &ui_badge($dep->{'last_status'} eq 'ok' ? $text{'st_ok'}
+								 : $text{'st_failed'},
+				    $dep->{'last_status'} eq 'ok' ? 'success'
+								  : 'danger')." ".
+			  &op_label($dep->{'last_op'} || 'both')." - ".
+			  &make_date($dep->{'last_time'}).
 			  # Elle mi kancadan mi tetiklendi: kanca calisiyor mu
 			  # sorusunun cevabi listede gorunsun.
 			  (($dep->{'last_trigger'} || '') eq 'hook'
-				? " <font size=-1>(".$text{'trigger_hook'}.")</font>"
-				: "")
-			: $text{'never'};
+				? " ".&ui_chip($text{'trigger_hook'}) : "")
+			: &ui_badge($text{'never'}, 'neutral');
 
 		# Yayindaki ve cekilmis ucu ayri gosteriyoruz: manuel modun butun
 		# anlami "cekildi ama daha yayinlanmadi" ara durumunu gormek.
 		my $state;
 		if (&pending($d, $dep)) {
-			$state = "<b>".&text('state_pending',
-					     $dep->{'pulled_ref'})."</b>".
+			$state = &ui_badge(&text('state_pending',
+						 $dep->{'pulled_ref'}), 'warning').
 				 ($dep->{'deployed_ref'}
-					? "<br><font size=-1>".
-					  &text('state_live', $dep->{'deployed_ref'}).
-					  "</font>" : "");
+					? "<br>".&ui_chip(&text('state_live',
+							$dep->{'deployed_ref'}))
+					: "");
 			}
 		elsif ($dep->{'deployed_ref'}) {
-			$state = &text('state_live', $dep->{'deployed_ref'});
+			$state = &ui_badge(&text('state_live',
+						 $dep->{'deployed_ref'}), 'success');
 			}
 		else {
 			$state = "-";
@@ -103,21 +108,24 @@ if (@deps) {
 					 : $text{'act_pull'}) );
 		push(@acts, &$btn($dep, 'deploy', $text{'act_deploy'}))
 			if (-d &deploy_repo_path($d, $dep));
-		my @links = (
-			&ui_link("edit_deploy.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
-				 $text{'act_edit'}),
-			);
-		# Repo yalnizca ilk cekmeden sonra olusuyor; iki baglantiyi da
+		# Gezinme de DUGME: ui_link duz bir baglanti uretiyor ve form
+		# dugmelerinin yaninda boyu tutmuyordu. ui_link_button ayni
+		# bilesenden bir dugme veriyor, hepsi ayni sirada duruyor.
+		# Repo yalnizca ilk cekmeden sonra olusuyor; iki dugmeyi de
 		# o zaman gosteriyoruz.
 		if ($dep->{'last_time'}) {
-			push(@links,
-			     &ui_link("commits.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
-				      $text{'act_commits'}),
-			     &ui_link("deploylog.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
-				      $text{'act_log'}));
+			push(@acts,
+			     &ui_link_button("commits.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
+					     $text{'act_commits'}),
+			     &ui_link_button("deploylog.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
+					     $text{'act_log'}));
 			}
 		push(@table, [
-			$dep->{'name'} || $dep->{'id'},
+			# Adi duzenleme sayfasina baglamak Webmin'in kalibi:
+			# satirin kimligi tiklanir, ayrica "Duzenle" dugmesi
+			# gerekmez.
+			&ui_link("edit_deploy.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
+				 $dep->{'name'} || $dep->{'id'}),
 			$dep->{'repo'},
 			$dep->{'branch'},
 			"<tt>".&html_escape(&deploy_target_dir($d, $dep))."</tt>",
@@ -125,7 +133,7 @@ if (@deps) {
 							       : $text{'mode_manual'},
 			$state,
 			$last,
-			join("", @acts)."<br>".&ui_links_row(\@links),
+			join(" ", @acts),
 			]);
 		}
 	print &ui_columns_table([ $text{'col_name'}, $text{'col_repo'},
@@ -138,10 +146,17 @@ else {
 	print "<p><i>$text{'index_none'}</i></p>\n";
 	}
 
-print &ui_link("edit_deploy.cgi?dom=$d->{'id'}&new=1", $text{'index_add'}),
-      "<br>\n";
-print &ui_link("sshkey.cgi?dom=$d->{'id'}", $text{'index_sshkey'}),
-      "<br>\n";
+# Sayfa altindaki eylemler: Webmin'in kalibi dugme + yaninda ne yaptigini
+# anlatan aciklama (ui_buttons_row). Ikisi de bir sayfaya goturuyor, o yuzden
+# form degil baglanti dugmesi.
+print &ui_buttons_start();
+print &ui_buttons_row("edit_deploy.cgi", $text{'index_add'},
+		      $text{'index_add_desc'},
+		      [ [ "dom", $d->{'id'} ], [ "new", 1 ] ], undef, undef, "get");
+print &ui_buttons_row("sshkey.cgi", $text{'index_sshkey'},
+		      $text{'index_sshkey_desc'},
+		      [ [ "dom", $d->{'id'} ] ], undef, undef, "get");
+print &ui_buttons_end();
 
 &ui_print_footer("/virtual-server/summary_domain.cgi?dom=$d->{'id'}",
 		 $text{'index_return'});
