@@ -46,6 +46,16 @@ if (!$d->{$module_name}) {
 	&ui_print_endpage(&text('index_eoff', $d->{'dom'}));
 	}
 
+# Webmin'in ui-lib'i surumden surume BUYUYOR: yeni yardimcilar ekleniyor.
+# Hedef sunucuda olmayan birini cagirmak sayfayi "Undefined subroutine" ile
+# oldurur - ui_badge ile bunu bir kez yasadik (2.660'ta yok). Renk gibi
+# suslemeler bu yuzden dogrudan cagrilmiyor: yoksa duz metne dusuyoruz.
+sub colour
+{
+my ($txt, $type) = @_;
+return defined(&ui_text_color) ? &ui_text_color($txt, $type) : $txt;
+}
+
 my @deps = &list_deploys($d);
 if (@deps) {
 	# Cekme ve dagitim birer MUTASYON: baglanti degil POST dugmesi. Bir
@@ -64,36 +74,34 @@ if (@deps) {
 
 	my @table;
 	foreach my $dep (@deps) {
-		# Durumlar duz metin degil ROZET: Webmin'in kendi renk sozlugu
-		# (success/warning/danger/neutral) her temada ayni anlama geliyor,
-		# elle <b> ve <font> yazmak yerine onu kullaniyoruz.
+		# Durum renkleri: good yesil, warn sari, bad kirmizi.
 		my $last = $dep->{'last_time'}
-			? &ui_badge($dep->{'last_status'} eq 'ok' ? $text{'st_ok'}
-								 : $text{'st_failed'},
-				    $dep->{'last_status'} eq 'ok' ? 'success'
-								  : 'danger')." ".
+			? &colour($dep->{'last_status'} eq 'ok'
+					 ? $text{'st_ok'} : $text{'st_failed'},
+					 $dep->{'last_status'} eq 'ok'
+					 ? 'good' : 'bad')." - ".
 			  &op_label($dep->{'last_op'} || 'both')." - ".
 			  &make_date($dep->{'last_time'}).
 			  # Elle mi kancadan mi tetiklendi: kanca calisiyor mu
 			  # sorusunun cevabi listede gorunsun.
 			  (($dep->{'last_trigger'} || '') eq 'hook'
-				? " ".&ui_chip($text{'trigger_hook'}) : "")
-			: &ui_badge($text{'never'}, 'neutral');
+				? " <small>(".$text{'trigger_hook'}.")</small>" : "")
+			: $text{'never'};
 
 		# Yayindaki ve cekilmis ucu ayri gosteriyoruz: manuel modun butun
 		# anlami "cekildi ama daha yayinlanmadi" ara durumunu gormek.
 		my $state;
 		if (&pending($d, $dep)) {
-			$state = &ui_badge(&text('state_pending',
-						 $dep->{'pulled_ref'}), 'warning').
+			$state = &colour(&text('state_pending',
+						      $dep->{'pulled_ref'}), 'warn').
 				 ($dep->{'deployed_ref'}
-					? "<br>".&ui_chip(&text('state_live',
-							$dep->{'deployed_ref'}))
+					? "<br><small>".&text('state_live',
+							$dep->{'deployed_ref'}).
+					  "</small>"
 					: "");
 			}
 		elsif ($dep->{'deployed_ref'}) {
-			$state = &ui_badge(&text('state_live',
-						 $dep->{'deployed_ref'}), 'success');
+			$state = &text('state_live', $dep->{'deployed_ref'});
 			}
 		else {
 			$state = "-";
