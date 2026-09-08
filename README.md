@@ -186,10 +186,13 @@ dersiniz. Listedeki *Durum* sütunu yayındaki ve çekilmiş commit'i ayrı gös
 yani bekleyen bir dağıtım olduğunu oradan görürsünüz. **Log** son işlemin
 çıktısıdır.
 
-Dağıtım sonrası komutlar hedef klasörde, domainin kendi kullanıcısı olarak
-çalışır. O klasörün PHP sürümü `php` adıyla hazırdır — `php artisan migrate` ve
+Dağıtım sonrası komutlar hedef klasörde, domainin kendi kullanıcısı olarak bir
+kabuk betiği gibi çalışır — tek oturumdur, yani bir satırdaki `cd` sonraki
+satırda da geçerlidir ve `if` / `for` gibi çok satırlı yapılar çalışır. O
+klasörün PHP sürümü `php` adıyla hazırdır, bu yüzden `php artisan migrate` ve
 `composer install` olduğu gibi çalışır, tam yol yazmanız gerekmez. Hata veren
-ilk komutta dağıtım durur ve başarısız işaretlenir.
+ilk komutta dağıtım durur ve başarısız işaretlenir; çalışan her komut log'a
+yazılır.
 
 **Web kancası.** Formda her deployment için bir kanca adresi görünür:
 `https://webmin.<ana-domain>/vmkit-deploy/hook.cgi?uuid=...`. Bu adresi git

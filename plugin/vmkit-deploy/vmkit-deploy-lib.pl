@@ -506,14 +506,25 @@ my $cmds = &actions_read($d, $dep);
 return ( ) if ($cmds !~ /\S/);
 my $target = &deploy_target_dir($d, $dep);
 my @steps;
-push(@steps, "echo; echo ".quotemeta($text{'log_actions'}));
+push(@steps, "echo");
+push(@steps, "echo ".quotemeta($text{'log_actions'}));
 push(@steps, "cd ".quotemeta($target));
 my $bindir = &ensure_php_path_dir($d, $target);
 push(@steps, "PATH=".quotemeta($bindir).':"$PATH"') if ($bindir);
-foreach my $l (split(/\n/, $cmds)) {
+
+# Komutlari tek tek yankilamak yerine kabugun KENDI izlemesini aciyoruz.
+# Her satirin onune "echo $ <satir>" koymak cok satirli yapilari bozuyordu:
+#   if [ -f .env ]
+#   echo $ then      <-- araya giren yanki
+#   then
+# 'set -x' hem bu sorunu ortadan kaldiriyor hem de dongulerin ve kosullarin
+# icini de gosteriyor, yani log gercekten konsol gibi okunuyor.
+push(@steps, "set -x");
+
+# Kullanicinin yazdigi blok OLDUGU GIBI geciyor: bos satirlar ve yorumlar
+# dahil, hicbir satir ayiklanmiyor. Kutuya ne yazdiysan calisan o.
+foreach my $l (split(/\n/, $cmds, -1)) {
 	$l =~ s/\r$//;
-	next if ($l !~ /\S/ || $l =~ /^\s*#/);
-	push(@steps, "echo; echo ".quotemeta("\$ $l"));
 	push(@steps, $l);
 	}
 return @steps;
@@ -539,7 +550,15 @@ if ($op eq 'deploy' || $op eq 'both') {
 	push(@steps, &action_steps($d, $dep));
 	}
 
-my $inner = "set -e; ".join("; ", @steps);
+# Adimlar '; ' ile DEGIL SATIR SATIR birlestiriliyor. Ikisi de tek bir kabuk
+# oturumu verir (cd ve degiskenler bir sonraki satira gecer), ama noktali
+# virgulle birlestirmek kullanicinin cok satirli yazdigi bir yapiyi bozardi:
+#   if [ -f .env ]     ->  if [ -f .env ]; then; php artisan migrate; fi
+#   then                   (then'den sonraki ';' sozdizimi hatasi)
+#   php artisan migrate
+#   fi
+# Satir satir birlestirince kutu bir kabuk betigi gibi davraniyor.
+my $inner = "set -e\n".join("\n", @steps);
 my $cmd = &command_as_user($d->{'user'}, 1, $inner);
 # Dagitim sonrasi komutlar (composer install gibi) uzun surebiliyor.
 my ($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 900);
