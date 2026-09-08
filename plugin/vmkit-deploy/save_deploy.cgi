@@ -26,7 +26,7 @@ else {
 # Once ONAY EKRANI: geri donusu olmayan bir islem ve dugme, kaydet dugmesinin
 # hemen yaninda duruyor. Onay metni ayrica NEYIN GITMEDIGINI de soyluyor -
 # "sil" deyince site dosyalarinin da gidecegi korkusu en cok burada olur.
-if ($in{'delete'} && !$in{'confirmed'}) {
+if ($in{'delete'} && !$in{'confirm'}) {
 	&ui_print_header(&virtual_server::domain_in($d), $text{'del_title'},
 			 "", undef, 0, 0);
 	print "<p>",&text('del_warn',
@@ -38,19 +38,19 @@ if ($in{'delete'} && !$in{'confirmed'}) {
 			      "<tt>".&html_escape(&deploy_target_dir($d, $dep))."</tt>"),
 	      "</b></li>\n";
 	print "</ul>\n";
-	# Duzen Webmin'in kendi "Delete Server" sayfasindan alindi:
-	#   - govdede TEK birincil eylem, tehlike rengiyle
-	#   - vazgecme govdede DEGIL, alt bilgide gezinme baglantisi olarak
-	# Eskiden onay dugmesinin yaninda bir ui_link duruyordu; ikisi kardes
-	# gibi gorunuyor ama farkli bilesenler, bu yuzden boylari tutmuyordu.
+	# Duzen Virtualmin'in kendi "Delete Server" sayfasindan alindi
+	# (delete_domain.cgi): govdede TEK birincil eylem, vazgecme ise govdede
+	# degil alt bilgide gezinme baglantisi olarak.
+	#
+	# Dugmeye STIL VERILMIYOR. Orada da verilmiyor; yalnizca adi 'confirm'
+	# olan bir dugme tanimlaniyor ve onu kirmiziya boyamak temanin isi.
+	# Sinifi elle yazmak (btn-danger) hem ise yaramadi hem de bizi tek bir
+	# temaya baglardi - baska temada anlamsiz bir sinif kalirdi.
 	print &ui_form_start("save_deploy.cgi", "post");
 	print &ui_hidden("dom", $d->{'id'});
 	print &ui_hidden("id", $dep->{'id'});
 	print &ui_hidden("delete", 1);
-	print &ui_hidden("confirmed", 1);
-	print &ui_submit($text{'del_confirm'}, undef, 0,
-			 "class='btn btn-danger'");
-	print &ui_form_end();
+	print &ui_form_end([ [ "confirm", $text{'del_confirm'} ] ]);
 	# Iki donus yolu, ikisi de ayni bicimde: duzenleme formu ve liste.
 	&ui_print_footer("edit_deploy.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
 			 $text{'del_cancel'},
