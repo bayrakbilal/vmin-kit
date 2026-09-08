@@ -49,24 +49,58 @@ my $btn = sub {
 	       &ui_form_end();
 	};
 
-# Proxy hucresi: sutunun kendisi dugme. Bizim kayitlarimizda tiklayinca
-# tersine cevirir; bizim olmayanlarda (tunel gibi) yalnizca durumu yazar.
-# Proxy yalnizca A, AAAA ve CNAME icin gecerli.
+# Proxy hucresi: yazili dugme degil BULUT SIMGESI.
+#
+# Yazili dugmeler satirlari dikeyde buyutuyordu; simge yer kaplamiyor ve
+# Cloudflare'in kendi turuncu/gri bulut gosterimiyle ayni dili konusuyor.
+# Ayrica dugme rengini temanin dil anahtarina gore vermesi sorunu da
+# ortadan kalkiyor: burada rengi metin olarak biz veriyoruz.
+my $cloud = sub {
+	my ($on) = @_;
+	return $on ? &ui_text_color("&#9729;", 'warn')
+		   : "<span style='opacity:0.45'>&#9729;</span>";
+	};
+
+# Tiklanabilir bulut: govdesi HTML olabilsin diye ui_submit degil duz bir
+# <button type=submit>. Tema SINIFI VERILMIYOR - dugme gorunumu istemiyoruz
+# zaten, yalnizca tiklanabilir bir simge. Islem mutasyon oldugu icin POST.
+my $cloud_btn = sub {
+	my ($id, $on) = @_;
+	return &ui_form_start("action.cgi", "post", undef,
+			      "style='display:inline-block;margin:0'").
+	       &ui_hidden("dom", $d->{'id'}).
+	       &ui_hidden("id", $id).
+	       &ui_hidden("act", "proxy").
+	       "<button type='submit' title=\"".
+	       &quote_escape($on ? $text{'proxy_on'} : $text{'proxy_off'})."\" ".
+	       "style='border:0;background:none;padding:0;cursor:pointer;".
+	       "font-size:1.3em;line-height:1'>".&$cloud($on)."</button>".
+	       &ui_form_end();
+	};
+
+# Bizim kayitlarimizda simge tiklanabilir; bizim olmayanlarda (tunel gibi)
+# yalnizca durumu gosterir. Proxy yalnizca A, AAAA ve CNAME icin gecerli.
+# Simge tek basina yeterince acik olmadigi icin anlami her zaman title'da.
 my $proxy_cell = sub {
 	my ($e) = @_;
 	return "-" if ($e->{'type'} !~ /^(A|AAAA|CNAME)$/);
 	my @cr = @{$e->{'crecs'}};
 	if (!@cr) {
-		# Kayit henuz yok: olusturuldugunda ne olacagini yaziyoruz.
+		# Kayit henuz yok: olusturuldugunda alacagi durum, soluk.
 		my $on = $cf->{'proxy'} &&
 			 !&never_proxy(&record_label($d, $e->{'name'})) ? 1 : 0;
-		return "<font size=-1>".
-		       &text('proxy_new', $on ? $text{'proxy_on'} : $text{'proxy_off'}).
-		       "</font>";
+		return "<span style='opacity:0.5' title=\"".
+		       &quote_escape(&text('proxy_new',
+				$on ? $text{'proxy_on'} : $text{'proxy_off'})).
+		       "\">".&$cloud($on)."</span>";
 		}
 	return join(" ", map {
-		my $lbl = $_->{'proxied'} ? $text{'proxy_on'} : $text{'proxy_off'};
-		&cf_is_ours($_) ? &$btn($_->{'id'}, 'proxy', $lbl) : $lbl;
+		my $on = $_->{'proxied'} ? 1 : 0;
+		&cf_is_ours($_)
+			? &$cloud_btn($_->{'id'}, $on)
+			: "<span title=\"".
+			  &quote_escape($on ? $text{'proxy_on'} : $text{'proxy_off'}).
+			  "\">".&$cloud($on)."</span>";
 		} @cr);
 	};
 
