@@ -16,10 +16,13 @@ $d->{'vmkit-cloudflare'} || &error(&text('index_eoff', $d->{'dom'}));
 
 my $cf = &get_cf($d);
 
-# ---- token'i unut ----
-# Rengi tema ETIKETTEKI "Delete" kelimesine bakarak veriyor (ad degil). Bu
-# islem geri alinamiyor: token bir daha gosterilmiyor, Cloudflare'den
-# yeniden uretmek gerekiyor. Once onay, sonra silme.
+# ---- token'i sil ----
+# Onay dugmesinin dil anahtari 'delete_ok': temanin kirmizi verdigi anahtar
+# bu. 'forget_ok' adiyla yesil ciktigini olctuk - ad da etiket de degil,
+# ANAHTAR belirliyor (bkz. index.cgi'deki not).
+#
+# Islem geri alinamiyor: token bir daha gosterilmiyor, yenisini Cloudflare'den
+# uretmek gerekiyor. Once onay, sonra silme.
 if ($in{'delete'} && !$in{'confirm'}) {
 	&ui_print_header(&virtual_server::domain_in($d), $text{'forget_title'},
 			 "", undef, 0, 0);
@@ -32,7 +35,7 @@ if ($in{'delete'} && !$in{'confirm'}) {
 	print &ui_form_start("save.cgi", "post");
 	print &ui_hidden("dom", $d->{'id'});
 	print &ui_hidden("confirm", 1);
-	print &ui_form_end([ [ "delete", $text{'forget_ok'} ] ]);
+	print &ui_form_end([ [ "delete", $text{'delete_ok'} ] ]);
 	&ui_print_footer("index.cgi?dom=$d->{'id'}", $text{'forget_cancel'});
 	exit;
 	}

@@ -173,13 +173,16 @@ print &ui_table_row($text{'index_proxy'},
 print &ui_table_row($text{'index_status'}, &zone_status($d));
 
 print &ui_table_end();
-# Silme dugmesi. Rengi tema veriyor ve ETIKETE bakiyor: Ingilizce etiketinde
-# "Delete" gecen dugme kirmizi oluyor, gecmeyen yesil. Dugmenin ADI degil -
-# once oyle sanmistik, ama ayni adla "Forget token" yazan dugme kirmizi
-# olmadi. Bu yuzden eylemin adi "unut" degil "sil": zaten yaptigi da bu.
+# Rengi tema DIL ANAHTARININ ADINA gore veriyor - dugmenin adina ya da
+# etiketin metnine degil. Uretilen HTML'de gorunuyor: her dugmede
+# data-entry="<anahtar>" var ve tema o anahtara bakip sinifi seciyor.
+#   delete, delete_ok -> btn-danger    (kirmizi, carpi ikonu)
+#   ...._ok           -> btn-success   (yesil, onay ikonu)
+#   tanimadigi        -> btn-default
+# Bu yuzden etiket "Token'i sil" olsa bile ANAHTAR 'delete' olmak zorunda.
 # Islem geri alinamiyor, onayi save.cgi soruyor.
 print &ui_form_end([ [ undef, $text{'save'} ],
-		     $cf->{'token'} ? ( [ "delete", $text{'index_forget'} ] ) : ( ) ]);
+		     $cf->{'token'} ? ( [ "delete", $text{'delete'} ] ) : ( ) ]);
 
 # Karsilastir ve Senkronize et: ayar formuna ait degiller, sayfanin kendi
 # eylemleri. Webmin'in kalibi dugme + yaninda ne yaptiginin aciklamasi;

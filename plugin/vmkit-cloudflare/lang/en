@@ -29,7 +29,7 @@ index_proxy=Proxy new records?
 index_proxy_help=Only for new records; mail names are never proxied.
 index_status=Zone status
 index_syncnow=Sync now
-index_forget=Delete token
+delete=Delete token
 
 col_domain=Domain
 col_token=Token
@@ -151,5 +151,5 @@ forget_title=Delete the token
 forget_warn=Delete the Cloudflare token of $1?
 forget_goes=The token is deleted and cannot be shown again; you would create a new one in Cloudflare.
 forget_stays=Records in Cloudflare are not touched; syncing stops until a token is entered.
-forget_ok=Yes, Delete It
+delete_ok=Yes, Delete It
 forget_cancel=Cancel and go back

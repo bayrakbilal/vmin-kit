@@ -69,14 +69,15 @@ if ($in{'delete'} && !$in{'confirm'}) {
 	# (delete_domain.cgi): govdede TEK birincil eylem, vazgecme ise govdede
 	# degil alt bilgide gezinme baglantisi olarak.
 	#
-	# Dugmeye STIL VERILMIYOR. Rengi tema veriyor; sinifi elle yazmak
-	# (btn-danger) hem ise yaramadi hem de bizi tek bir temaya baglardi.
-	#
-	# Belirleyici olan dugmenin ADI: 'confirm' iken renksizdi, 'delete'
-	# olunca kirmizi oldu - duzenleme formundaki Sil dugmesiyle ayni.
-	# Etiket ayri bir anahtarda cunku onay sayfasinda "Sil" degil "Evet,
-	# Sil" yazmali; Virtualmin'in kendi sayfasi da ayni ayrimi yapiyor
-	# (dugme adi ayri, etiketi delete_ok).
+	# Dugmeye STIL VERILMIYOR. Rengi tema DIL ANAHTARININ ADINA gore
+	# veriyor: uretilen HTML'de her dugmede data-entry="<anahtar>" var ve
+	# tema ona bakiyor.
+	#   delete, delete_ok -> btn-danger  (kirmizi)
+	#   ...._ok           -> btn-success (yesil)
+	#   tanimadigi        -> btn-default
+	# Bu yuzden etiket ne yazarsa yazsin anahtar 'delete_ok' olmali.
+	# Sinifi elle yazmak (btn-danger) hem ise yaramadi hem de bizi tek bir
+	# temaya baglardi.
 	#
 	# 'delete' dugmenin adi oldugu icin onay isareti ayri bir gizli alanda:
 	# ilk gonderimde 'confirm' yok, ikincisinde var.
