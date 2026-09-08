@@ -40,7 +40,7 @@ BEGIN {
 	$main::trust_unknown_referers = 1;
 	$main::no_referers_check = 1;
 	}
-our (%in, $module_root_directory);
+our (%in, %text, $module_root_directory, $module_config_directory);
 
 require './vmkit-deploy-lib.pl';
 &ReadParse();
@@ -67,11 +67,25 @@ if (!$dep) {
 # yalnizca cek (dagitimi panelden sen baslatirsin).
 my $op = ($dep->{'mode'} || 'manual') eq 'auto' ? 'both' : 'pull';
 
-# Isi arka plana ver ve hemen cevap don. Surec kabuktan '&' ile ayriliyor,
-# cikti /dev/null'a gidiyor: bu CGI bittiginde is olmuyor, init'e devrediliyor.
+# Isi arka plana ver ve hemen cevap don. Surec kabuktan '&' ile ayriliyor:
+# bu CGI bittiginde is olmuyor, init'e devrediliyor.
 my $runner = "$module_root_directory/hook-run.pl";
-my $cmd = "$runner ".quotemeta($d->{'id'})." ".quotemeta($dep->{'id'}).
-	  " ".quotemeta($op);
-system("$cmd </dev/null >/dev/null 2>&1 &");
+if (!-r $runner) {
+	# Sessizce "accepted" deyip hicbir sey yapmamak en kotusu: cagiran
+	# taraf basarili sandi, panelde de iz yok.
+	&reply("500 Internal Server Error", "runner missing: $runner");
+	exit(0);
+	}
+
+# Cikti /dev/null'a DEGIL bir kutuge gidiyor. Ilk surumde /dev/null'a
+# gidiyordu ve is hic baslamadiginda ortada tek bir iz kalmiyordu: kanca
+# "accepted" diyor, panelde hicbir sey olmuyor, sebebi hicbir yerde yok.
+my $log = "$module_config_directory/hook.log";
+
+# Kabuk yerine dogrudan 'perl': betigin calistirilabilir biti eksikse ya da
+# shebang'i bu sistemde yoksa is sessizce hic baslamazdi.
+my $cmd = "perl ".quotemeta($runner)." ".quotemeta($d->{'id'})." ".
+	  quotemeta($dep->{'id'})." ".quotemeta($op);
+system("$cmd </dev/null >>".quotemeta($log)." 2>&1 &");
 
 &reply("202 Accepted", "accepted: $op");

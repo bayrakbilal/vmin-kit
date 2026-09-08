@@ -22,16 +22,27 @@ if ($0 =~ /^(.*)\/[^\/]+$/) { chdir($1); }
 require './vmkit-deploy-lib.pl';
 
 my ($domid, $depid, $op) = @ARGV;
-$domid && $depid || die "usage: hook-run.pl <domain-id> <deploy-id> [op]\n";
+
+# Bu betigin ciktisi hook.log'a gidiyor. Basladigini ve bittigini YAZIYORUZ:
+# "kanca calisti mi hic" sorusunun cevabi baska hicbir yerde yok - islem
+# basarisiz olsa bile deployment logu yazilir ama is hic BASLAMADIYSA ortada
+# tek bir iz olmaz.
+sub hlog { print scalar(localtime()), " hook-run: ", @_, "\n"; }
+sub hbail { &hlog("HATA: ", @_); exit(2); }
+
+&hlog("basladi dom=", $domid || '?', " dep=", $depid || '?',
+     " op=", $op || '?');
+$domid && $depid || &hbail("eksik parametre");
 $op = 'pull' if (!$op || $op !~ /^(pull|deploy|both)$/);
 
 my $d = &virtual_server::get_domain($domid);
-$d || die "domain not found: $domid\n";
-$d->{'vmkit-deploy'} || die "git deploy not enabled for $d->{'dom'}\n";
+$d || &hbail("domain bulunamadi: $domid");
+$d->{'vmkit-deploy'} || &hbail("git deploy bu domainde kapali: $d->{'dom'}");
 my $dep = &get_deploy($d, $depid);
-$dep || die "deployment not found: $depid\n";
+$dep || &hbail("deployment bulunamadi: $depid");
 
 # Kimin tetikledigi listede gorunsun: elle mi, kancadan mi.
 $dep->{'last_trigger'} = 'hook';
 my ($ok, undef) = &deploy_run($d, $dep, $op);
+&hlog("bitti ", $ok ? "OK" : "BASARISIZ", " - ayrinti deployment logunda");
 exit($ok ? 0 : 1);

@@ -43,14 +43,24 @@ print "<pre style='white-space:pre-wrap'>", &html_escape($out), "</pre>\n";
 
 # Cekildi ama yayinlanmadiysa bir sonraki adimi hemen onune koy: manuel modun
 # butun anlami bu ara durumda.
+#
+# KUTU ICINDE ve acik metinle: eskiden bu dugme sayfanin dibinde, alt bilgi
+# baglantisinin hemen ustunde tek basina duruyordu ve "geri don" sanilip
+# yanlislikla basildi - istenmeyen bir dagitim. Bir siteyi yayina almak
+# yanlislikla tiklanacak bir sey olmamali.
 if ($ok && $op eq 'pull' && &pending($d, $dep)) {
-	print "<p>", $text{'deploy_pending'}, "</p>\n";
+	print "<div style='border:1px solid #999; padding:10px; margin:12px 0'>\n";
+	print "<b>", $text{'deploy_pending'}, "</b><br>\n";
+	print "<font size=-1>",
+	      &text('deploy_pending_help', $dep->{'pulled_ref'} || ''),
+	      "</font><br><br>\n";
 	print &ui_form_start("deploy.cgi", "post");
 	print &ui_hidden("dom", $d->{'id'});
 	print &ui_hidden("id", $dep->{'id'});
 	print &ui_hidden("op", "deploy");
-	print &ui_submit($text{'act_deploy'});
+	print &ui_submit($text{'deploy_pending_btn'});
 	print &ui_form_end();
+	print "</div>\n";
 	}
 
 &ui_print_footer("index.cgi?dom=$d->{'id'}", $text{'edit_return'});
