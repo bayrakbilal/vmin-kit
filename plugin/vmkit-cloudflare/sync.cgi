@@ -21,19 +21,22 @@ my ($ok, $err) = &run_sync($d, sub {
 	});
 print "</pre>\n";
 
+# Sonuc satiri renkli: listedeki ve karsilastirmadaki durumlarla ayni dil.
 if ($err) {
-	print "<p><b>$text{'sync_failed'}</b></p>\n";
+	print "<p><b>",&ui_text_color($text{'sync_failed'}, 'danger'),"</b></p>\n";
 	print "<pre style='white-space:pre-wrap'>",&html_escape($err),"</pre>\n";
 	}
 else {
-	print "<p><b>", $ok ? $text{'sync_ok'} : $text{'sync_partial'},
+	print "<p><b>",
+	      &ui_text_color($ok ? $text{'sync_ok'} : $text{'sync_partial'},
+			     $ok ? 'success' : 'warn'),
 	      "</b></p>\n";
 	}
 
 &webmin_log("sync", "cloudflare", $d->{'dom'},
 	    { 'status' => $err ? "error" : ($ok ? "ok" : "partial") });
 
-print "<p>",&ui_link("compare.cgi?dom=$d->{'id'}", $text{'index_compare'}),
-      "</p>\n";
-
-&ui_print_footer("index.cgi?dom=$d->{'id'}", $text{'index_return2'});
+# Gezinme govdede degil alt bilgide: karsilastirma ve ayarlar, ikisi de
+# ayni bicimde.
+&ui_print_footer("compare.cgi?dom=$d->{'id'}", $text{'index_compare'},
+		 "index.cgi?dom=$d->{'id'}", $text{'index_return2'});

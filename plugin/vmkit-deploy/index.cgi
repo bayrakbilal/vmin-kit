@@ -117,8 +117,16 @@ if (@deps) {
 		# Islem degismiyor: op gonderilmiyor, ne yapilacagina deploy.cgi
 		# modun kendisine bakarak karar veriyor - otomatikse cekip
 		# dagitiyor. Boylece bu karar tek yerde, kancayla ayni yerde.
-		my @acts = ( &$btn($dep, '', $text{'act_pull'}) );
-		push(@acts, &$btn($dep, 'deploy', $text{'act_deploy'}))
+		#
+		# DIL ANAHTARLARININ ADI RENGI VE IKONU BELIRLIYOR. Tema once
+		# etiketi %text icinde arayip anahtari buluyor, sonra anahtar
+		# adinin icinde kelime ariyor (get_button_style/string_contains):
+		#   'update'  -> mavi + yenileme ikonu   (cekme)
+		#   'install' -> yesil + paket ikonu     (dagitim)
+		#   'delete'  -> kirmizi + carpi ikonu
+		# Etiketler yine "Cek" ve "Dagit"; degisen yalnizca anahtar adi.
+		my @acts = ( &$btn($dep, '', $text{'pull_update'}) );
+		push(@acts, &$btn($dep, 'deploy', $text{'deploy_install'}))
 			if (-d &deploy_repo_path($d, $dep));
 		# Bu listede TAM BOY dugme kullaniliyor: satirdaki dort eylem ayni
 		# boyda duruyor ve satirin yuksek olmasi burada sorun degil.

@@ -17,32 +17,33 @@ $d->{'vmkit-cloudflare'} || &error(&text('index_eoff', $d->{'dom'}));
 my $cf = &get_cf($d);
 
 # ---- token'i sil ----
-# Onay dugmesinin dil anahtari 'delete_ok': temanin kirmizi verdigi anahtar
-# bu. 'forget_ok' adiyla yesil ciktigini olctuk - ad da etiket de degil,
-# ANAHTAR belirliyor (bkz. index.cgi'deki not).
+# Onay dugmesinin dil anahtari 'delete_ok'. Temanin get_button_style'i
+# etiketi %text icinde arayip anahtari buluyor ve anahtar adinin ICINDE
+# kelime ariyor; 'delete' geciyorsa kirmizi + carpi ikonu. Ayni anahtar
+# adlari deploy eklentisinde de kullaniliyor.
 #
 # Islem geri alinamiyor: token bir daha gosterilmiyor, yenisini Cloudflare'den
 # uretmek gerekiyor. Once onay, sonra silme.
 if ($in{'delete'} && !$in{'confirm'}) {
-	&ui_print_header(&virtual_server::domain_in($d), $text{'forget_title'},
+	&ui_print_header(&virtual_server::domain_in($d), $text{'delete_title'},
 			 "", undef, 0, 0);
-	print "<p>",&text('forget_warn', "<tt>".&html_escape($d->{'dom'})."</tt>"),
+	print "<p>",&text('delete_warn', "<tt>".&html_escape($d->{'dom'})."</tt>"),
 	      "</p>\n";
 	print "<ul>\n";
-	print "<li>$text{'forget_goes'}</li>\n";
-	print "<li><b>$text{'forget_stays'}</b></li>\n";
+	print "<li>$text{'delete_goes'}</li>\n";
+	print "<li><b>$text{'delete_stays'}</b></li>\n";
 	print "</ul>\n";
 	print &ui_form_start("save.cgi", "post");
 	print &ui_hidden("dom", $d->{'id'});
 	print &ui_hidden("confirm", 1);
 	print &ui_form_end([ [ "delete", $text{'delete_ok'} ] ]);
-	&ui_print_footer("index.cgi?dom=$d->{'id'}", $text{'forget_cancel'});
+	&ui_print_footer("index.cgi?dom=$d->{'id'}", $text{'delete_cancel'});
 	exit;
 	}
 if ($in{'delete'}) {
 	delete($cf->{'token'});
 	&save_cf($d, $cf);
-	&webmin_log("forget", "cloudflare", $d->{'dom'});
+	&webmin_log("deltoken", "cloudflare", $d->{'dom'});
 	&redirect("index.cgi?dom=$d->{'id'}");
 	exit;
 	}

@@ -58,7 +58,7 @@ if ($ok && $op eq 'pull' && &pending($d, $dep)) {
 	print &ui_hidden("dom", $d->{'id'});
 	print &ui_hidden("id", $dep->{'id'});
 	print &ui_hidden("op", "deploy");
-	print &ui_submit($text{'deploy_pending_btn'});
+	print &ui_submit($text{'deploy_now_install'});
 	print &ui_form_end();
 	print "</div>\n";
 	}
