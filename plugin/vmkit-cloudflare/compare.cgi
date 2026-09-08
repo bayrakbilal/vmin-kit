@@ -43,8 +43,13 @@ my $cf = &get_cf($d);
 # Bu yuzden BAGLANTI HICBIR SEY DEGISTIRMIYOR: yalnizca onay sayfasini aciyor,
 # islem oradaki POST ile oluyor. Kural, silme kadar sahiplenme ve iceri
 # aktarma icin de gecerli - tiklamadan hicbir sey olmamali.
+#
+# Renk, baglantinin METNINE veriliyor (ui_text_color). Dugmelerde renk
+# temanin dil anahtarina bagli ve disaridan degistirilemiyor; burada metin
+# oldugu icin dogrudan bizim elimizde ve hicbir tema sinifina dokunmuyoruz.
 my $lnk = sub {
-	my ($id, $act, $label) = @_;
+	my ($id, $act, $label, $type) = @_;
+	$label = &ui_text_color($label, $type) if ($type);
 	return &ui_link("action.cgi?dom=$d->{'id'}&id=".&urlize($id).
 			"&act=".&urlize($act), $label);
 	};
@@ -142,7 +147,7 @@ foreach my $e (@$plan) {
 			($state, $type, $note) =
 				($text{'st_blocked'}, 'danger', $text{'st_cnameclash'});
 			push(@links, &$lnk($e->{'blocker'}->{'id'}, 'delete',
-					   $text{'act_delcname'}));
+					   $text{'act_delcname'}, 'danger'));
 			}
 		elsif ($e->{'why'} eq 'notours') {
 			($state, $type) = ($text{'st_notours'}, 'info');
@@ -152,8 +157,8 @@ foreach my $e (@$plan) {
 			foreach my $r (@cr) {
 				next if ($r->{'proxied'});
 				push(@links,
-				     &$lnk($r->{'id'}, 'import', $text{'act_import'}),
-				     &$lnk($r->{'id'}, 'delete', $text{'act_delete'}));
+				     &$lnk($r->{'id'}, 'import', $text{'act_import'}, 'info'),
+				     &$lnk($r->{'id'}, 'delete', $text{'act_delete'}, 'danger'));
 				}
 			}
 		else {
@@ -162,8 +167,8 @@ foreach my $e (@$plan) {
 			foreach my $r (@cr) {
 				next if ($r->{'proxied'});
 				push(@links,
-				     &$lnk($r->{'id'}, 'adopt', $text{'act_adopt'}),
-				     &$lnk($r->{'id'}, 'import', $text{'act_import'}));
+				     &$lnk($r->{'id'}, 'adopt', $text{'act_adopt'}, 'warn'),
+				     &$lnk($r->{'id'}, 'import', $text{'act_import'}, 'info'));
 				}
 			}
 		# Kucuk cerceveli gorunumu veren sarmalayici bu.
