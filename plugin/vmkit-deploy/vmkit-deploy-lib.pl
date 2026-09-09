@@ -459,8 +459,9 @@ my ($d, $dep) = @_;
 my $R = quotemeta(&deploy_repo_path($d, $dep));
 my $B = quotemeta($dep->{'branch'});
 my $env = &git_env($d);
+# <pre> icinde YALNIZCA komutlarin kendi ciktisi var: aciklama yankilayan
+# 'echo' satirlari yok. Ekran bir konsol dokumu, anlatilmis bir ozet degil.
 my @steps;
-push(@steps, "echo ".quotemeta($text{'log_pulling'}));
 # OLDREF KLONDAN ONCE okunuyor: 'git clone --bare' zaten butun commit'leri
 # getirdigi icin klondan sonra okunsaydi ilk cekmede bile dolu olurdu ve
 # ardindan gelen fetch hicbir sey getirmeyeceginden log "yeni commit yok"
@@ -477,13 +478,11 @@ push(@steps, "git --git-dir=$R remote set-url origin -- ".
 push(@steps, "$env git --git-dir=$R fetch --prune origin ".
 	     quotemeta("+refs/heads/*:refs/heads/*"));
 push(@steps, 'NEWREF=$(git --git-dir='.$R.' rev-parse '.$B.')');
-push(@steps, 'if [ -z "$OLDREF" ]; then echo; echo '.
-	     quotemeta($text{'log_first'}).'; '.
-	     'elif [ "$OLDREF" = "$NEWREF" ]; then echo; echo '.
-	     quotemeta($text{'log_nochange'}).'; '.
-	     'else echo; echo '.quotemeta($text{'log_newcommits'}).'; '.
+# Ilk cekmede OLDREF bos olur ve aralik anlamsizdir; ayni commit'te
+# kalindiysa da gosterilecek bir sey yoktur - iki durumda da hicbir sey
+# basilmiyor, uydurma bir metin degil.
+push(@steps, 'if [ -n "$OLDREF" ] && [ "$OLDREF" != "$NEWREF" ]; then '.
 	     'git --git-dir='.$R.' log --oneline --no-decorate "$OLDREF..$NEWREF"; '.
-	     'echo; echo '.quotemeta($text{'log_changed'}).'; '.
 	     'git --git-dir='.$R.' diff --stat "$OLDREF" "$NEWREF"; fi');
 return @steps;
 }
@@ -500,10 +499,9 @@ my $R = quotemeta(&deploy_repo_path($d, $dep));
 my $T = quotemeta(&deploy_target_dir($d, $dep));
 my $B = quotemeta($dep->{'branch'});
 my @steps;
-push(@steps, "echo; echo ".quotemeta($text{'log_deploying'}));
 push(@steps, "mkdir -p $T");
 push(@steps, "git --git-dir=$R --work-tree=$T checkout -f $B");
-push(@steps, "echo; echo ".quotemeta($text{'log_deployed'}));
+# Dagitilan commit'i yazdiran KOMUT; kendi metnimiz degil.
 push(@steps, "git --git-dir=$R --work-tree=$T log -1 --date=short --pretty=".
 	     quotemeta("format:%h  %ad  %an  %s"));
 return @steps;
@@ -551,8 +549,10 @@ $script .= $body;
 
 &write_user_script($d, $file, $script) || return ( );
 
+# Betigin basindaki 'set -x' her komutu calisirken '+ komut' olarak
+# basiyor, yani ekran zaten konsol gibi ilerliyor - ayrica baslik
+# yankilamaya gerek yok.
 my @steps;
-push(@steps, "echo; echo ".quotemeta($text{'log_actions'}));
 # Betik kendi icinde 'set -e' tasiyor; hata verirse cikis kodu sifirdan
 # farkli oluyor ve disaridaki 'set -e' dagitimi durduruyor.
 push(@steps, "bash ".quotemeta($file));
@@ -643,6 +643,10 @@ my @steps;
 push(@steps, &pull_steps($d, $dep))   if ($op eq 'pull' || $op eq 'both');
 if ($op eq 'deploy' || $op eq 'both') {
 	if ($op eq 'deploy' && !-d &deploy_repo_path($d, $dep)) {
+		# Geri cagirma varsa mesaj EKRANA da dusmeli: sayfa yalnizca
+		# akan satirlari basiyor, donen $out'u kullanmiyor. Yoksa
+		# hicbir sey cekilmemisken 'Dagit' bombos bir ekran veriyordu.
+		&$cb($text{'err_nopull'}) if ($cb);
 		return (0, $text{'err_nopull'});
 		}
 	push(@steps, &deploy_steps($d, $dep));
@@ -669,18 +673,25 @@ else {
 	($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 900);
 	$ok = !$timed && !$? ? 1 : 0;
 	}
-$out = $text{'err_timeout'} if ($timed);
+# Zaman asiminda ciktinin UZERINE yazmiyoruz: o ana kadar akan satirlar
+# ekranda duruyor, kayit dosyasinda da dursun. Not sona ekleniyor.
+$out .= "\n".$text{'err_timeout'}."\n" if ($timed);
 
 # Log ayri dosyada: key=value bicimi coksatirli degeri tasiyamaz.
+#
+# Dosyaya YALNIZCA ham cikti yaziliyor - tarih/durum basligi YOK. Ikisi
+# zaten deployment kaydinda (last_time, last_op, last_status) duruyor ve
+# deploylog.cgi onlari oradan basiyor. Basligi buraya yazarken tarihi
+# make_date ile bicimlendiriyorduk; tema make_date'i EZIYOR ve HTML
+# donduruyor, o yuzden log sayfasinda ham metin olarak
+# "<span data-filesize-bytes=...>" gorunuyordu.
 &ensure_log_dir();
-my $stamp = &make_date(time());
 # Webmin'in tempfile fonksiyonlari bareword dosya tanitici bekliyor; 'use
 # strict' altinda bu yasak oldugu icin Virtualmin eklentilerinin kendi
 # kullandigi kalipla kisa sureligine kapatiyoruz.
 no strict "subs";
 &open_tempfile(LOG, ">".&deploy_log_path($d, $dep));
-&print_tempfile(LOG, "[$stamp] ".&op_label($op)." - ".
-		     ($ok ? "OK" : "FAILED")."\n\n".$out."\n");
+&print_tempfile(LOG, $out);
 &close_tempfile(LOG);
 use strict "subs";
 
