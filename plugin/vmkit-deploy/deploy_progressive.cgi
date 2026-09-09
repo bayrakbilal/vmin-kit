@@ -30,8 +30,22 @@ if ($op !~ /^(pull|deploy|both)$/) {
 	$op = ($dep->{'mode'} || 'manual') eq 'auto' ? 'both' : 'pull';
 	}
 
-# TAMPONSUZ baslik: ciktiyi is ilerledikce gonderebilmek icin sart. Normal
-# ui_print_header ile sayfa komut bitene kadar bos bekliyordu.
+# ---------------------------------------------------------------------------
+# DOSYA ADI ONEMLI: adi "_progressive.cgi" ile bitmek ZORUNDA.
+#
+# Tema (authentic) bir istegi akitarak mi yoksa bitmesini bekleyip tek seferde
+# mi basacagina JS tarafinda karar veriyor: unbuffered_header_processor_allow()
+# icinde yuzlerce satirlik SABIT bir yol listesi var (virtual-server/
+# enable_dkim.cgi, package-updates/update.cgi, webmin/upgrade.cgi ...). Listede
+# olmayan her sey normal pjax'a giriyor, pjax da ancak yanit tamamlaninca
+# ekrana basiyor - bizim "sayfa en sonda tek seferde geliyor" sorunumuz buydu.
+#
+# Listenin sonundaki iki satir ucuncu partiler icin birakilmis genel kapi:
+#     n.indexOf("_progressive.cgi") > -1 || n.indexOf("_saving.cgi") > -1
+# Yani dosya adinda "_progressive.cgi" gecen her CGI akitiliyor.
+#
+# TAMPONSUZ baslik da sart (ui_print_unbuffered_header, $| = 1); ama sunucu
+# tarafi zaten dogruydu, eksik olan tek sey bu isimdi.
 #
 # Duzen Virtualmin'in kendi "is yapan" sayfalarindan (ornek: enable_dkim.cgi):
 # ustte hicbir sey yok, cikti hemen basliyor, sonuc ve notlar en sonda.
@@ -40,21 +54,7 @@ if ($op !~ /^(pull|deploy|both)$/) {
 			    "", undef, 0, 0);
 
 $dep->{'last_trigger'} = 'panel';
-# 'data-installer' bir TEMA KANCASI. Webmin'in kendi paket guncelleme sayfasi
-# (software/apt-lib.pl, update_system_install) ciktiyi tam olarak boyle
-# basiyor. Tema bu isareti gormezse sayfayi kendi XHR yoluna sokup yanit
-# bitene kadar bekliyor - tamponsuz baslik ve satir satir okuma tek basina
-# yetmemesinin sebebi buydu.
-print "<pre data-installer style='white-space:pre-wrap; margin-bottom:12px'>";
-
-# ---- GECICI TEST - AKITMA DOGRULANINCA KALDIRILACAK ----
-# Cekme islemi guncelleme yoksa aninda bitiyor, dolayisiyla ciktinin akip
-# akmadigi anlasilmiyor. Bu blok iki saniye arayla bes satir basiyor: satirlar
-# tek tek dusuyorsa akitma calisiyor, onu saniye sonunda hepsi birden
-# geliyorsa calismiyor.
-&run_streaming('for i in 1 2 3 4 5; do echo "test satiri $i"; sleep 2; done',
-	       30, sub { print &html_escape($_[0]), "\n"; });
-# ---- GECICI TEST SONU ----
+print "<pre style='white-space:pre-wrap; margin-bottom:16px'>";
 
 my ($ok, $out) = &deploy_run($d, $dep, $op, sub {
 	print &html_escape($_[0]), "\n";
@@ -82,7 +82,7 @@ if ($ok && $op eq 'pull' && &pending($d, $dep)) {
 	print "<font size=-1>",
 	      &text('deploy_pending_help', $dep->{'pulled_ref'} || ''),
 	      "</font><br><br>\n";
-	print &ui_form_start("deploy.cgi", "post", "page");
+	print &ui_form_start("deploy_progressive.cgi", "post");
 	print &ui_hidden("dom", $d->{'id'});
 	print &ui_hidden("id", $dep->{'id'});
 	print &ui_hidden("op", "deploy");

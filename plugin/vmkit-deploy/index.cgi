@@ -61,15 +61,12 @@ if (@deps) {
 	# Cekme ve dagitim birer MUTASYON: baglanti degil POST dugmesi. Bir
 	# baglantiya tiklamak, onu onbelleklemek ya da tarayicinin onceden
 	# getirmesi bir dagitimi tetiklememeli.
-	# HEDEF 'page': formu temanin XHR yoluna DEGIL gercek bir sayfa
-	# gezinmesine gonderiyor. Temanin kendi kodunda akitmasi gereken
-	# sayfalar icin dugme 'type=submit formtarget="page"' yapiliyor; ayni
-	# sey ui_form_start'in ucuncu parametresi (hedef) ile elde ediliyor.
-	# XHR ile giden istekte yanit tamamlanana kadar ekrana hicbir sey
-	# basilmadigi icin cikti akmiyordu.
+	# HEDEF 'deploy_progressive.cgi': dosya adindaki "_progressive.cgi"
+	# temanin akitma listesine giren tek genel kural (bkz. o dosyanin
+	# basindaki not). Adi degistirirsek cikti yine sonda tek seferde gelir.
 	my $btn = sub {
 		my ($dep, $op, $label) = @_;
-		return &ui_form_start("deploy.cgi", "post", "page",
+		return &ui_form_start("deploy_progressive.cgi", "post", undef,
 				      "style='display:inline-block;margin-right:6px'").
 		       &ui_hidden("dom", $d->{'id'}).
 		       &ui_hidden("id", $dep->{'id'}).
@@ -120,7 +117,7 @@ if (@deps) {
 		# cikiyordu ve liste tutarsiz gorunuyordu; oysa modun ne yaptigi
 		# zaten Mod sutununda yaziyor.
 		#
-		# Islem degismiyor: op gonderilmiyor, ne yapilacagina deploy.cgi
+		# Islem degismiyor: op gonderilmiyor, ne yapilacagina sayfa
 		# modun kendisine bakarak karar veriyor - otomatikse cekip
 		# dagitiyor. Boylece bu karar tek yerde, kancayla ayni yerde.
 		#
