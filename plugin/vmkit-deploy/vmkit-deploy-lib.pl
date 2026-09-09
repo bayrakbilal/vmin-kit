@@ -507,10 +507,15 @@ my $T = quotemeta(&deploy_target_dir($d, $dep));
 my $B = quotemeta($dep->{'branch'});
 my @steps;
 push(@steps, "mkdir -p $T");
-push(@steps, "git --git-dir=$R --work-tree=$T checkout -f $B");
-# Dagitilan commit'i yazdiran KOMUT; kendi metnimiz degil.
-push(@steps, "git --git-dir=$R --work-tree=$T log -1 --date=short --pretty=".
-	     quotemeta("format:%h  %ad  %an  %s"));
+# '-q': checkout basarili oldugunda yalnizca "Already on 'main'" yaziyor ve
+# bunu UC durumda da ayni sekilde yaziyor - dosyalar ilk kez yazilirken,
+# hicbir sey degismezken ve gercekten degisirken (olculdu). Yani sifir bilgi
+# tasiyip "dagitim bir sey yapti mi" sorusunu ortuyordu.
+push(@steps, "git --git-dir=$R --work-tree=$T checkout -q -f $B");
+# Yayina giren commit. '--oneline' git'in KENDI hazir bicimi ve cekme
+# bolumundeki commit listesiyle ayni gorunuyor; onceki
+# --pretty=format:"%h %ad %an %s" bizim uydurdugumuz bicimdi.
+push(@steps, "git --git-dir=$R --work-tree=$T log -1 --oneline --no-decorate");
 return @steps;
 }
 
