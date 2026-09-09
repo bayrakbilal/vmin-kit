@@ -1,1 +1,2 @@
 default_proxy=0
+never_proxy=mail smtp imap pop pop3 mta-sts autoconfig autodiscover

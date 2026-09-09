@@ -331,10 +331,31 @@ return $lc;
 # yapilandirma adlari proxy'lenirse SMTP/IMAP baglantisi ve istemci kesfi
 # kirilir. Kullanici bir kaydi elle proxy'ye alirsa ona dokunmuyoruz - bu
 # liste yalnizca BIZ yeni kayit olustururken uygulaniyor.
+# Proxy'lenmemesi gereken kayit adlari. Cloudflare'in proxy'si yalnizca HTTP
+# icin; posta ve otomatik yapilandirma adlari proxy'lenirse istemciler dogru
+# sunucuya ulasamaz.
+#
+# Liste ayardan geliyor ama varsayilan KODDA: modul yukseltilirken var olan
+# config dosyasina yeni anahtarlar eklenmiyor (update-plugins.sh yalnizca
+# dosya yoksa kopyaliyor), yani ayar bos gelebilir ve o zaman eski davranis
+# aynen surmeli.
+sub never_proxy_names
+{
+my $v = $config{'never_proxy'};
+$v = 'mail smtp imap pop pop3 mta-sts autoconfig autodiscover'
+	if (!defined($v) || $v !~ /\S/);
+my @rv = grep { /\S/ } split(/[\s,]+/, lc($v));
+return @rv;
+}
+
 sub never_proxy
 {
 my ($label) = @_;
-return $label =~ /^(mail|smtp|imap|pop|pop3|mta-sts|autoconfig|autodiscover)$/ ? 1 : 0;
+my $l = lc($label);
+foreach my $n (&never_proxy_names()) {
+	return 1 if ($l eq $n);
+	}
+return 0;
 }
 
 sub local_records

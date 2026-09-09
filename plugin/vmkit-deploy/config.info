@@ -1,1 +1,1 @@
-default_branch=Default branch for new deployments,0
+timeout=Give up on a command after this many seconds,0,6

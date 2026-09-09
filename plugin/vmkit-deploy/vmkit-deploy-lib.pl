@@ -639,6 +639,16 @@ close($fh);
 return ($out, 0, $? == 0 ? 1 : 0);
 }
 
+# Cekme ve dagitimin tamami icin zaman asimi. Ayarda yoksa 900: modul
+# yukseltilirken var olan config dosyasina yeni anahtarlar EKLENMIYOR
+# (update-plugins.sh yalnizca dosya yoksa kopyaliyor), o yuzden her okuma
+# kendi varsayilanini tasimali.
+sub deploy_timeout
+{
+my $t = $config{'timeout'};
+return $t && $t =~ /^\d+$/ && $t > 0 ? $t : 900;
+}
+
 # deploy_run(&domain, &deploy, op, [&geri-cagirma]) -> (basarili?, cikti)
 #
 # Geri cagirma verilirse cikti satir satir ona gonderiliyor ve sayfa is
@@ -679,12 +689,13 @@ if ($op eq 'deploy' || $op eq 'both') {
 my $inner = "set -e; ".join("; ", @steps);
 my $cmd = &command_as_user($d->{'user'}, 1, $inner);
 # Dagitim sonrasi komutlar (composer install gibi) uzun surebiliyor.
+my $secs = &deploy_timeout();
 my ($out, $timed, $ok);
 if ($cb) {
-	($out, $timed, $ok) = &run_streaming("$cmd 2>&1", 900, $cb);
+	($out, $timed, $ok) = &run_streaming("$cmd 2>&1", $secs, $cb);
 	}
 else {
-	($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 900);
+	($out, $timed) = &backquote_with_timeout("$cmd 2>&1", $secs);
 	$ok = !$timed && !$? ? 1 : 0;
 	}
 # Zaman asiminda ciktinin UZERINE yazmiyoruz: o ana kadar akan satirlar

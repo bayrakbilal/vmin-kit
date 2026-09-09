@@ -1,1 +1,2 @@
 default_proxy=Yeni domainlerde web kayıtları proxy'li olsun mu?,1,1-Evet,0-Hayır
+never_proxy=Bu adlar hiçbir zaman proxy'lenmesin,0,60

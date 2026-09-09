@@ -155,6 +155,68 @@ close($fh);
 return ($out, 0, $? == 0 ? 1 : 0);
 }
 
+# ---------------------------------------------------------------------------
+# EK BAYRAKLAR
+#
+# Modul ayarlarinda ONAY KUTUSU olarak seciliyor (config.info tip 2, "many of
+# many"; secilenler virgulle ayrilmis saklaniyor). Serbest metin kutusu
+# DEGIL: boylece yazim hatasi ve kabuk kacisi derdi yok, hangi secenegin var
+# oldugu da ekranda duruyor.
+#
+# Anahtarlarda TIRE YOK ('nodev', 'no-dev' degil): config.info satiri
+# virgulle bolunuyor ve deger/etiket ayirici ilk '-' oluyor
+# (/^(\S*)\-(.*)$/), tireli bir deger yanlis bolunurdu.
+#
+# TUZAK: ayni is icin komuta gore bayrak ADI degisiyor. Composer'in kendi
+# belgesinden (doc/03-cli.md) dogrulandi:
+#   install / update -> --optimize-autoloader
+#   dump-autoload    -> --optimize
+# Bu yuzden esleme komut basina.
+#
+# '--no-scripts' composer'in GENEL secenegi, uc komutta da gecerli.
+sub composer_flag_map
+{
+return (
+  'nodev'     => { 'install'       => '--no-dev',
+		   'update'        => '--no-dev',
+		   'dump-autoload' => '--no-dev' },
+  'optimize'  => { 'install'       => '--optimize-autoloader',
+		   'update'        => '--optimize-autoloader',
+		   'dump-autoload' => '--optimize' },
+  'classmap'  => { 'install'       => '--classmap-authoritative',
+		   'update'        => '--classmap-authoritative',
+		   'dump-autoload' => '--classmap-authoritative' },
+  'noscripts' => { 'install'       => '--no-scripts',
+		   'update'        => '--no-scripts',
+		   'dump-autoload' => '--no-scripts' },
+  );
+}
+
+# composer_flags(eylem) -> o eylem icin eklenecek bayraklar
+sub composer_flags
+{
+my ($action) = @_;
+my %map = &composer_flag_map();
+my @rv;
+# Bilinmeyen anahtar sessizce atlanir: ayar dosyasi elle duzenlenmis ya da
+# eski bir surumden kalmis olabilir.
+foreach my $k (split(/,/, $config{'flags'} || '')) {
+	$k =~ s/^\s+|\s+$//g;
+	next if (!$k || !$map{$k});
+	push(@rv, $map{$k}->{$action}) if ($map{$k}->{$action});
+	}
+return @rv;
+}
+
+# Komut zaman asimi. Ayarda yoksa 900: modul yukseltilirken var olan config
+# dosyasina yeni anahtarlar EKLENMIYOR (update-plugins.sh yalnizca dosya
+# yoksa kopyaliyor), o yuzden her okuma kendi varsayilanini tasimali.
+sub composer_timeout
+{
+my $t = $config{'timeout'};
+return $t && $t =~ /^\d+$/ && $t > 0 ? $t : 900;
+}
+
 # run_composer(&domain, &proje, eylem, [&geri-cagirma]) -> (basarili?, cikti)
 #
 # Geri cagirma verilirse cikti satir satir ona gonderilir ve sayfa is
@@ -170,17 +232,20 @@ my %args = ( 'install'       => "install --no-interaction --no-progress",
 	     'dump-autoload' => "dump-autoload --no-interaction" );
 my $sub = $args{$action};
 return (0, $text{'err_action'}) if (!$sub);
+my $extra = join(" ", &composer_flags($action));
+$sub .= " ".$extra if ($extra);
 
 my $inner = "cd ".quotemeta($p->{'dir'})." && ".
 	    ($p->{'php'} ? quotemeta($p->{'php'})." " : "").
 	    quotemeta($composer)." ".$sub;
 my $cmd = &command_as_user($d->{'user'}, 1, $inner);
+my $secs = &composer_timeout();
 my ($out, $timed, $ok);
 if ($cb) {
-	($out, $timed, $ok) = &run_streaming("$cmd 2>&1", 900, $cb);
+	($out, $timed, $ok) = &run_streaming("$cmd 2>&1", $secs, $cb);
 	}
 else {
-	($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 900);
+	($out, $timed) = &backquote_with_timeout("$cmd 2>&1", $secs);
 	$ok = !$timed && !$? ? 1 : 0;
 	}
 # Zaman asiminda ciktinin UZERINE yazmiyoruz: o ana kadar akan satirlar
