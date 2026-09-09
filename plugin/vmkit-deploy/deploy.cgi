@@ -30,16 +30,29 @@ if ($op !~ /^(pull|deploy|both)$/) {
 	$op = ($dep->{'mode'} || 'manual') eq 'auto' ? 'both' : 'pull';
 	}
 
-&ui_print_header(&virtual_server::domain_in($d), &op_label($op),
-		 "", undef, 0, 0);
+# TAMPONSUZ baslik: ciktiyi is ilerledikce gonderebilmek icin sart. Normal
+# ui_print_header ile sayfa komut bitene kadar bos bekliyordu.
+#
+# Duzen Virtualmin'in kendi "is yapan" sayfalarindan (ornek: enable_dkim.cgi):
+# ustte hicbir sey yok, cikti hemen basliyor, sonuc ve notlar en sonda.
+# Sonucun ustte olmasi zaten mumkun degil - is bitmeden bilinmiyor.
+&ui_print_unbuffered_header(&virtual_server::domain_in($d), &op_label($op),
+			    "", undef, 0, 0);
 
 $dep->{'last_trigger'} = 'panel';
-my ($ok, $out) = &deploy_run($d, $dep, $op);
+print "<pre style='white-space:pre-wrap; margin-bottom:12px'>";
+my ($ok, $out) = &deploy_run($d, $dep, $op, sub {
+	print &html_escape($_[0]), "\n";
+	});
+print "</pre>\n";
+
 &webmin_log($op, "deploy", $dep->{'name'} || $dep->{'id'},
 	    { 'status' => $ok ? "ok" : "failed" });
 
-print "<p><b>", $ok ? $text{'deploy_ok'} : $text{'deploy_failed'}, "</b></p>\n";
-print "<pre style='white-space:pre-wrap'>", &html_escape($out), "</pre>\n";
+print "<p><b>",
+      &ui_text_color($ok ? $text{'deploy_ok'} : $text{'deploy_failed'},
+		     $ok ? 'success' : 'danger'),
+      "</b></p>\n";
 
 # Cekildi ama yayinlanmadiysa bir sonraki adimi hemen onune koy: manuel modun
 # butun anlami bu ara durumda.

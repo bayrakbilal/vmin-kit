@@ -589,7 +589,47 @@ return 0 if ($@);
 return 1;
 }
 
-# deploy_run(&domain, &deploy, op) -> (basarili?, cikti)
+# run_streaming(komut, saniye, &geri-cagirma) -> (cikti, zaman-asimi, basarili)
+#
+# Ciktiyi SATIR SATIR okuyup hem geri cagirmaya veriyor hem biriktiriyor.
+# backquote_with_timeout bunu yapamiyor: komut bitene kadar hicbir sey
+# dondurmuyor, dolayisiyla sayfa da bos bekliyor. Uzun suren bir 'composer
+# install' sirasinda kullanicinin ekrani bos kalmasin diye gerekiyor.
+#
+# Zaman asiminda sureci OLDURUYORUZ: yalnizca okumayi birakmak arkada
+# calisan bir komut birakirdi.
+sub run_streaming
+{
+my ($cmd, $secs, $cb) = @_;
+my ($out, $timed) = ("", 0);
+my $fh;
+my $pid = open($fh, "-|", $cmd);
+return ("$cmd: $!", 0, 0) if (!$pid);
+eval {
+	local $SIG{'ALRM'} = sub { $timed = 1; die "timeout\n"; };
+	alarm($secs);
+	while(my $l = <$fh>) {
+		$out .= $l;
+		$l =~ s/\r?\n$//;
+		&$cb($l);
+		}
+	alarm(0);
+	};
+alarm(0);
+if ($timed) {
+	kill('TERM', $pid);
+	close($fh);
+	return ($out, 1, 0);
+	}
+close($fh);
+return ($out, 0, $? == 0 ? 1 : 0);
+}
+
+# deploy_run(&domain, &deploy, op, [&geri-cagirma]) -> (basarili?, cikti)
+#
+# Geri cagirma verilirse cikti satir satir ona gonderiliyor ve sayfa is
+# ilerledikce doluyor. Verilmezse eskisi gibi toplu donuyor - web kancasi ve
+# komut satiri boyle kullaniyor, onlarin akitacak bir ekrani yok.
 #   op 'pull'   yalnizca cek
 #   op 'deploy' yalnizca dagit (once cekilmis olmali)
 #   op 'both'   cek ve dagit
@@ -597,7 +637,7 @@ return 1;
 # 'set -e' altinda calisir.
 sub deploy_run
 {
-my ($d, $dep, $op) = @_;
+my ($d, $dep, $op, $cb) = @_;
 $op ||= 'both';
 my @steps;
 push(@steps, &pull_steps($d, $dep))   if ($op eq 'pull' || $op eq 'both');
@@ -621,8 +661,14 @@ if ($op eq 'deploy' || $op eq 'both') {
 my $inner = "set -e; ".join("; ", @steps);
 my $cmd = &command_as_user($d->{'user'}, 1, $inner);
 # Dagitim sonrasi komutlar (composer install gibi) uzun surebiliyor.
-my ($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 900);
-my $ok = !$timed && !$?;
+my ($out, $timed, $ok);
+if ($cb) {
+	($out, $timed, $ok) = &run_streaming("$cmd 2>&1", 900, $cb);
+	}
+else {
+	($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 900);
+	$ok = !$timed && !$? ? 1 : 0;
+	}
 $out = $text{'err_timeout'} if ($timed);
 
 # Log ayri dosyada: key=value bicimi coksatirli degeri tasiyamaz.
