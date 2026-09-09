@@ -61,9 +61,15 @@ if (@deps) {
 	# Cekme ve dagitim birer MUTASYON: baglanti degil POST dugmesi. Bir
 	# baglantiya tiklamak, onu onbelleklemek ya da tarayicinin onceden
 	# getirmesi bir dagitimi tetiklememeli.
+	# HEDEF 'page': formu temanin XHR yoluna DEGIL gercek bir sayfa
+	# gezinmesine gonderiyor. Temanin kendi kodunda akitmasi gereken
+	# sayfalar icin dugme 'type=submit formtarget="page"' yapiliyor; ayni
+	# sey ui_form_start'in ucuncu parametresi (hedef) ile elde ediliyor.
+	# XHR ile giden istekte yanit tamamlanana kadar ekrana hicbir sey
+	# basilmadigi icin cikti akmiyordu.
 	my $btn = sub {
 		my ($dep, $op, $label) = @_;
-		return &ui_form_start("deploy.cgi", "post", undef,
+		return &ui_form_start("deploy.cgi", "post", "page",
 				      "style='display:inline-block;margin-right:6px'").
 		       &ui_hidden("dom", $d->{'id'}).
 		       &ui_hidden("id", $dep->{'id'}).

@@ -82,7 +82,7 @@ if ($ok && $op eq 'pull' && &pending($d, $dep)) {
 	print "<font size=-1>",
 	      &text('deploy_pending_help', $dep->{'pulled_ref'} || ''),
 	      "</font><br><br>\n";
-	print &ui_form_start("deploy.cgi", "post");
+	print &ui_form_start("deploy.cgi", "post", "page");
 	print &ui_hidden("dom", $d->{'id'});
 	print &ui_hidden("id", $dep->{'id'});
 	print &ui_hidden("op", "deploy");
