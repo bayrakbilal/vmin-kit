@@ -95,6 +95,11 @@ for mod in "${MODULES[@]}"; do
   # Onceki kurulum ne olursa olsun (dizin ya da eski symlink) temizle.
   rm -rf "$dst"
   cp -a "$src" "$dst"
+  # 'cp -a' SAHIPLIGI KORUR. Depo root'un degilse (ornegin bir domain
+  # klasorune cekilmisse) modul dosyalari o kullanicinin uzerine gecerdi -
+  # ve Webmin CGI'leri ROOT olarak calistirdigi icin o kullanici kendi
+  # .cgi'sini duzenleyip root olabilirdi. Modul dosyalari her zaman root'un.
+  chown -R root:root "$dst"
   # Yalnizca CGI'ler calistirilabilir olmali; *.pl dosyalari kutuphane.
   chmod 0755 "$dst"/*.cgi 2>/dev/null || true
 
