@@ -67,13 +67,24 @@ if (@projects) {
 		#   act_install -> yesil + paket ikonu
 		#   act_update  -> mavi + yenileme ikonu
 		#   act_dump    -> uygun bir kural yok, duz kaliyor
+		#
+		# ALAN ADI 'action' OLAMAZ - bir gun tekrar denenmesin diye:
+		# HTMLFormElement [LegacyOverrideBuiltIns] ile tanimli, yani form
+		# icindeki bir alanin name'i formun KENDI ozelligini goleliyor.
+		# name="action" olunca form.action artik adres degil o <input>
+		# oluyor. Tema akitip akitmayacagina tam da oradan bakiyor
+		#     e.target.action && unbuffered_header_processor_allow(...)
+		# ve bir DOM elemani gelince kural tutmayip pjax'a dusuyordu:
+		# cikti akmiyor, sayfa sonda tek seferde geliyordu. Olculdu.
+		# Ayni tuzak 'target' icin de gecerli (tema e.target.target
+		# okuyor); 'id' ve 'name' bugun okunmuyor ama ayni sinif.
 		my $btn = sub {
 			my ($cgi, $action, $label) = @_;
 			return &ui_form_start($cgi, "post", undef,
 					      "style='display:inline-block;margin-right:6px'").
 			       &ui_hidden("dom", $d->{'id'}).
 			       &ui_hidden("dir", $p->{'dir'}).
-			       ($action ? &ui_hidden("action", $action) : "").
+			       ($action ? &ui_hidden("act", $action) : "").
 			       &ui_submit($label).
 			       &ui_form_end();
 			};

@@ -40,7 +40,10 @@ $d->{'vmkit-composer'} || &error(&text('index_eoff', $d->{'dom'}));
 my $p = &valid_project($d, $in{'dir'});
 $p || &error($text{'run_edir'});
 
-my $act = $in{'action'};
+# Alan adi 'act', 'action' DEGIL: form icindeki name="action" formun kendi
+# .action ozelligini golgeliyor ve tema akitma kararini oradan veriyor
+# (bkz. index.cgi'deki uzun not).
+my $act = $in{'act'};
 $act =~ /^(install|update|dump-autoload)$/ || &error($text{'err_action'});
 
 # Duzen Virtualmin'in kendi "is yapan" sayfalarindan: ustte hicbir sey yok,
