@@ -475,7 +475,14 @@ push(@steps, "if [ ! -d $R ]; then ".
 	     "fi");
 push(@steps, "git --git-dir=$R remote set-url origin -- ".
 	     quotemeta($dep->{'repo'}));
-push(@steps, "$env git --git-dir=$R fetch --prune origin ".
+# '-v': fetch getirecek bir sey yoksa VARSAYILAN OLARAK hicbir sey yazmaz
+# ve ekran bombos kalirdi. Terminalde 'git pull' deyince gorunen "Already up
+# to date." mesaji pull'un merge adimindan geliyor; bizde merge yok (bare
+# repo + ayri checkout), o yuzden karsiligi fetch'in ayrintili ciktisi:
+#   = [up to date]      main       -> main
+#   4cb4a6e..ed3bea3    main       -> main
+# Kendi metnimizi yazmiyoruz - bunlar git'in kendi satirlari.
+push(@steps, "$env git --git-dir=$R fetch -v --prune origin ".
 	     quotemeta("+refs/heads/*:refs/heads/*"));
 push(@steps, 'NEWREF=$(git --git-dir='.$R.' rev-parse '.$B.')');
 # Ilk cekmede OLDREF bos olur ve aralik anlamsizdir; ayni commit'te
