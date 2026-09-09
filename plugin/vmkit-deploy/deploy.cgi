@@ -40,7 +40,12 @@ if ($op !~ /^(pull|deploy|both)$/) {
 			    "", undef, 0, 0);
 
 $dep->{'last_trigger'} = 'panel';
-print "<pre style='white-space:pre-wrap; margin-bottom:12px'>";
+# 'data-installer' bir TEMA KANCASI. Webmin'in kendi paket guncelleme sayfasi
+# (software/apt-lib.pl, update_system_install) ciktiyi tam olarak boyle
+# basiyor. Tema bu isareti gormezse sayfayi kendi XHR yoluna sokup yanit
+# bitene kadar bekliyor - tamponsuz baslik ve satir satir okuma tek basina
+# yetmemesinin sebebi buydu.
+print "<pre data-installer style='white-space:pre-wrap; margin-bottom:12px'>";
 my ($ok, $out) = &deploy_run($d, $dep, $op, sub {
 	print &html_escape($_[0]), "\n";
 	});
