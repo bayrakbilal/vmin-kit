@@ -507,11 +507,13 @@ my $T = quotemeta(&deploy_target_dir($d, $dep));
 my $B = quotemeta($dep->{'branch'});
 my @steps;
 push(@steps, "mkdir -p $T");
-# '-q': checkout basarili oldugunda yalnizca "Already on 'main'" yaziyor ve
-# bunu UC durumda da ayni sekilde yaziyor - dosyalar ilk kez yazilirken,
-# hicbir sey degismezken ve gercekten degisirken (olculdu). Yani sifir bilgi
-# tasiyip "dagitim bir sey yapti mi" sorusunu ortuyordu.
-push(@steps, "git --git-dir=$R --work-tree=$T checkout -q -f $B");
+# checkout'un "Already on 'main'" satiri BILEREK duruyor. Uc durumda da ayni
+# ciktigi olculdu (dosyalar ilk kez yazilirken, hicbir sey degismezken ve
+# gercekten degisirken), yani dagitimin bir sey yapip yapmadigini soylemiyor -
+# ama onu zaten panel soyluyor: cekme bolumu neyin geldigini, liste ve
+# bekleyen dagitim kutusu da yayindaki ile cekilen ucu gosteriyor. '-q' ile
+# susturulunca dagitim bolumu tek satira dusuyor ve fazla ciplak kaliyordu.
+push(@steps, "git --git-dir=$R --work-tree=$T checkout -f $B");
 # Yayina giren commit. '--oneline' git'in KENDI hazir bicimi ve cekme
 # bolumundeki commit listesiyle ayni gorunuyor; onceki
 # --pretty=format:"%h %ad %an %s" bizim uydurdugumuz bicimdi.
