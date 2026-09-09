@@ -64,13 +64,19 @@ if (@deps) {
 	# HEDEF 'deploy_progressive.cgi': dosya adindaki "_progressive.cgi"
 	# temanin akitma listesine giren tek genel kural (bkz. o dosyanin
 	# basindaki not). Adi degistirirsek cikti yine sonda tek seferde gelir.
+	#
+	# Satirdaki DORT dugme de ayni bilesenden: hepsi kucuk bir POST formu.
+	# Sebep GORUNUM - ui_link_button gercek bir <button> uretiyor ama
+	# temanin dugme bicimlendirmesine girmedigi icin otekilerden kucuk
+	# kaliyordu. commits/log yalnizca OKUYOR; POST ile gelmeleri hicbir sey
+	# degistirmiyor, sadece boylari tutuyor. Composer sayfasi da boyle.
 	my $btn = sub {
-		my ($dep, $op, $label) = @_;
-		return &ui_form_start("deploy_progressive.cgi", "post", undef,
+		my ($dep, $cgi, $op, $label) = @_;
+		return &ui_form_start($cgi, "post", undef,
 				      "style='display:inline-block;margin-right:6px'").
 		       &ui_hidden("dom", $d->{'id'}).
 		       &ui_hidden("id", $dep->{'id'}).
-		       &ui_hidden("op", $op).
+		       ($op ? &ui_hidden("op", $op) : "").
 		       &ui_submit($label).
 		       &ui_form_end();
 		};
@@ -135,21 +141,17 @@ if (@deps) {
 		# Ayni metne sahip iki anahtar varsa 'keys' her istekte farkli
 		# sirada geldigi icin bazen digeri secilir ve renk gelip gider.
 		# Bunu yasadik: 'Pull' hem pull_update hem op_pull idi.
-		my @acts = ( &$btn($dep, '', $text{'pull_update'}) );
-		push(@acts, &$btn($dep, 'deploy', $text{'deploy_install'}))
+		my @acts = ( &$btn($dep, "deploy_progressive.cgi", '',
+				   $text{'pull_update'}) );
+		push(@acts, &$btn($dep, "deploy_progressive.cgi", 'deploy',
+				  $text{'deploy_install'}))
 			if (-d &deploy_repo_path($d, $dep));
-		# Bu listede TAM BOY dugme kullaniliyor: satirdaki dort eylem ayni
-		# boyda duruyor ve satirin yuksek olmasi burada sorun degil.
-		# (Kucuk cerceveli dugme isteniyorsa ui_link yeter - temanin onu
-		# donusturdugu bicim o; karsilastirma tablosunda oyle.)
 		# Repo yalnizca ilk cekmeden sonra olusuyor; ikisini de o zaman
 		# gosteriyoruz.
 		if ($dep->{'last_time'}) {
 			push(@acts,
-			     &ui_link_button("commits.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
-					     $text{'act_commits'}),
-			     &ui_link_button("deploylog.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
-					     $text{'act_log'}));
+			     &$btn($dep, "commits.cgi", '', $text{'act_commits'}),
+			     &$btn($dep, "deploylog.cgi", '', $text{'act_log'}));
 			}
 		push(@table, [
 			# Adi duzenleme sayfasina baglamak Webmin'in kalibi:
