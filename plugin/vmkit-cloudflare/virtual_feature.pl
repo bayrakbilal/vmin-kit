@@ -130,4 +130,93 @@ sub feature_modules
 return ( [ $module_name, $text{'feat_module'} ] );
 }
 
+# ---------------------------------------------------------------------------
+# YEDEK / GERI YUKLEME
+#
+# Tasinan: token, proxy tercihi ve otomatik senkron anahtari.
+#
+# TOKEN HAM DOSYADAN OKUNUYOR (get_cf degil): diskte zaten okunaksiz bicimde
+# duruyor ve oyle kalsin istiyoruz. get_cf ile okusaydik yedege duz metin
+# yazardik - okunaksizlastirmanin ana sebeplerinden biri tam da yedekti.
+#
+# Tasinmayanlar:
+#   zone_id      Cloudflare'in zone kimligi. Yoksa cf_zone_id kendisi bulup
+#                yaziyor; eski bir id (domain baska hesaba tasinmissa) sessiz
+#                ve kafa karistirici hatalara yol acardi.
+#   last_status  Baska bir sunucudaki eski bir calismanin sonucu; yaniltici.
+#   last_time
+# ---------------------------------------------------------------------------
+
+# feature_backup_name()
+sub feature_backup_name
+{
+return $text{'backup_name'};
+}
+
+# feature_backup(&domain, dosya, &opts, homeformat?, differential?, as-owner,
+#                &all-opts, &destinations)
+sub feature_backup
+{
+my ($d, $file, $opts, $homefmt, $increment, $asd) = @_;
+&$virtual_server::first_print($text{'backup_doing'});
+
+my %cf;
+&read_file(&domain_file($d), \%cf);
+my %out;
+foreach my $k ('token', 'proxy', 'enabled') {
+	$out{$k} = $cf{$k} if (defined($cf{$k}));
+	}
+
+my $err;
+eval { &write_file($file, \%out); };
+$err = $@;
+if ($err) {
+	$err =~ s/\s+at\s+\S+\s+line\s+\d+.*//;
+	&$virtual_server::second_print(&text('backup_efile', $err));
+	return 0;
+	}
+
+# Domain sahibi kendi yedegini aliyorsa arsivi paketleyen o; dosyayi
+# okuyabilmeli. Root aliyorsa 0600 root'ta kalsin.
+if ($asd) {
+	&set_ownership_permissions($d->{'uid'}, $d->{'gid'}, 0600, $file);
+	}
+else {
+	&set_ownership_permissions(undef, undef, 0600, $file);
+	}
+
+&$virtual_server::second_print($out{'token'} ? $text{'backup_done'}
+					     : $text{'backup_done_notoken'});
+return 1;
+}
+
+# feature_restore(&domain, dosya, &opts, &all-opts)
+sub feature_restore
+{
+my ($d, $file) = @_;
+&$virtual_server::first_print($text{'restore_doing'});
+
+my %in;
+if (!&read_file($file, \%in)) {
+	&$virtual_server::second_print($text{'restore_eread'});
+	return 0;
+	}
+
+# save_cf KULLANILMIYOR: o, token'i sifreleyerek yaziyor; elimizdeki deger
+# yedekten geldigi icin zaten o bicimde. Ikinci kez sifrelemek onu bozardi.
+# Mevcut kaydin uzerine yaziyoruz - zone_id ve son calisma bilgisi bilerek
+# dusuyor, ikisi de kendiliginden yeniden olusuyor.
+my $file2 = &domain_file($d);
+my $dir = &domains_dir();
+-d $dir || &make_dir($dir, 0700, 1);
+&lock_file($file2);
+&write_file($file2, \%in);
+&unlock_file($file2);
+chmod(0600, $file2);
+
+&$virtual_server::second_print($in{'token'} ? $text{'restore_done'}
+					   : $text{'restore_done_notoken'});
+return 1;
+}
+
 1;

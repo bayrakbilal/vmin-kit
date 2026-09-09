@@ -39,12 +39,113 @@ my ($d) = @_;
 return &domains_dir()."/$d->{'id'}";
 }
 
+# ---------------------------------------------------------------------------
+# TOKEN'IN DISKTE SAKLANMASI
+#
+# BU BIR GUVENLIK KATMANI DEGIL, OKUNAKSIZLASTIRMADIR. Anahtar asagida,
+# eklentinin kaynak kodunda duruyor; kodu okuyan herkes cozer. Bilerek boyle:
+# token zaten o domainin sahibine ait, ondan gizlemeye calismiyoruz.
+#
+# Amac, token'in DUZ METIN olarak durdugu yerleri azaltmak:
+#   - Virtualmin'in domain yedegi (yedek dosyasi elden ele gezebiliyor)
+#   - /etc yedekleri
+#   - etckeeper: /etc bir git deposu, yani her degisiklik GECMISE de yaziliyor
+#   - hata ayiklarken kopyalanan dosya iceriKleri
+# Eline yedek gecen biri anlamsiz bir hex dizisi gorur; bizim icin yeterli.
+#
+# Bicim:  v1:<hex>   ->  hex = 8 bayt tuz + tuzla uretilen anahtar akisiyla
+#                        XOR'lanmis token
+# Onek YOKSA deger duz metindir (eski kayitlar) ve oldugu gibi donuyor; bir
+# sonraki save_cf'te kendiliginden sifreli bicime geciyor.
+#
+# Base64 yerine hex: MIME::Base64'u Webmin bile 'eval "use ..."' ile istege
+# bagli yukluyor, oysa unpack("H*") hicbir sey gerektirmiyor. Token kisa,
+# boyutun iki katina cikmasi onemsiz.
+# ---------------------------------------------------------------------------
+
+# Sabit anahtar. Degistirilirse ESKI KAYITLAR COZULEMEZ - degistirme.
+sub obf_secret
+{
+return 'vmkit-cloudflare/v1/8c1f4a6b2e9d70335af8c264d1b0e97a';
+}
+
+# Digest::SHA cekirdek Perl'in parcasi ama Webmin'in kendisi kullanmiyor, yani
+# "kesin vardir" diyemiyoruz. Yoksa Digest::MD5'e, o da yoksa hicbir seye
+# dusmuyoruz: token eskisi gibi duz metin yazilir ve modul calismaya devam
+# eder. Sessizce bozulmaktansa sessizce eski davranisa donmek yeglenir.
+my $obf_digest;
+sub obf_digest_kind
+{
+return $obf_digest if (defined($obf_digest));
+if (eval { require Digest::SHA; 1 })    { $obf_digest = 'sha'; }
+elsif (eval { require Digest::MD5; 1 }) { $obf_digest = 'md5'; }
+else                                    { $obf_digest = ''; }
+return $obf_digest;
+}
+
+sub obf_hash
+{
+my ($data) = @_;
+my $k = &obf_digest_kind();
+return $k eq 'sha' ? Digest::SHA::sha256($data) :
+       $k eq 'md5' ? Digest::MD5::md5($data) : undef;
+}
+
+# Tuzdan istenen uzunlukta anahtar akisi: hash(anahtar + tuz + sayac) bloklari.
+sub obf_stream
+{
+my ($salt, $len) = @_;
+my ($out, $i) = ("", 0);
+while (length($out) < $len) {
+	$out .= &obf_hash(&obf_secret().$salt.pack("N", $i));
+	$i++;
+	}
+return substr($out, 0, $len);
+}
+
+sub obf_encrypt
+{
+my ($plain) = @_;
+return $plain if (!defined($plain) || $plain eq '');
+return $plain if (!&obf_digest_kind());
+# Tuz her kayitta yeni: ayni token iki domainde ayni hex'i uretmesin.
+my $salt = '';
+if (open(my $RND, "<", "/dev/urandom")) {
+	binmode($RND);
+	read($RND, $salt, 8);
+	close($RND);
+	}
+if (!defined($salt) || length($salt) != 8) {
+	$salt = '';
+	$salt .= chr(int(rand(256))) for (1..8);
+	}
+my $ct = $plain ^ &obf_stream($salt, length($plain));
+return "v1:".unpack("H*", $salt.$ct);
+}
+
+sub obf_decrypt
+{
+my ($v) = @_;
+return $v if (!defined($v) || $v !~ /^v1:([0-9a-f]+)$/);
+# Onekli ama cozecek modul yok: bos don. Yanlis bir dizeyi token diye
+# kullanip Cloudflare'e gondermekten iyidir.
+return "" if (!&obf_digest_kind());
+my $raw = pack("H*", $1);
+return "" if (length($raw) <= 8);
+my $salt = substr($raw, 0, 8);
+my $ct   = substr($raw, 8);
+return $ct ^ &obf_stream($salt, length($ct));
+}
+
 # get_cf(&domain) -> ayar hash'i (yoksa varsayilanlar)
 sub get_cf
 {
 my ($d) = @_;
 my %cf;
 &read_file(&domain_file($d), \%cf);
+# Disk sifreli, bellek duz: cagiran taraf token'i her zaman kullanilabilir
+# halde goruyor. Eski (oneksiz) kayitlar oldugu gibi geri geliyor.
+$cf{'token'} = &obf_decrypt($cf{'token'}) if (defined($cf{'token'}));
 $cf{'proxy'} = 0 if (!defined($cf{'proxy'}));
 # Otomatik senkron varsayilan ACIK. Anahtar yoksa (eski kayitlar) da acik
 # sayiliyor - davranis degismesin diye.
@@ -59,8 +160,13 @@ my ($d, $cf) = @_;
 my $dir = &domains_dir();
 -d $dir || &make_dir($dir, 0700, 1);
 my $file = &domain_file($d);
+# KOPYA uzerinde calisiyoruz: cagiranin elindeki hash'i sifreli degerle
+# kirletirsek, ayni istekte token'i tekrar kullanan kod bozulur (ornegin
+# cf_zone_id once kaydedip sonra API'ye gidiyor).
+my %out = %$cf;
+$out{'token'} = &obf_encrypt($out{'token'}) if (defined($out{'token'}));
 &lock_file($file);
-&write_file($file, $cf);
+&write_file($file, \%out);
 &unlock_file($file);
 # Token bir sirdir.
 chmod(0600, $file);
