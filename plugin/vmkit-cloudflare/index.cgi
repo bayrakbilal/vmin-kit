@@ -192,7 +192,10 @@ print &ui_buttons_row("compare.cgi", $text{'index_compare'},
 		      $text{'index_compare_desc'},
 		      [ [ "dom", $d->{'id'} ] ], undef, undef, "get");
 if ($cf->{'token'}) {
-	print &ui_buttons_row("sync.cgi", $text{'index_syncnow'},
+	# Adi "_progressive.cgi" ile bitiyor: temanin ciktiyi is ilerledikce
+	# ekrana basmasi buna bagli (bkz. o dosyanin basindaki not).
+	# "get" YOK - senkron bir mutasyon, POST ile gitmeli.
+	print &ui_buttons_row("sync_progressive.cgi", $text{'index_syncnow'},
 			      $text{'index_syncnow_desc'},
 			      [ [ "dom", $d->{'id'} ] ]);
 	}

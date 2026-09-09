@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # Bir domainin Cloudflare ayarlarini kaydet.
-# Yalnizca ayar yazar; senkronu tetiklemez (onu sync.cgi ya da servis yapar).
+# Yalnizca ayar yazar; senkronu tetiklemez (onu sync_progressive.cgi ya da servis yapar).
 use strict;
 use warnings;
 our (%text, %in);
