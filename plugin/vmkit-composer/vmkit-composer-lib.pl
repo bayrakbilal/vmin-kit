@@ -173,7 +173,19 @@ return ($out, 0, $? == 0 ? 1 : 0);
 #   dump-autoload    -> --optimize
 # Bu yuzden esleme komut basina.
 #
-# '--no-scripts' composer'in GENEL secenegi, uc komutta da gecerli.
+# IKI SECENEK VAR, IKISI DE VARSAYILAN ACIK. Composer'in kendi belgesinin
+# uretim icin onerdigi komut bu: 'composer install --no-dev
+# --optimize-autoloader'. --optimize-autoloader icin belge aynen soyle diyor:
+# "recommended especially for production, but can take a bit of time to run so
+# it is currently not done by default".
+#
+# Bilerek EKLENMEYENLER (secenek olarak bile yok, cunku varsayilan uretim
+# akisini sessizce bozarlar):
+#   --classmap-authoritative  "Autoload classes from the classmap only" -
+#     PSR-4 yedegi tamamen kapanir, calisma aninda sinif ureten her sey
+#     (Doctrine proxy'leri, bazi framework onbellekleri) kirilir.
+#   --no-scripts  Laravel'in paket kesfi, Symfony'nin onbellek temizligi gibi
+#     isler post-install betiklerinde; atlanirsa dagitim sessizce yarim kalir.
 sub composer_flag_map
 {
 return (
@@ -183,12 +195,6 @@ return (
   'optimize'  => { 'install'       => '--optimize-autoloader',
 		   'update'        => '--optimize-autoloader',
 		   'dump-autoload' => '--optimize' },
-  'classmap'  => { 'install'       => '--classmap-authoritative',
-		   'update'        => '--classmap-authoritative',
-		   'dump-autoload' => '--classmap-authoritative' },
-  'noscripts' => { 'install'       => '--no-scripts',
-		   'update'        => '--no-scripts',
-		   'dump-autoload' => '--no-scripts' },
   );
 }
 

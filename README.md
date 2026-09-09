@@ -223,6 +223,12 @@ tutabilir).
 - **Paketler** sayfası kurulu paketleri, son sürümlerini ve güncellenebilir
   olanları listeler — yalnızca okur, bir şey değiştirmez.
 
+Komutlar varsayılan olarak `--no-dev --optimize-autoloader` ile çalışır, yani
+Composer'ın üretim için önerdiği biçimde: geliştirme paketleri kurulmaz ve
+otoyükleyici hızlandırılır. Bir projede geliştirme paketlerine ihtiyacınız
+varsa modül ayarlarından kapatabilirsiniz — ayar sunucu geneli, tek bir proje
+için istisna yapılamaz.
+
 Ev dizininin tamamı değil yalnızca web dizini taranır; alt sunucuların dizinleri
 kendi panellerinde görünür.
 
