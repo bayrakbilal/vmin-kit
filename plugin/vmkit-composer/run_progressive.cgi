@@ -52,6 +52,17 @@ $act =~ /^(install|update|dump-autoload)$/ || &error($text{'err_action'});
 
 # <pre> icinde YALNIZCA komutun ham ciktisi: terminalde ne gorunuyorsa o.
 print "<pre style='white-space:pre-wrap; margin-bottom:16px'>";
+
+# ---- GECICI TEST - OLCUM BITINCE KALDIRILACAK ----
+# Composer ciktisini obek obek veriyor, dolayisiyla "tema boyamiyor" ile
+# "composer zaten toplu basiyor" ayirt edilemiyor. Bu blok iki saniye arayla
+# bes satir basiyor: satirlar TEK TEK dusuyorsa tema akitiyor ve sorun
+# composer'in kendi tamponlamasi; hepsi sonda birden geliyorsa tema bu sayfayi
+# hic akitmiyor.
+&run_streaming('for i in 1 2 3 4 5; do echo "test satiri $i"; sleep 2; done',
+	       30, sub { print &html_escape($_[0]), "\n"; });
+# ---- GECICI TEST SONU ----
+
 my ($ok, $out) = &run_composer($d, $p, $act, sub {
 	print &html_escape($_[0]), "\n";
 	});
