@@ -118,9 +118,50 @@ return $p;
 }
 
 # run_composer(&domain, &project, action) -> (basarili?, cikti)
+# run_streaming(komut, saniye, geri-cagirma) -> (cikti, zaman-asimi?, basarili?)
+#
+# Cocugu bir boruda okuyup HER SATIRI once geri cagirmaya veriyor, sonra
+# biriktiriyor: sayfa is ilerledikce dolabiliyor. backquote_with_timeout
+# bunu yapamiyor cunku ancak komut bitince donuyor.
+#
+# Zaman asimi alarm ile: <$fh> engelleyici, alarm okumayi bolup eval'den
+# atliyor. TERM gonderilmezse zaman asimindan sonra da calisan bir komut
+# kalirdi. (vmkit-deploy'da ayni fonksiyonun ikizi var - Webmin modulleri
+# birbirinin kutuphanesine baglanmasin diye bilerek kopyalandi.)
+sub run_streaming
+{
+my ($cmd, $secs, $cb) = @_;
+my ($out, $timed) = ("", 0);
+my $fh;
+my $pid = open($fh, "-|", $cmd);
+return ("$cmd: $!", 0, 0) if (!$pid);
+eval {
+	local $SIG{'ALRM'} = sub { $timed = 1; die "timeout\n"; };
+	alarm($secs);
+	while(my $l = <$fh>) {
+		$out .= $l;
+		$l =~ s/\r?\n$//;
+		&$cb($l);
+		}
+	alarm(0);
+	};
+alarm(0);
+if ($timed) {
+	kill('TERM', $pid);
+	close($fh);
+	return ($out, 1, 0);
+	}
+close($fh);
+return ($out, 0, $? == 0 ? 1 : 0);
+}
+
+# run_composer(&domain, &proje, eylem, [&geri-cagirma]) -> (basarili?, cikti)
+#
+# Geri cagirma verilirse cikti satir satir ona gonderilir ve sayfa is
+# ilerledikce dolar; verilmezse eskisi gibi toplu doner.
 sub run_composer
 {
-my ($d, $p, $action) = @_;
+my ($d, $p, $action, $cb) = @_;
 my $composer = &composer_command();
 return (0, $text{'err_nocomposer'}) if (!$composer);
 
@@ -134,9 +175,18 @@ my $inner = "cd ".quotemeta($p->{'dir'})." && ".
 	    ($p->{'php'} ? quotemeta($p->{'php'})." " : "").
 	    quotemeta($composer)." ".$sub;
 my $cmd = &command_as_user($d->{'user'}, 1, $inner);
-my ($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 900);
-return (0, $text{'err_timeout'}) if ($timed);
-return ($? ? 0 : 1, $out);
+my ($out, $timed, $ok);
+if ($cb) {
+	($out, $timed, $ok) = &run_streaming("$cmd 2>&1", 900, $cb);
+	}
+else {
+	($out, $timed) = &backquote_with_timeout("$cmd 2>&1", 900);
+	$ok = !$timed && !$? ? 1 : 0;
+	}
+# Zaman asiminda ciktinin UZERINE yazmiyoruz: o ana kadar akan satirlar
+# ekranda duruyor, donen ciktida da dursun. Not sona ekleniyor.
+$out .= "\n".$text{'err_timeout'}."\n" if ($timed);
+return ($ok, $out);
 }
 
 # composer_packages(&domain, &proje) -> (\@paket, hata)

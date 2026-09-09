@@ -50,20 +50,23 @@ my @projects = &list_projects($d);
 if (@projects) {
 	my @table;
 	foreach my $p (@projects) {
-		my $u = "run.cgi?dom=$d->{'id'}&dir=".&urlize($p->{'dir'});
-		# Eylemler ui_submit ile, yani birer kucuk form. Sebep GORUNUM:
-		# renk ve ikon kurali (get_button_style) yalnizca ui_submit
-		# yolunda calisiyor - ui_link_button gercek bir <button> uretiyor
-		# ama renksiz ve ikonsuz kaliyor. Denendi.
+		# Eylemler ui_submit ile, yani birer kucuk form. Iki sebep:
+		#
+		# 1) GUVENLIK. Bir baglanti GET demek; onbellek ya da tarayicinin
+		#    onceden getirmesi komutu tiklamadan tetikleyebilir. POST
+		#    dugmesi ancak bilerek basilinca calisir - onay sayfasina bu
+		#    yuzden gerek kalmadi ve kaldirildi.
+		# 2) GORUNUM. Renk ve ikon kurali (get_button_style) yalnizca
+		#    ui_submit yolunda calisiyor; ui_link_button gercek bir
+		#    <button> uretiyor ama renksiz, ikonsuz ve daha kucuk
+		#    kaliyor. Ayni satirdaki dugmeler ayni bilesenden olmali,
+		#    yoksa boylari tutmuyor - packages.cgi bu yuzden yalnizca
+		#    okudugu halde POST ile cagriliyor.
+		#
+		# Renkler dil anahtarinin ADINDAN geliyor:
 		#   act_install -> yesil + paket ikonu
 		#   act_update  -> mavi + yenileme ikonu
 		#   act_dump    -> uygun bir kural yok, duz kaliyor
-		#
-		# Yine de hicbiri bir sey CALISTIRMIYOR: run.cgi 'confirm'
-		# gelmedikce yalnizca onay sayfasini gosteriyor.
-		# Paketler sayfasi da AYNI kalipla: ayni satirdaki dugmeler ayni
-		# bilesenden olmali, yoksa boylari tutmuyor. packages.cgi
-		# yalnizca okuyor, POST ile gelmesi bir sey degistirmiyor.
 		my $btn = sub {
 			my ($cgi, $action, $label) = @_;
 			return &ui_form_start($cgi, "post", undef,
@@ -77,9 +80,12 @@ if (@projects) {
 		push(@table, [
 			"<tt>".&html_escape($p->{'dir'})."</tt>",
 			$p->{'ver'} ? "PHP ".$p->{'ver'} : $text{'php_default'},
-			&$btn("run.cgi", "install", $text{'act_install'}).
-			&$btn("run.cgi", "update", $text{'act_update'}).
-			&$btn("run.cgi", "dump-autoload", $text{'act_dump'}).
+			&$btn("run_progressive.cgi", "install",
+			      $text{'act_install'}).
+			&$btn("run_progressive.cgi", "update",
+			      $text{'act_update'}).
+			&$btn("run_progressive.cgi", "dump-autoload",
+			      $text{'act_dump'}).
 			&$btn("packages.cgi", undef, $text{'act_packages'}),
 			]);
 		}
