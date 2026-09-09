@@ -46,6 +46,16 @@ $dep->{'last_trigger'} = 'panel';
 # bitene kadar bekliyor - tamponsuz baslik ve satir satir okuma tek basina
 # yetmemesinin sebebi buydu.
 print "<pre data-installer style='white-space:pre-wrap; margin-bottom:12px'>";
+
+# ---- GECICI TEST - AKITMA DOGRULANINCA KALDIRILACAK ----
+# Cekme islemi guncelleme yoksa aninda bitiyor, dolayisiyla ciktinin akip
+# akmadigi anlasilmiyor. Bu blok iki saniye arayla bes satir basiyor: satirlar
+# tek tek dusuyorsa akitma calisiyor, onu saniye sonunda hepsi birden
+# geliyorsa calismiyor.
+&run_streaming('for i in 1 2 3 4 5; do echo "test satiri $i"; sleep 2; done',
+	       30, sub { print &html_escape($_[0]), "\n"; });
+# ---- GECICI TEST SONU ----
+
 my ($ok, $out) = &deploy_run($d, $dep, $op, sub {
 	print &html_escape($_[0]), "\n";
 	});
