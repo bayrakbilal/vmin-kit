@@ -55,6 +55,41 @@ done
 # cagirir; bu script dosyalari elle kopyaladigi icin ayni isi biz yapiyoruz.
 # Modul boylece nasil kurulursa kurulsun (buradan ya da .wbm.gz ile) ayni
 # kurulum sonrasi adimlari calistirir.
+# merge_config <modulun-config-dosyasi> <kurulu-config-dosyasi>
+#
+# Webmin'in copyconfig.pl'i ile AYNI davranis: mevcut dosya korunur ama
+# modulun getirdigi YENI anahtarlar varsayilanlariyla eklenir.
+#
+# Eskiden burada yalnizca "dosya yoksa kopyala" vardi. Sonucu suydu: bir
+# surumde yeni bir ayar eklendiginde .wbm.gz ile kurulan sunucularda ayar
+# varsayilaniyla geliyor, bu betikle guncellenen gelistirme sunucusunda ise
+# hic olusmuyordu - ayarlar sayfasi bos gorunuyordu. Gelistirme dongusu
+# gercek kurulumdan farkli davranmamali.
+merge_config(){
+  local src="$1" dst="$2" line k
+  [ -f "$src" ] || return 0
+  if [ ! -f "$dst" ]; then
+    cp "$src" "$dst"
+    chmod 0600 "$dst"
+    return 0
+  fi
+  # Mevcut dosya satir sonu ile bitmiyorsa eklenecek ilk satir son satira
+  # YAPISIR ve iki ayari birden bozar (olculdu: 'scan_depth=9flags='). Elle
+  # duzenlenmis bir dosyada bu gayet mumkun.
+  if [ -s "$dst" ] && [ -n "$(tail -c 1 "$dst")" ]; then
+    printf '\n' >> "$dst"
+  fi
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|'#'*) continue ;; esac
+    k="${line%%=*}"
+    [ "$k" = "$line" ] && continue          # '=' yoksa ayar satiri degil
+    # Satir basina sabitlenmis arama: 'timeout=' anahtari 'x_timeout=' ile
+    # eslesmesin. set_kv ile ayni kalip.
+    awk -v k="$k" 'index($0, k "=") == 1 { found = 1 } END { exit !found }' \
+      "$dst" || printf '%s\n' "$line" >> "$dst"
+  done < "$src"
+}
+
 run_module_hook(){
   local mod="$1" file="$2" func="$3"
   [ -f "$WEBMIN_ROOT/$mod/$file" ] || return 0
@@ -106,12 +141,9 @@ for mod in "${MODULES[@]}"; do
   new_info="$(md5sum < "$dst/module.info")"
   [ "$old_info" = "$new_info" ] || NEED_RESTART=1
 
-  # Modulun kendi yapilandirma dizini; config dosyasi yoksa varsayilani koy.
+  # Modulun kendi yapilandirma dizini ve varsayilan ayarlari.
   install -d -m 0755 "/etc/webmin/$mod"
-  if [ ! -f "/etc/webmin/$mod/config" ] && [ -f "$src/config" ]; then
-    cp "$src/config" "/etc/webmin/$mod/config"
-    chmod 0600 "/etc/webmin/$mod/config"
-  fi
+  merge_config "$src/config" "/etc/webmin/$mod/config"
 
   acl_grant "$mod"
   plugins_add "$mod"
