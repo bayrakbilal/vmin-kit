@@ -1240,14 +1240,31 @@ step_report(){
       }
     ')"
     say ""
-    say "Disariya acik dinleyen portlar"
+    say "Dinleyen portlar (yerel olmayan adreslerde)"
     if [ -n "$portlist" ]; then
       say "$portlist"
     else
       # 'ss' var ve calisti; bos sonuc "okunamadi" degil "hicbiri" demek.
       say "  (yok - yalnizca 127.0.0.1 uzerinde dinleyenler var)"
     fi
-    say "  (guvenlik duvari bu arac tarafindan yonetilmiyor)"
+    # GUVENLIK DUVARININ DURUMU. Eskiden yalnizca "bu arac yonetmiyor"
+    # yaziyordu ve bu "guvenlik duvari yok" gibi okunuyordu - oysa Virtualmin
+    # kurulumda nftables ve fail2ban yapilandiriyor (kurulum kaydinda
+    # "Configuring Nftables / Fail2ban" adimlari goruluyor).
+    #
+    # Servisin 'active' olup olmadigina BAKMIYORUZ: webmin-nftables oneshot,
+    # kurallari uygulayip cikiyor, yani 'inactive' gorunmesi normal. Gercek
+    # olcut yuklu kural seti.
+    local fw
+    if ! command -v nft >/dev/null 2>&1; then
+      fw="nft komutu yok"
+    elif nft list ruleset 2>/dev/null | grep -q '[^[:space:]]'; then
+      fw="nftables kural seti yuklu"
+    else
+      fw="nftables kural seti BOS"
+    fi
+    say "  (dinleyen soket != erisilebilir; erisim guvenlik duvarina bagli)"
+    say "  (vmin-kit guvenlik duvari yonetmiyor - $fw)"
   fi
 
   # NOTLAR: yalnizca ILERIDE YAPILACAK, kendiliginden olmayacak seyler.
