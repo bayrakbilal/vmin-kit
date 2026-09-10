@@ -1,0 +1,206 @@
+#!/usr/bin/env bash
+# doctor.sh - vmin-kit'in Virtualmin'e olan BAGIMLILIKLARINI dogrular.
+#
+#   sudo ./doctor.sh
+#
+# NEDEN VAR?
+# Bu araç Virtualmin'in yayimlanmis bir API'sini degil, IC fonksiyonlarini,
+# CLI komutlarini ve config anahtarlarini kullaniyor. Bunlarin hicbiri
+# "kararli arayuz" sozu vermiyor; bir Virtualmin yukseltmesi birini yeniden
+# adlandirirsa eklenti sayfasi 500 verir ya da - daha kotusu - install adimi
+# hicbir sey yapmadan sessizce basarili olur.
+#
+# Bu yuzden kontrol KURULUM ANINDA degil, ISTENDIGINDE calisiyor: risk
+# yukseltmeden SONRA doguyor, kurulumda her sey zaten calisiyordu.
+#
+# LISTELER ELLE TUTULMUYOR. Elle yazilmis bir liste alti ay icinde curur:
+# yeni bir fonksiyon kullaniriz, doctor bilmez ve bos yere "her sey yolunda"
+# der. Onun yerine bagimliliklar her calistirmada KAYNAK KODDAN cikariliyor.
+#
+# Cikis kodu: 0 = her sey yerinde, 1 = eksik var.
+set -euo pipefail
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "$ROOT_DIR/lib/common.sh"
+require_root
+
+WEBMIN_ROOT="$(webmin_root)"
+VS_DIR="$WEBMIN_ROOT/virtual-server"
+[ -d "$VS_DIR" ] || { err "Virtualmin bulunamadi: $VS_DIR"; exit 1; }
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+MISSING=0
+
+# ---------------------------------------------------------------------------
+# 1) PERL SEMBOLLERI
+#
+# Eklentiler Virtualmin'e 'virtual_server::' ve 'bind8::' onekleriyle
+# eristigi icin cikarmasi kolay. install.sh'in gomulu perl bloklari ise
+# oneksiz cagiriyor ('&check_dkim()'); bash'te '&isim(' diye bir sozdizim
+# olmadigindan o kaliba uyan her satir gomulu perl demek.
+# ---------------------------------------------------------------------------
+log "Bagimliliklar kaynaktan cikariliyor..."
+
+# sigil + paket + isim
+grep -rhoE '[&$@%](virtual_server|bind8)::[a-zA-Z_0-9]+' "$ROOT_DIR/plugin" \
+  | sed -E 's/^(.)([a-z8_]+)::(.*)$/\1\t\2\t\3/' \
+  | sort -u > "$TMP/symbols"
+
+# install tarafi: oneksiz gomulu perl cagrilari. Bunlarin bir kismi Webmin
+# cekirdeginden (lock_file gibi), bir kismi Virtualmin'den; ikisi de ayni
+# yerde aranabildigi icin ayirmiyoruz.
+grep -rhoE '&[a-z_][a-z_0-9]*\(' "$ROOT_DIR/lib" "$ROOT_DIR/install.sh" \
+  | sed 's/($//; s/(//; s/^&//' \
+  | sort -u | sed 's/^/\&\tmain\t/' >> "$TMP/symbols"
+
+sort -u -o "$TMP/symbols" "$TMP/symbols"
+SYM_COUNT="$(wc -l < "$TMP/symbols")"
+
+# ---------------------------------------------------------------------------
+# 2) CLI KOMUTLARI
+#
+# Virtualmin'in 'virtualmin <komut>' dagiticisi komutu modul dizinindeki
+# '<komut>.pl' dosyasina esliyor, yani dosyanin varligi dogru kontrol.
+# ---------------------------------------------------------------------------
+grep -rhoE '\bvirtualmin [a-z][a-z-]+' "$ROOT_DIR/lib" "$ROOT_DIR"/*.sh \
+  | sed 's/^virtualmin //' | sort -u > "$TMP/commands"
+CMD_COUNT="$(wc -l < "$TMP/commands")"
+
+# ---------------------------------------------------------------------------
+# 3) CONFIG ANAHTARLARI
+#
+# Dort yazma kalibimiz var; dordunu de tariyoruz. Burada elle tutulan sey
+# anahtar listesi DEGIL, kaliplar - yeni bir yazma kalibi eklenirse buraya bir
+# satir eklemek gerekir.
+#
+# ANAHTARI HANGI DOSYAYA YAZDIGIMIZA BAKMIYORUZ. Bir kismi Virtualmin'in
+# config'ine, bir kismi miniserv.conf'a gidiyor ('redirect_port', 'referers')
+# ve bunu bash kaynagindan guvenilir sekilde ayirmak kirilgan oluyor - denendi,
+# miniserv anahtarlarini Virtualmin kaynaginda arayip bos yere alarm verdi.
+# Onun yerine dokundugumuz TUM bilesenlerde ariyoruz; sorumuz zaten "bu ad
+# hala taniniyor mu". Silinmis bir anahtari yazmak hata vermez, sessizce
+# hicbir ise yaramaz - asil yakalamak istedigimiz sey bu.
+#
+# Uc karakterden kisa adlar eleniyor: sed ifadelerinden gelen 's' gibi sahte
+# eslesmeler oluyor ve bizim anahtarlarimizin hicbiri o kadar kisa degil.
+# ---------------------------------------------------------------------------
+# Her kalip AYRI islenip anahtar adina indirgeniyor. Tek bir buyuk sed
+# ifadesiyle denendi ve kirilgan cikti (ERE'de '{' ozel karakter).
+{
+  # set_kv "$cfg" <anahtar> ...   /   set_kv "$conf" <anahtar> ...
+  grep -rhoE 'set_kv "\$[a-z]+" [a-z_][a-z_0-9]*' "$ROOT_DIR/lib" \
+    | awk '{ print $NF }' || true
+  # for row in "<anahtar>|deger|aciklama"
+  grep -rhoE '"[a-z_][a-z_0-9]*\|' "$ROOT_DIR/lib" | tr -d '"|' || true
+  # sed 's/^<anahtar>=//' ve awk '/^<anahtar>=/' - ikisi de '^<ad>=' iceriyor
+  grep -rhoE '\^[a-z_][a-z_0-9]*=' "$ROOT_DIR/lib" | tr -d '^=' || true
+  # gomulu perl: $config{<anahtar>} ya da $config{'<anahtar>'}
+  grep -rhoE '\$config\{[^}]*\}' "$ROOT_DIR/lib" \
+    | sed "s/.*[{]//; s/[}]//; s/'//g" || true
+} | grep -E '^[a-z_][a-z_0-9]{2,}$' | sort -u > "$TMP/keys"
+KEY_COUNT="$(wc -l < "$TMP/keys")"
+
+log "Bulundu: $SYM_COUNT perl sembolu, $CMD_COUNT CLI komutu, $KEY_COUNT config anahtari"
+echo
+
+# ---------------------------------------------------------------------------
+# 4) PERL SEMBOLLERINI DOGRULA
+#
+# virtual-server-lib.pl dogrudan yukleniyor, yani fonksiyonlar 'main::'
+# icinde olusuyor. Eklentiler bunlari foreign_require ile 'virtual_server::'
+# altinda goruyor ama ISIM KUMESI ayni - "bu fonksiyon hala var mi" sorusunun
+# cevabi degismiyor.
+#
+# Fonksiyon olmayanlar (%text, @plugins gibi) icin sembol tablosuna bakiyoruz:
+# bir dizi mesru olarak bos olabilecegi icin 'defined' dogru olcut degil.
+# ---------------------------------------------------------------------------
+log "Perl sembolleri dogrulaniyor..."
+# Program AYRI DOSYAYA yaziliyor: 'perl - <liste <<PERL' calismaz, cunku
+# 'perl -' programi da stdin'den okur ve iki akis carpisir - liste hic
+# okunmazdi.
+cat > "$TMP/check.pl" <<'PERL'
+my ($root) = @ARGV;
+$ENV{'WEBMIN_CONFIG'} ||= "/etc/webmin";
+$ENV{'WEBMIN_VAR'}    ||= "/var/webmin";
+push(@INC, $root);
+$main::no_acl_check++;
+chdir("$root/virtual-server");
+$0 = "$root/virtual-server/doctor.pl";
+require "./virtual-server-lib.pl";
+eval { &foreign_require("bind8"); };
+
+while(my $l = <STDIN>) {
+	chomp($l);
+	my ($sigil, $pkg, $name) = split(/\t/, $l);
+	next if (!$name);
+	# Eklentideki 'virtual_server::' ile buradaki 'main::' ayni kume.
+	my $p = $pkg eq 'bind8' ? 'bind8' : 'main';
+	my $ok;
+	if ($sigil eq '&') {
+		no strict 'refs';
+		$ok = defined(&{"${p}::${name}"}) ? 1 : 0;
+		}
+	else {
+		no strict 'refs';
+		$ok = exists ${"${p}::"}{$name} ? 1 : 0;
+		}
+	print(($ok ? "OK" : "MISSING"), "\t", $sigil, $pkg, "::", $name, "\n");
+	}
+PERL
+perl "$TMP/check.pl" "$WEBMIN_ROOT" < "$TMP/symbols" > "$TMP/symres"
+
+while IFS=$'\t' read -r state sym; do
+  if [ "$state" = "MISSING" ]; then err "eksik: $sym"; MISSING=$((MISSING + 1)); fi
+done < "$TMP/symres"
+GOOD="$(grep -c '^OK' "$TMP/symres" || true)"
+ok "$GOOD sembol yerinde"
+echo
+
+# ---------------------------------------------------------------------------
+# 5) CLI KOMUTLARINI DOGRULA
+# ---------------------------------------------------------------------------
+log "CLI komutlari dogrulaniyor..."
+CMD_OK=0
+while read -r cmd; do
+  [ -n "$cmd" ] || continue
+  if [ -r "$VS_DIR/$cmd.pl" ]; then
+    CMD_OK=$((CMD_OK + 1))
+  else
+    err "eksik komut: virtualmin $cmd  ($VS_DIR/$cmd.pl yok)"
+    MISSING=$((MISSING + 1))
+  fi
+done < "$TMP/commands"
+ok "$CMD_OK CLI komutu yerinde"
+echo
+
+# ---------------------------------------------------------------------------
+# 6) CONFIG ANAHTARLARINI DOGRULA
+# ---------------------------------------------------------------------------
+log "Config anahtarlari dogrulaniyor..."
+KEY_OK=0
+# Dokundugumuz bilesenler: Virtualmin, miniserv'in kendisi, Webmin modulu ve
+# BIND. Anahtarin hangisine ait oldugunu bilmemize gerek yok.
+KEY_SEARCH=( "$VS_DIR"/*.pl "$WEBMIN_ROOT"/*.pl )
+[ -d "$WEBMIN_ROOT/webmin" ] && KEY_SEARCH+=( "$WEBMIN_ROOT"/webmin/*.pl )
+[ -d "$WEBMIN_ROOT/bind8" ]  && KEY_SEARCH+=( "$WEBMIN_ROOT"/bind8/*.pl )
+while read -r key; do
+  [ -n "$key" ] || continue
+  if grep -qE "\b$key\b" "${KEY_SEARCH[@]}" 2>/dev/null; then
+    KEY_OK=$((KEY_OK + 1))
+  else
+    warn "anahtar Virtualmin kaynaginda gecmiyor: $key"
+    MISSING=$((MISSING + 1))
+  fi
+done < "$TMP/keys"
+ok "$KEY_OK config anahtari yerinde"
+echo
+
+# ---------------------------------------------------------------------------
+if [ "$MISSING" -eq 0 ]; then
+  ok "Her sey yerinde. Virtualmin surumu: $(cat "$VS_DIR/module.info" 2>/dev/null | sed -n 's/^version=//p')"
+  exit 0
+fi
+err "$MISSING bagimlilik dogrulanamadi."
+err "Virtualmin yukseltmesinden sonra ilgili kodun elden gecirilmesi gerekiyor."
+exit 1
