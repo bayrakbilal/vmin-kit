@@ -626,6 +626,49 @@ step_webmail(){
     } >> "$cfg"
     ok "Roundcube virtuser_file eklentisi etkinlestirildi."
   fi
+
+  # --- des_key: oturum sifreleme anahtari ---
+  #
+  # Roundcube kullanicinin IMAP PAROLASINI oturum verisinde bu anahtarla
+  # sifreliyor. Varsayilani sabit ve herkesin bildigi bir dize:
+  #   $config['des_key'] = 'rcmail-!24ByteDESkey*Str';   (defaults.inc.php)
+  # Bilinen bir anahtar, oturum verisine erisebilen birinin posta parolasini
+  # cozebilmesi demek.
+  #
+  # Roundcube'un kendi web kurulum sihirbazi normalde rastgele bir anahtar
+  # uretir; Virtualmin sihirbazi CALISTIRMIYOR, tarball'i acip ornek
+  # yapilandirmayi satir satir duzenliyor - ve scripts/roundcube.pl'de
+  # des_key HIC GECMIYOR (kaynaktan dogrulandi). Yani anahtar varsayilanda
+  # kaliyor.
+  #
+  # Uzunluk: varsayilan cipher_method DES-EDE3-CBC ve belgesi "a required key
+  # length is 24 characters" diyor. Yalnizca harf/rakam uretiyoruz; tirnak ya
+  # da ters bolu gibi PHP dizesini bozacak karakter hic olusmasin.
+  # Once des_key gecen satirlari sec, yorumlari at, sondaki atamanin degerini
+  # oku - PHP de son atamayi kullanir. Tek bir sed ifadesiyle denendi ve cift
+  # tirnak icindeki '\$' kacisi yuzunden hicbir zaman eslesmiyordu.
+  local cur_key
+  cur_key="$(grep 'des_key' "$cfg" | grep -v '^[[:space:]]*//' |
+             sed -n "s/.*= *'\(.*\)';.*/\1/p" | tail -1)"
+  if [ -n "$cur_key" ] && [ "$cur_key" != "rcmail-!24ByteDESkey*Str" ]; then
+    # Birileri (ya da onceki calismamiz) zaten koymus; dokunmuyoruz. Her
+    # calistirmada yeni anahtar yazmak butun oturumlari dusururdu.
+    ok "Roundcube oturum anahtari zaten ozel."
+  else
+    local newkey
+    newkey="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 24)"
+    if [ "${#newkey}" -ne 24 ]; then
+      warn "Rastgele anahtar uretilemedi; Roundcube des_key varsayilanda kaldi."
+    else
+      {
+        echo
+        echo "// vmin-kit: oturumdaki IMAP parolasini sifreleyen anahtar."
+        echo "// Roundcube'un varsayilani sabit ve herkesce bilinir."
+        echo "\$config['des_key'] = '$newkey';"
+      } >> "$cfg"
+      ok "Roundcube oturum anahtari rastgele bir degerle degistirildi."
+    fi
+  fi
 }
 
 # docker.<domain> alt sunucusu + Portainer'a proxy.
