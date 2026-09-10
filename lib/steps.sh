@@ -502,12 +502,13 @@ step_portainer_token(){
   docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx portainer || return 0
   local site="${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}"
 
-  say ""
-  if portainer_configured; then
-    ok "Portainer : https://${site}/   (yonetici hesabi zaten olusturulmus)"
-    return 0
-  fi
+  # Yonetici hesabi zaten varsa SESSIZ cikiyoruz. Bu adimin tek isi yapilacak
+  # bir is kaldiginda haber vermek; "zaten kurulmus" bilgisi ozette
+  # (Bilesenler) ve kurulum kaydinda zaten var, kapanista tekrar etmesi
+  # gereksiz gurultu.
+  portainer_configured && return 0
 
+  say ""
   log "Portainer icin taze setup_token aliniyor (yeniden baslatiliyor)..."
   local tok; tok="$(portainer_restart_for_token || true)"
   say ""
@@ -1044,15 +1045,25 @@ step_plugins(){
 #
 # Ekrana ve kurulum kaydina yaziliyor, ayri bir .txt dosyasi yok.
 step_report(){
-  local ip pg dk pt dfeat dplug dinfo cmp
+  local ip dfeat dplug dinfo cmp
 
   ip="$(detect_ip)"
-  if is_truthy "${POSTGRES:-1}"; then pg="PostgreSQL kuruldu"; else pg="PostgreSQL atlandi"; fi
-  if command -v docker >/dev/null 2>&1; then dk="Docker var"; else dk="Docker yok"; fi
-  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx portainer; then
-    pt="Portainer calisiyor"
-  else
-    pt="Portainer yok"
+
+  # BILESENLER: yalnizca VAR OLANLAR yaziliyor. Eskiden her biri icin
+  # "kuruldu / var / calisiyor" ya da "yok / atlandi" yazan bir satir vardi;
+  # olmayan bir seyi saymak ozeti uzatmaktan baska ise yaramiyor. Durumu
+  # kelimeyle anlatmak da gereksiz: listede varsa vardir.
+  local -a comps=()
+  command -v psql >/dev/null 2>&1 && comps+=("PostgreSQL")
+  command -v docker >/dev/null 2>&1 && comps+=("Docker")
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -qx portainer &&
+    comps+=("Portainer")
+  if command -v composer >/dev/null 2>&1; then
+    # Composer'i dagitim paketinden kuruyoruz: kendini guncelleyemez. Yeni
+    # cerceveler daha yeni bir composer isterse cevap burada gorunur.
+    cmp="$(composer --version --no-interaction 2>/dev/null |
+           head -1 | awk '{print $3}')"
+    comps+=("Composer ${cmp:-}")
   fi
 
   # Domain bilgisi TEK cagrida aliniyor; iki alan bu ciktidan ayikleniyor
@@ -1070,17 +1081,27 @@ step_report(){
   say "Arac surumu  : $(vminkit_version)"
   say "Ana domain   : $MAIN_DOMAIN"
   say "Hostname     : $HOSTNAME_FQDN  (${ip:-IP bilinmiyor})"
-  say "DNS          : ${DNS_MODE:-bilinmiyor} -> ${AUTH_NS:-bilinmiyor}"
+  # Mod ETIKETIN ICINDE: "DNS (harici)" / "DNS (bind)". Degeri satirin
+  # sagina yazmak yerine boyle daha kisa ve sutun hizasi bozulmuyor -
+  # etiketler 12 karaktere yaslaniyor.
+  local dnslabel
+  if [ -n "${DNS_MODE:-}" ] && [ "$DNS_MODE" != bilinmiyor ]; then
+    dnslabel="DNS ($DNS_MODE)"
+  else
+    dnslabel="DNS"
+  fi
+  say "$(printf '%-12s : %s' "$dnslabel" "${AUTH_NS:-bilinmiyor}")"
   say "               zone sablonundaki cift: ${NS1:-} / ${NS2:-}"
   if [ -n "$dfeat" ]; then say "Ozellikler   : $dfeat"; fi
   if [ -n "$dplug" ]; then say "Eklentiler   : $dplug"; fi
-  say "Bilesenler   : $pg | $dk | $pt"
-  if command -v composer >/dev/null 2>&1; then
-    # Composer'i dagitim paketinden kuruyoruz: kendini guncelleyemez. Yeni
-    # cerceveler daha yeni bir composer isterse cevap burada gorunur.
-    cmp="$(composer --version --no-interaction 2>/dev/null |
-           head -1 | awk '{print $3}')"
-    say "               Composer ${cmp:-kurulu}"
+  # Elle birlestiriliyor: 'IFS=" | "' ile "${comps[*]}" ISE YARAMAZ, bash
+  # IFS'in yalnizca ILK karakterini ayirici olarak kullanir (yani bosluk).
+  if [ ${#comps[@]} -gt 0 ]; then
+    local joined="" c
+    for c in "${comps[@]}"; do
+      if [ -z "$joined" ]; then joined="$c"; else joined="$joined | $c"; fi
+    done
+    say "Bilesenler   : $joined"
   fi
 
   if [ ${#VMINKIT_FAILED[@]} -gt 0 ]; then
@@ -1164,10 +1185,11 @@ step_report(){
       say "  - DMARC 'p=none' ile basliyor; birkac hafta sonra quarantine'e cekin."
       ;;
   esac
+  # Harici DNS icin ayrica bir hatirlatma YOK: Cloudflare senkron eklentisi
+  # tam da bu is icin var, yani "A kaydini saglayicida da ac" demek hem
+  # gereksiz hem de kendi aracimizin yaptigi isi bilmiyormus gibi duruyor.
   if [ "${DNS_MODE:-}" = bind ]; then
     say "  - Registrar'da ${NS1:-ns1} / ${NS2:-ns2} icin glue kaydi: ${ip:-<sunucu-ip>}"
-  else
-    say "  - DNS harici: yeni alt alan eklerken A kaydini saglayicida da acin."
   fi
   say "  - Ayrinti ve sorun giderme: README.md"
   say ""
