@@ -1154,8 +1154,16 @@ step_report(){
   if command -v composer >/dev/null 2>&1; then
     # Composer'i dagitim paketinden kuruyoruz: kendini guncelleyemez. Yeni
     # cerceveler daha yeni bir composer isterse cevap burada gorunur.
+    #
+    # SABIT ALAN NUMARASI KULLANILMIYOR: eskiden $3 aliniyordu ve Ubuntu
+    # 22.04'te ozette surum yerine "2022-02-04" yazdi - o satirda alan sirasi
+    # beklenenden bir kaymis. Surum numarasina benzeyen ILK alan aliniyor.
+    #
+    # awk erken 'exit' etmiyor: girdiyi bitirmeden kapatsaydi composer
+    # SIGPIPE alir, 'pipefail' altinda atama basarisiz olurdu.
     cmp="$(composer --version --no-interaction 2>/dev/null |
-           head -1 | awk '{print $3}')"
+           awk 'NR==1{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+/){v=$i; break}}
+                END{print v}')"
     comps+=("Composer ${cmp:-}")
   fi
 
