@@ -45,11 +45,12 @@ if [ -r /etc/os-release ]; then . /etc/os-release; OS_ID="${ID:-}"; OS_VER="${VE
 #
 # CentOS Stream, Fedora, Oracle, Amazon Linux ve LTS olmayan Ubuntu surumleri
 # Virtualmin'in kendi siniflandirmasinda "unstable" - onlar da disarida.
+#
+# TEK LISTE: "destekliyoruz" demek "test ettik" demek. Bir sistem once test
+# edilir, sonra buraya eklenir - o yuzden "destekleniyor ama dogrulanmadi"
+# diye ikinci bir listeye gerek yok.
 OS_KEY="${OS_ID}-${OS_VER}"
 OS_SUPPORTED="debian-12 debian-13 ubuntu-22.04 ubuntu-24.04"
-# Uzerinde gercekten temiz kurulum yapilmis olanlar. Yeni bir sistem
-# dogrulandikca buraya eklenir; gerisi calisir ama uyari yazar.
-OS_VERIFIED="debian-12"
 
 if ! printf '%s\n' $OS_SUPPORTED | grep -qxF "$OS_KEY"; then
   if is_truthy "${ALLOW_ANY_OS:-0}"; then
@@ -60,8 +61,6 @@ if ! printf '%s\n' $OS_SUPPORTED | grep -qxF "$OS_KEY"; then
     err "Yine de denemek icin: ALLOW_ANY_OS=1 ./install.sh"
     exit 1
   fi
-elif ! printf '%s\n' $OS_VERIFIED | grep -qxF "$OS_KEY"; then
-  warn "$OS_ID $OS_VER: Virtualmin destekliyor ama bu arac uzerinde henuz temiz kurulum yapilmadi."
 fi
 
 # ---- 1) sistem durumu ----
