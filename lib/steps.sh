@@ -1140,7 +1140,12 @@ step_report(){
       {
         addr = $4
         # Yalnizca yerel dinleyenler bizi ilgilendirmiyor.
-        if (addr ~ /^127\.0\.0\.1:/ || addr ~ /^\[::1\]:/) next
+        #
+        # TUM 127.0.0.0/8 eleniyor, yalnizca 127.0.0.1 degil: systemd-resolved
+        # 127.0.0.53 uzerinde dinliyor ve dar suzgec onu "disariya acik"
+        # gosteriyordu (temiz kurulumda "53 systemd-resolve" diye cikti).
+        # Yanlis alarm, listenin tum degerini dusuruyor.
+        if (addr ~ /^127\./ || addr ~ /^\[::1\]:/) next
         n = split(addr, a, ":")
         port = a[n]
         # users:(("ad",pid=...  -> ad. Onek 9 karakter, kapanis tirnagi 1.
