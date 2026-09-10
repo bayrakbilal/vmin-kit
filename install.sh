@@ -322,18 +322,13 @@ set -e
 # altinda kaliyor ve ekranin sonu kapanis gibi gorunmuyordu.
 if is_truthy "$DOCKER"; then step_portainer_token; fi
 
+# Adresler ozet blogunda toplu halde duruyor; burada TEKRAR EDILMIYOR.
+# Kapanis yalnizca "bitti mi" ve "ayrintili cikti nerede" sorularina cevap.
 say ""
 if [ ${#VMINKIT_FAILED[@]} -gt 0 ]; then
   warn "Tamamlandi, ancak su adimlar basarisiz oldu: ${VMINKIT_FAILED[*]}"
-  warn "Sebebi yukaridaki ciktida ve kurulum kaydinda. Duzeltip ./install.sh'i"
-  warn "tekrar calistirabilirsiniz: tamamlanmis adimlar atlanir."
+  warn "Duzeltip ./install.sh'i tekrar calistirin; tamamlanmis adimlar atlanir."
 else
   ok "Tamamlandi."
 fi
-if is_truthy "$PANEL_PROXY"; then
-  log "Panel : https://${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}/"
-else
-  log "Panel : https://${HOSTNAME_FQDN}:10000"
-fi
-log "Site  : https://${MAIN_DOMAIN}"
-log "Kayit : $VMINKIT_LOGFILE"
+log "Kurulum kaydi: $VMINKIT_LOGFILE"

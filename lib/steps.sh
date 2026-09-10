@@ -1034,110 +1034,85 @@ step_plugins(){
   fi
 }
 
-# Kurulum sonrasi hafiza: ne yapildi, sifre nerede, ikinci sunucu icin config.env.
+# Kurulum ozeti: BU SUNUCU NE, adresleri neler, disariya ne acik.
+#
+# DURUM EKRANI, KILAVUZ DEGIL. Eskiden burada "vekil bozulursa sunu yap",
+# "kendi posta kutunuzu soyle acin", "DMARC'i su menuden sikin" gibi uzun
+# anlatimlar vardi ve elli satirin yarisi ogut oluyordu. Hepsi README'de
+# zaten var (tek tek kontrol edildi); burada yalnizca OLGU duruyor, bir de
+# en fazla birkac satirlik hatirlatma.
+#
+# Ekrana ve kurulum kaydina yaziliyor, ayri bir .txt dosyasi yok.
 step_report(){
   local ip pg dk pt dfeat dplug dinfo cmp
-  ip="$(detect_ip)"
-  if is_truthy "${POSTGRES:-1}"; then pg=kuruldu; else pg=atlandi; fi
-  if command -v docker >/dev/null 2>&1; then dk=var; else dk=yok; fi
-  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx portainer; then pt=calisiyor; else pt=yok; fi
-  # Domain bilgisi TEK cagrida aliniyor; asagida iki alan bu ciktidan
-  # ayikleniyor (eskiden ayni komut dort kez calisiyordu).
-  dinfo="$(virtualmin list-domains --domain "$MAIN_DOMAIN" --multiline 2>/dev/null)"
 
-  # RAPOR EKRANA VE LOGA yaziliyor, ayri bir .txt dosyasina DEGIL.
-  #
-  # Eskiden yalnizca vmin-kit-rapor.txt'ye giderdi ve kurulum bitince ekranda
-  # gorunmezdi - yani ozeti gormek icin gidip dosyayi acmak gerekiyordu ve
-  # pratikte hic acilmiyordu. Oysa portlar, adresler ve yapilacaklar tam da
-  # kurulum biter bitmez bakilacak seyler. Artik 'say' ile hem ekranda hem
-  # log dosyasinda.
-  say ""
-  say "vmin-kit kurulum raporu - $(date '+%Y-%m-%d %H:%M:%S %z')"
-  say "======================================================="
-  say "Arac surumu  : $(vminkit_version)"
-  # Kayit yolu burada TEKRAR EDILMIYOR: kurulumun basinda bir kez, kapanista
-  # bir kez yaziliyor. Ucuncu kez yazmak raporu gurultuye bogar - ustelik bu
-  # metin zaten o kaydin icinde duruyor.
-  say "Ana domain   : $MAIN_DOMAIN"
-  say "Hostname     : $HOSTNAME_FQDN"
-  say "Sunucu IP    : ${ip:-bilinmiyor}"
-  say "DNS modu     : ${DNS_MODE:-bilinmiyor}"
-  say "Sunucu NS    : ${NS1:-} / ${NS2:-}   (zone sablonunda kullanilan cift)"
-  say "Otoriter NS  : ${AUTH_NS:-bilinmiyor}   (domainin gercekte delege edildigi yer)"
-  say "PostgreSQL   : $pg"
-  say "Docker       : $dk"
-  say "Portainer    : $pt"
-  if command -v composer >/dev/null 2>&1; then
-    cmp="$(composer --version --no-interaction 2>/dev/null | head -1)"
-    # Composer'i dagitim paketinden kuruyoruz: kendini guncelleyemez.
-    # Yeni cerceveler daha yeni bir composer isterse cevap burada gorunur.
-    say "Composer     : ${cmp:-kurulu}"
-  fi
-  say ""
-  if [ ${#VMINKIT_FAILED[@]} -gt 0 ]; then
-    say "BASARISIZ ADIMLAR: ${VMINKIT_FAILED[*]}"
-    say "  Sebepleri yukarida ve kurulum kaydinda. Duzeltip ./install.sh'i"
-    say "  tekrar calistirin; tamamlanmis adimlar atlanir."
-    say ""
-  fi
-  if [ "$(awk -F= '/^bind=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null)" = "127.0.0.1" ]; then
-    say "Panel        : https://${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}/"
-    say "               (10000 portu disariya KAPALI, yalnizca 127.0.0.1)"
-    say "               Vekil bozulursa: SSH ile /etc/webmin/miniserv.conf"
-    say "               icindeki bind= satirini silip systemctl restart webmin"
+  ip="$(detect_ip)"
+  if is_truthy "${POSTGRES:-1}"; then pg="PostgreSQL kuruldu"; else pg="PostgreSQL atlandi"; fi
+  if command -v docker >/dev/null 2>&1; then dk="Docker var"; else dk="Docker yok"; fi
+  if docker ps --format '{{.Names}}' 2>/dev/null | grep -qx portainer; then
+    pt="Portainer calisiyor"
   else
-    say "Panel        : https://${HOSTNAME_FQDN}:10000"
+    pt="Portainer yok"
   fi
-  if is_truthy "${DOCKER:-0}"; then
-    say "Portainer    : https://${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}/"
-    say "               Ilk giriste setup_token istenir. Token kisa omurludur;"
-    say "               suresi dolduysa: sudo ./configure-docker.sh"
-  fi
-  say ""
-  say "Domain sahibi ($MAIN_DOMAIN) sifresi rastgele uretildi ve saklanmadi."
-  say "Webmin girisi ya da FTP gerekirse panelden yeni bir sifre belirleyin:"
-  say "  Virtualmin -> Edit Virtual Server -> Password"
-  say ""
-    # Hangi ozelliklerin acildigini Virtualmin'in kendisinden okuyoruz:
-    # domain --default-features ile olusturuldugu icin liste sunucunun
-    # yapilandirmasindan geliyor, varsayimda bulunmuyoruz.
+
+  # Domain bilgisi TEK cagrida aliniyor; iki alan bu ciktidan ayikleniyor
+  # (eskiden ayni komut dort kez calisiyordu).
+  dinfo="$(virtualmin list-domains --domain "$MAIN_DOMAIN" --multiline 2>/dev/null)"
+  # Hangi ozelliklerin acildigini Virtualmin'in kendisinden okuyoruz: domain
+  # --default-features ile olusturuldugu icin liste sunucunun kendi
+  # yapilandirmasindan geliyor, varsayimda bulunmuyoruz.
   dfeat="$(printf '%s\n' "$dinfo" | awk -F": " '/^[[:space:]]*Features:/{print $2; exit}')"
   dplug="$(printf '%s\n' "$dinfo" | awk -F": " '/^[[:space:]]*Plugins:/{print $2; exit}')"
-  say "Ana domain ozellikleri : ${dfeat:-bilinmiyor}"
-  if [ -n "$dplug" ]; then
-    say "Ana domain eklentileri : $dplug"
-  fi
-  case " $dfeat " in
-    *" mail "*)
-      say ""
-      say "Posta acik. Domain sahibi kullanici ayni zamanda bir posta kutusudur;"
-      say "rol adresleri (postmaster, abuse, hostmaster, webmaster) oraya gelir."
-      say "Sifresi saklanmadi - okumak icin once bir sifre belirleyin:"
-      say "  Virtualmin -> Edit Virtual Server -> Password"
-      say ""
-      say "Kendi adreslerinizi ayri kutular olarak acin (Edit Users -> Add a user);"
-      say "onlar webmail'e tam e-posta adresiyle giris yapar."
-      say ""
-      say "DMARC politikasi 'p=none' ile basliyor: kayit yayinlanir ama hicbir"
-      say "posta engellenmez. Birkac hafta sonra raporlara bakip SPF ve DKIM'in"
-      say "dogru calistigini gorunce panelden sikin:"
-      say "  Email Settings -> DMARC Records -> Policy = quarantine"
-      ;;
-  esac
+
   say ""
-    # Disariya acik dinleyen portlar. Guvenlik duvarini bu arac yonetmiyor;
-    # en azindan sonucun ne oldugu gorunsun - 10000/20000 burada gorunuyorsa
-    # kilitleme adimi calismamis demektir.
+  say "=========== vmin-kit kurulum ozeti ==========="
+  say "Tarih        : $(date '+%Y-%m-%d %H:%M:%S %z')"
+  say "Arac surumu  : $(vminkit_version)"
+  say "Ana domain   : $MAIN_DOMAIN"
+  say "Hostname     : $HOSTNAME_FQDN  (${ip:-IP bilinmiyor})"
+  say "DNS          : ${DNS_MODE:-bilinmiyor} -> ${AUTH_NS:-bilinmiyor}"
+  say "               zone sablonundaki cift: ${NS1:-} / ${NS2:-}"
+  if [ -n "$dfeat" ]; then say "Ozellikler   : $dfeat"; fi
+  if [ -n "$dplug" ]; then say "Eklentiler   : $dplug"; fi
+  say "Bilesenler   : $pg | $dk | $pt"
+  if command -v composer >/dev/null 2>&1; then
+    # Composer'i dagitim paketinden kuruyoruz: kendini guncelleyemez. Yeni
+    # cerceveler daha yeni bir composer isterse cevap burada gorunur.
+    cmp="$(composer --version --no-interaction 2>/dev/null |
+           head -1 | awk '{print $3}')"
+    say "               Composer ${cmp:-kurulu}"
+  fi
+
+  if [ ${#VMINKIT_FAILED[@]} -gt 0 ]; then
+    say ""
+    say "BASARISIZ ADIMLAR: ${VMINKIT_FAILED[*]}"
+    say "  Sebepleri yukarida ve kurulum kaydinda. Duzeltip tekrar calistirin."
+  fi
+
+  say ""
+  say "Adresler"
+  say "  Site       : https://${MAIN_DOMAIN}"
+  if [ "$(awk -F= '/^bind=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null)" = "127.0.0.1" ]; then
+    say "  Panel      : https://${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}/  (10000 disariya kapali)"
+  else
+    say "  Panel      : https://${HOSTNAME_FQDN}:10000"
+  fi
+  if is_truthy "${ROUNDCUBE:-0}"; then
+    say "  Webmail    : https://${WEBMAIL_PREFIX:-webmail}.${MAIN_DOMAIN}/"
+  fi
+  if is_truthy "${DOCKER:-0}"; then
+    say "  Portainer  : https://${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}/"
+  fi
+
   # Disariya acik dinleyen portlar. Guvenlik duvarini bu arac yonetmiyor;
   # en azindan sonucun ne oldugu gorunsun - 10000/20000 burada gorunuyorsa
   # kilitleme adimi calismamis demektir.
   #
+  # SUREC ADIYLA: yalniz port numarasi "bu da neyin nesi" sorusunu cevapsiz
+  # birakiyordu. '-p' surec adini veriyor (root oldugumuz icin gorunuyor).
+  #
   # Boru hatti dogrudan yazmiyor, once degiskene aliniyor: 'say' disindaki
   # her cikti yalnizca log dosyasina gider, ekranda gorunmezdi.
-  # SUREC ADIYLA birlikte: yalniz port numarasi "bu da neyin nesi" sorusunu
-  # cevapsiz birakiyordu. '-p' surec adini veriyor (root oldugumuz icin
-  # gorunuyor); 2222 gibi bir portun ne oldugu kurulum aninda anlasilsin.
   if command -v ss >/dev/null 2>&1; then
     local portlist
     portlist="$(ss -ltnpH 2>/dev/null | awk '
@@ -1168,27 +1143,33 @@ step_report(){
         }
       }
     ')"
-    say "Disariya acik dinleyen portlar:"
+    say ""
+    say "Disariya acik dinleyen portlar"
     if [ -n "$portlist" ]; then
       say "$portlist"
     else
       # 'ss' var ve calisti; bos sonuc "okunamadi" degil "hicbiri" demek.
       say "  (yok - yalnizca 127.0.0.1 uzerinde dinleyenler var)"
     fi
-    say "  (Guvenlik duvari bu arac tarafindan yonetilmiyor.)"
-    say ""
+    say "  (guvenlik duvari bu arac tarafindan yonetilmiyor)"
   fi
+
+  # NOTLAR: yalnizca ILERIDE YAPILACAK, kendiliginden olmayacak seyler.
+  # Nasil yapilacagi README'de; burada sadece hatirlatma.
+  say ""
+  say "Notlar"
+  say "  - Domain sahibi sifresi saklanmadi; gerekirse panelden belirleyin."
+  case " $dfeat " in
+    *" mail "*)
+      say "  - DMARC 'p=none' ile basliyor; birkac hafta sonra quarantine'e cekin."
+      ;;
+  esac
   if [ "${DNS_MODE:-}" = bind ]; then
-    say "Yapilacak (BIND modu): registrar tarafinda ${NS1:-ns1} / ${NS2:-ns2} icin"
-    say "glue kaydi -> ${ip:-<sunucu-ip>}"
+    say "  - Registrar'da ${NS1:-ns1} / ${NS2:-ns2} icin glue kaydi: ${ip:-<sunucu-ip>}"
   else
-    say "DNS harici saglayicida: ${AUTH_NS:-bilinmiyor}"
-    say "Yerel BIND zone'u yine de uretilir ve Virtualmin tarafindan guncellenir;"
-    say "yayinlanan kopya harici saglayicidadir. Yeni domain/alt domain eklerken"
-    say "A kaydini orada olusturmayi unutmayin."
+    say "  - DNS harici: yeni alt alan eklerken A kaydini saglayicida da acin."
   fi
-  # Kayit yolu raporun basinda zaten yaziyor; burada tekrar etmiyoruz.
-  # install.sh kapanista bir kez daha gosteriyor, o kadari yeter.
+  say "  - Ayrinti ve sorun giderme: README.md"
   say ""
 
   # Ikinci sunucu icin ayrica bir cevap dosyasi URETMIYORUZ: ayarlar zaten
