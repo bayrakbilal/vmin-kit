@@ -17,7 +17,7 @@ source "$ROOT_DIR/lib/steps.sh"
 require_root
 
 command -v docker >/dev/null 2>&1 || { err "Docker kurulu degil."; exit 1; }
-docker ps -a --format '{{.Names}}' | grep -qx portainer || {
+docker ps -a --format '{{.Names}}' | grep -x portainer >/dev/null || {
   err "'portainer' konteyneri yok. Once: sudo ./install.sh"
   exit 1
 }

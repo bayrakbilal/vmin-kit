@@ -32,7 +32,7 @@ HOST="${1:-}"
 log "Hedef: $HOST"
 
 # ---- Virtualmin sanal sunucusu mu ----
-if ! virtualmin list-domains --name-only 2>/dev/null | grep -qxF "$HOST"; then
+if ! virtualmin list-domains --name-only 2>/dev/null | grep -xF "$HOST" >/dev/null; then
   err "$HOST bir Virtualmin sanal sunucusu degil."
   err "Mevcut sunucular:"
   virtualmin list-domains --name-only 2>/dev/null | sed 's/^/    /'

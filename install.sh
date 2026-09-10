@@ -96,7 +96,7 @@ if [ -r /etc/os-release ]; then . /etc/os-release; OS_ID="${ID:-}"; OS_VER="${VE
 OS_KEY="${OS_ID}-${OS_VER}"
 OS_SUPPORTED="debian-12 debian-13 ubuntu-22.04 ubuntu-24.04"
 
-if ! printf '%s\n' $OS_SUPPORTED | grep -qxF "$OS_KEY"; then
+if ! printf '%s\n' $OS_SUPPORTED | grep -xF "$OS_KEY" >/dev/null; then
   if is_truthy "${ALLOW_ANY_OS:-0}"; then
     warn "Desteklenen bir sistem degil ($OS_ID $OS_VER) - ALLOW_ANY_OS=1 ile devam ediliyor."
   else
@@ -112,7 +112,7 @@ fi
 # karismasin diye ayri onek tasiyorlar.
 HAS_VIRTUALMIN=no; if command -v virtualmin >/dev/null 2>&1; then HAS_VIRTUALMIN=yes; fi
 HAS_DOCKER=no;     if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then HAS_DOCKER=yes; fi
-HAS_PORTAINER=no;  if command -v docker >/dev/null 2>&1 && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx portainer; then HAS_PORTAINER=yes; fi
+HAS_PORTAINER=no;  if command -v docker >/dev/null 2>&1 && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -x portainer >/dev/null; then HAS_PORTAINER=yes; fi
 CUR_HOST="$(hostname -f 2>/dev/null || hostname)"
 SRV_IP="$(detect_ip)"
 

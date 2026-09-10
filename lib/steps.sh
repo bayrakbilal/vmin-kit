@@ -119,7 +119,7 @@ domain_has_acme_cert(){
   local d="$1"
   [ -s "/etc/letsencrypt/live/$d/cert.pem" ] && return 0
   virtualmin list-domains --domain "$d" --multiline 2>/dev/null \
-    | grep -qi 'cert issued' && return 0
+    | grep -i 'cert issued' >/dev/null && return 0
   return 1
 }
 
@@ -398,7 +398,7 @@ step_dkim(){
 # panelden bir sifre belirlemek gerekir.
 step_main_domain(){
   command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; ana domain atlaniyor."; return 1; }
-  if virtualmin list-domains --name-only 2>/dev/null | grep -qx "$MAIN_DOMAIN"; then
+  if virtualmin list-domains --name-only 2>/dev/null | grep -x "$MAIN_DOMAIN" >/dev/null; then
     ok "Ana domain zaten var: $MAIN_DOMAIN (atlaniyor)."; return
   fi
   # Sifre rastgele uretilir ve HICBIR YERE yazilmaz. Kullanilmasi gerekirse
@@ -490,7 +490,7 @@ step_host_dns(){
   esac
   local ip; ip="$(detect_ip)"
   if virtualmin get-dns --domain "$MAIN_DOMAIN" --name-only 2>/dev/null \
-     | sed 's/\.$//' | grep -qixF "$HOSTNAME_FQDN"; then
+     | sed 's/\.$//' | grep -ixF "$HOSTNAME_FQDN" >/dev/null; then
     ok "Zone'da $HOSTNAME_FQDN kaydi zaten var."
     return
   fi
@@ -561,7 +561,7 @@ portainer_restart_for_token(){
 # eklensin ekranda gorunen token taze olsun (omru birkac dakika).
 step_portainer_token(){
   command -v docker >/dev/null 2>&1 || return 0
-  docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx portainer || return 0
+  docker ps -a --format '{{.Names}}' 2>/dev/null | grep -x portainer >/dev/null || return 0
   local site="${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}"
 
   # Yonetici hesabi zaten varsa SESSIZ cikiyoruz. Bu adimin tek isi yapilacak
@@ -604,7 +604,7 @@ ensure_proxy_site(){
   local site="${prefix}.${MAIN_DOMAIN}"
   command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; $site atlaniyor."; return 1; }
 
-  if virtualmin list-domains --name-only 2>/dev/null | grep -qxF "$site"; then
+  if virtualmin list-domains --name-only 2>/dev/null | grep -xF "$site" >/dev/null; then
     ok "Alt sunucu zaten var: $site"
   else
     log "Alt sunucu olusturuluyor: $site (ana domain: $MAIN_DOMAIN)"
@@ -687,7 +687,7 @@ step_webmail(){
   command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; webmail atlaniyor."; return 1; }
   local site="${WEBMAIL_PREFIX:-webmail}.${MAIN_DOMAIN}"
 
-  if virtualmin list-domains --name-only 2>/dev/null | grep -qxF "$site"; then
+  if virtualmin list-domains --name-only 2>/dev/null | grep -xF "$site" >/dev/null; then
     ok "Alt sunucu zaten var: $site"
   else
     log "Alt sunucu olusturuluyor: $site (ana domain: $MAIN_DOMAIN)"
@@ -702,7 +702,7 @@ step_webmail(){
     ok "Alt sunucu olusturuldu: $site"
   fi
 
-  if virtualmin list-scripts --domain "$site" 2>/dev/null | grep -qi roundcube; then
+  if virtualmin list-scripts --domain "$site" 2>/dev/null | grep -i roundcube >/dev/null; then
     ok "Roundcube zaten kurulu: https://${site}/"
   else
     log "Roundcube kuruluyor: https://${site}/  (indirme ve kurulum biraz surer)"
@@ -779,7 +779,12 @@ step_webmail(){
     ok "Roundcube oturum anahtari zaten ozel."
   else
     local newkey
-    newkey="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 24)"
+    # '|| true' SART: head 24 bayti alip cikiyor, tr yazmaya devam ettigi
+    # icin SIGPIPE aliyor ve 'pipefail' bunu hata sayiyor - olculdu, cikis
+    # kodu 141 (deger yine dogru uretiliyor). Bugun zararsiz cunku ardindan
+    # baska satirlar var; bu satir bir fonksiyonun SON komutu olsaydi adim
+    # sebepsiz "basarisiz" gorunurdu.
+    newkey="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c 24 || true)"
     if [ "${#newkey}" -ne 24 ]; then
       warn "Rastgele anahtar uretilemedi; Roundcube des_key varsayilanda kaldi."
     else
@@ -989,8 +994,8 @@ step_portainer(){
   command -v docker >/dev/null 2>&1 || { err "Docker yok; portainer atlaniyor."; return 1; }
   local image="${PORTAINER_IMAGE:-portainer/portainer-ce:lts}" port="${PORTAINER_PORT:-9000}" pub
   if [ "${PORTAINER_BIND_LOCAL:-yes}" = "yes" ]; then pub="127.0.0.1:${port}:9000"; else pub="${port}:9000"; fi
-  if docker ps -a --format '{{.Names}}' | grep -qx portainer; then
-    if docker ps --format '{{.Names}}' | grep -qx portainer; then ok "Portainer zaten calisiyor (atlaniyor)."; return; fi
+  if docker ps -a --format '{{.Names}}' | grep -x portainer >/dev/null; then
+    if docker ps --format '{{.Names}}' | grep -x portainer >/dev/null; then ok "Portainer zaten calisiyor (atlaniyor)."; return; fi
     docker start portainer >/dev/null; ok "Portainer baslatildi."; return
   fi
   docker volume inspect portainer_data >/dev/null 2>&1 || docker volume create portainer_data >/dev/null
@@ -1118,7 +1123,7 @@ step_report(){
   local -a comps=()
   command -v psql >/dev/null 2>&1 && comps+=("PostgreSQL")
   command -v docker >/dev/null 2>&1 && comps+=("Docker")
-  docker ps --format '{{.Names}}' 2>/dev/null | grep -qx portainer &&
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -x portainer >/dev/null &&
     comps+=("Portainer")
   if command -v composer >/dev/null 2>&1; then
     # Composer'i dagitim paketinden kuruyoruz: kendini guncelleyemez. Yeni
