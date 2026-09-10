@@ -1135,14 +1135,46 @@ step_report(){
   #
   # Boru hatti dogrudan yazmiyor, once degiskene aliniyor: 'say' disindaki
   # her cikti yalnizca log dosyasina gider, ekranda gorunmezdi.
+  # SUREC ADIYLA birlikte: yalniz port numarasi "bu da neyin nesi" sorusunu
+  # cevapsiz birakiyordu. '-p' surec adini veriyor (root oldugumuz icin
+  # gorunuyor); 2222 gibi bir portun ne oldugu kurulum aninda anlasilsin.
   if command -v ss >/dev/null 2>&1; then
-    local ports
-    ports="$(ss -ltnH 2>/dev/null |
-             awk '{print $4}' |
-             grep -v '^127\.0\.0\.1:' | grep -v '^\[::1\]:' |
-             sed 's/.*://' | sort -n -u | tr '\n' ' ' | sed 's/ $//')"
+    local portlist
+    portlist="$(ss -ltnpH 2>/dev/null | awk '
+      {
+        addr = $4
+        # Yalnizca yerel dinleyenler bizi ilgilendirmiyor.
+        if (addr ~ /^127\.0\.0\.1:/ || addr ~ /^\[::1\]:/) next
+        n = split(addr, a, ":")
+        port = a[n]
+        # users:(("ad",pid=...  -> ad. Onek 9 karakter, kapanis tirnagi 1.
+        name = "?"
+        if (match($0, /users:\(\("[^"]+"/)) {
+          name = substr($0, RSTART + 9, RLENGTH - 10)
+        }
+        # Ayni port hem IPv4 hem IPv6 icin gorunuyor; bir kez yazalim.
+        if (!(port in seen) || seen[port] == "?") seen[port] = name
+      }
+      END { for (p in seen) printf "%s %s\n", p, seen[p] }
+    ' | sort -n -u | awk '
+      { rows[NR] = sprintf("%5s  %-18s", $1, $2) }
+      END {
+        # Iki sutun: liste uzun, tek sutunda raporu gereksiz uzatiyor.
+        half = int((NR + 1) / 2)
+        for (i = 1; i <= half; i++) {
+          line = sprintf("  %s%s", rows[i], (i + half <= NR ? rows[i + half] : ""))
+          sub(/[ \t]+$/, "", line)   # sagda bosluk birakma
+          print line
+        }
+      }
+    ')"
     say "Disariya acik dinleyen portlar:"
-    say "  ${ports:-(okunamadi)}"
+    if [ -n "$portlist" ]; then
+      say "$portlist"
+    else
+      # 'ss' var ve calisti; bos sonuc "okunamadi" degil "hicbiri" demek.
+      say "  (yok - yalnizca 127.0.0.1 uzerinde dinleyenler var)"
+    fi
     say "  (Guvenlik duvari bu arac tarafindan yonetilmiyor.)"
     say ""
   fi
