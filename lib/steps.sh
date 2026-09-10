@@ -39,12 +39,31 @@ run_step(){
     VMINKIT_FAILED+=("${fn#step_}")
     if [ -n "${VMINKIT_LOGFILE:-}" ] && [ -f "$VMINKIT_LOGFILE" ]; then
       local tailtxt
+      # Kendi satirlarimiz ('[*] [+] [!] [x]' ile baslayanlar) tail'den
+      # cikariliyor: onlar zaten ekranda duruyor. Filtrelenmediginde adimin
+      # yazdirdigi hata mesaji, hemen altindaki ozette bir kez daha
+      # goruntuleniyordu - Ubuntu 22.04 kurulumunda goruldu.
+      #
+      # '|| true' SART: grep -v her satiri elerse 1 doner, 'pipefail' altinda
+      # atamayi basarisiz yapar ve 'set -e' betigi tam da hata bildirirken
+      # oldururdu.
       tailtxt="$(tail -c "+$((start + 1))" "$VMINKIT_LOGFILE" |
-                 grep -v '^[[:space:]]*$' | tail -12)"
+                 grep -v '^[[:space:]]*$' |
+                 grep -Ev '^\[[*+!x]\] ' | tail -12 || true)"
+      # Blogun TAMAMI yalnizca EKRANA gidiyor (fd 3), loga degil. Bu satirlar
+      # zaten log dosyasindan okunuyor; tekrar yazmak ayni metni ikilerdi.
+      # Onceden baslik ve alt satir 'say' ile (yani loga da), aradaki icerik
+      # ise yalnizca ekrana gidiyordu; sonuc logda ici bos bir cerceveydi ve
+      # "hata mesaji kaybolmus" gibi duruyordu. Olculdu.
+      #
+      # Girinti her satira ayri veriliyor: tek 'printf "    %s\n"' cok satirli
+      # bir degiskende yalnizca ILK satiri girintiler, gerisi sola yapisir.
       if [ -n "$tailtxt" ]; then
-        say "    ---- ${fn#step_}: son satirlar ----"
-        printf '    %s\n' "$tailtxt" >&3
-        say "    ---- tamami: $VMINKIT_LOGFILE ----"
+        printf '    ---- %s: son satirlar ----\n' "${fn#step_}" >&3
+        printf '%s\n' "$tailtxt" | while IFS= read -r l; do
+          printf '    %s\n' "$l" >&3
+        done
+        printf '    ---- tamami: %s ----\n' "$VMINKIT_LOGFILE" >&3
       fi
     fi
   fi
@@ -157,12 +176,19 @@ step_composer(){
   apt-get update -qq
   DEBIAN_FRONTEND=noninteractive apt-get install -y composer
   # SONUCU DOGRULA: adimlar 'set +e' altinda calisiyor, basarisiz bir apt-get
-  # sessizce geciliyordu ve asagidaki satir yine "kuruldu" diyordu. Ubuntu'da
-  # 'composer' paketi 'universe' bileseninde; o bilesen kapaliysa kurulum
-  # burada takilir ve sebebini yazmis oluruz.
+  # sessizce geciliyordu ve asagidaki satir yine "kuruldu" diyordu.
+  #
+  # SEBEP TAHMIN EDILMIYOR. Bir sure burada "Ubuntu'da 'universe' bileseni
+  # kapali olabilir" yaziyordu; Ubuntu 22.04 kurulumunda tam da bu satir
+  # cikti ve YANLISTI - universe acikti (onlarca paket oradan indi), gercek
+  # sebep depo dizini ile havuzun uyusmamasiydi: indekste duran surumun
+  # .deb'i aynada yoktu, uc pakette 404. Uydurulmus bir sebep dogru sebebi
+  # aramayi geciktirir. Apt'in kendi ciktisi zaten kurulum kaydinda ve
+  # basarisiz adimin son satirlari ekrana basiliyor.
   if ! command -v composer >/dev/null 2>&1; then
-    err "Composer kurulamadi. Ubuntu'da 'universe' bileseni kapali olabilir:"
-    err "  add-apt-repository universe && apt-get update && apt-get install composer"
+    err "Composer kurulamadi. Apt'in ciktisi yukarida ve kurulum kaydinda."
+    err "Sik gorulen iki sebep: aynada eksik paket (biraz sonra tekrar deneyin)"
+    err "ya da paketin bulundugu bilesenin kapali olmasi (add-apt-repository universe)."
     return 1
   fi
   ok "Composer kuruldu."
