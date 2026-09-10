@@ -113,10 +113,10 @@ Dosyanın sonunda kaçış kapıları var (`SKIP_DNS_CHECK`, `ALLOW_ANY_OS`,
 | `postgres` / `composer` | PostgreSQL ve Composer paketleri *(isteğe bağlı)* |
 | `dns-template` | Yeni domainler için DNS varsayılanları |
 | `panel-redirects` | `admin.<domain>` ve `webmail.<domain>` kısayollarını kapatır |
-| `domain-defaults` | Spam/virüs taraması kapalı, SPF + DMARC açık, rol adresleri sınırlı |
+| `domain-defaults` | SPF + DMARC açık, rol adresleri sınırlı |
 | `dkim` | DKIM'i açar; bundan sonra oluşan her domain giden postayı imzalar |
 | `plugins` | Eklentileri paketleyip kurar ve Virtualmin'e tanıtır |
-| `main-domain` | Ana domaini Virtualmin'in kendi varsayılanlarıyla oluşturur |
+| `main-domain` | Ana domaini açık bir özellik listesiyle oluşturur (spam/virüs ve PostgreSQL hariç — onlara kurulum sihirbazı karar verir) |
 | `host-dns` | Hostname için A kaydı ekler |
 | `ssl` | Let's Encrypt sertifikası + otomatik yenileme |
 | `panel-sites` | `webmin.` ve `usermin.` alt alanlarını yayınlar |

@@ -243,11 +243,16 @@ step_panel_redirects(){
 #                    posta engellenmez. SPF/DKIM'in dogru calistigi gorulunce
 #                    panelden quarantine'e sikilir. Yuzde de varsayilan 100.
 #
-#   spam=0, virus=0  Spam ve virus taramasi ana domainde ACILMASIN. Kurulum
-#                    sonrasi sihirbaz bunlari zaten kapali olarak oneriyor;
-#                    domain onlarla olusursa sihirbaz "1 sanal sunucu
-#                    kullaniyor" diyip kapatmaya izin vermiyor. Ihtiyac olursa
-#                    sihirbazdan ya da Features and Plugins'ten acilir.
+# BURADA ARTIK spam=0 / virus=0 YOK (2026-09-10). Yaziyorduk ve sonucu suydu:
+# kurulum sonrasi sihirbaz bunlari HIC SORMUYORDU. Sihirbaz "acik olanlari
+# kapatayim mi" diye soruyor, biz onceden kapatinca soracak bir sey kalmiyor
+# ve karar sessizce bizim olmus oluyordu. Temiz kurulumda dogrulandi.
+#
+# Artik global yapilandirmaya dokunmuyoruz; ana domain bu ozellikler olmadan
+# olusuyor (bkz. step_main_domain, acik ozellik listesi). Boylece domain yine
+# hafif kaliyor ama "bu sunucuda spam/virus taramasi olsun mu" sorusuna
+# sihirbazda kullanici cevap veriyor - ve cevabi sonraki domainler icin de
+# gecerli oluyor.
 #
 # Burada BILEREK olmayanlar: posta kutusu adlandirmasi (append_style) ve rol
 # adreslerinin hedefi (newdom_aliases) Virtualmin'in getirdigi gibi birakiliyor.
@@ -263,9 +268,7 @@ step_domain_defaults(){
   [ -f "${cfg}.vmin-kit.bak" ] || cp -a "$cfg" "${cfg}.vmin-kit.bak"
 
   local row key val name cur
-  for row in "spam|0|Spam taramasi" \
-             "virus|0|Virus taramasi" \
-             "bind_spf|yes|SPF kaydi" \
+  for row in "bind_spf|yes|SPF kaydi" \
              "bind_spfall|1|SPF sertligi (~all)" \
              "bind_dmarc|yes|DMARC kaydi"; do
     IFS='|' read -r key val name <<< "$row"
@@ -401,16 +404,75 @@ step_main_domain(){
   # Sifre rastgele uretilir ve HICBIR YERE yazilmaz. Kullanilmasi gerekirse
   # (Webmin girisi, FTP) panelden degistirilir; saklanmayan sir sizmaz.
   local pw; pw="$(gen_pass)"
-  log "Ana domain olusturuluyor: $MAIN_DOMAIN  (Virtualmin varsayilan ozellikleri)"
+
+  # ACIK OZELLIK LISTESI, '--default-features' DEGIL (2026-09-10).
+  #
+  # Once varsayilanlarla olusturuyorduk. Iki sorunu vardi: (1) varsayilanlari
+  # istedigimiz gibi yapmak icin Virtualmin'in global yapilandirmasini
+  # degistirmemiz gerekiyordu ve bu kurulum sihirbazinin sorularini
+  # susturuyordu; (2) ana domain "sunucunun o anki varsayilani ne ise o"
+  # oluyordu, yani sonucu kestirilemezdi.
+  #
+  # Simdi liste burada ve okunur:
+  #   unix dir       kullanici + ev dizini; ikisi de zorunlu
+  #   web ssl        site ve sertifikasi - bu domainin varlik sebebi
+  #   dns            yerel BIND zone'u; Cloudflare senkronu bunu model aliyor
+  #   mail           rol adresleri (postmaster/abuse) buraya dusuyor
+  #   logrotate      domainin gunlukleri sonsuza kadar buyumesin
+  #   webmin         domain sahibinin panele girebilmesi
+  #   mysql          GEREKLI: webmail alt sunucusu Roundcube icin veritabani
+  #                  istiyor ve alt sunucular MySQL kullanicisini EBEVEYNDEN
+  #                  aliyor (feature-mysql.pl: mysql_user parent'a devrediyor,
+  #                  setup_mysql kullaniciyi yalnizca !parent iken olusturuyor).
+  #                  Ana domainde mysql yoksa webmail'in veritabani sahipsiz
+  #                  kalir.
+  #   vmkit-*        kendi eklentilerimiz; zaten bu sunucunun amaci
+  #
+  # BILEREK YOK: spam, virus (sihirbaz sorsun), postgres (sihirbaz aciyor),
+  # virtualmin-awstats (gerekirse domain basina acilir).
+  #
+  # Not: bir '--<ozellik>' bayragi, o ozellik modul yapilandirmasinda kapaliysa
+  # reddediliyor (create-domain.pl: "cannot be used unless the feature is
+  # enabled in the module configuration"). Bu yuzden postgres'i buraya
+  # yazamayiz - sihirbazdan once kapali.
+  # BAYRAKLAR SUZULEREK veriliyor. Sebebi: kapali bir ozellik icin bayrak
+  # gecmek create-domain'i kullanim hatasiyla durduruyor ve o an ana domain
+  # olusmadigi icin ARDINDAN GELEN HER ADIM (SSL, panel siteleri, webmail,
+  # docker) da dusuyor. Sunucuda bir ozellik beklenmedik sekilde kapaliysa
+  # kurulumu ucurmaktansa o ozelligi atlayip uyari yazmak yegdir.
+  local cfg="/etc/webmin/virtual-server/config"
+  local want="unix dir web ssl dns mail logrotate webmin mysql"
+  local -a flags=()
+  local f skipped=""
+  for f in $want; do
+    if grep -qE "^${f}=[^0]" "$cfg" 2>/dev/null; then
+      flags+=("--$f")
+    else
+      skipped="$skipped $f"
+    fi
+  done
+  # Eklentiler ayri kontrol: bunlar 'plugins=' satirinda olmali (step_plugins
+  # yaziyor ve o adim bundan once calisiyor).
+  local p
+  for p in vmkit-cloudflare vmkit-composer vmkit-deploy; do
+    if grep -qE "^plugins=.*\b${p}\b" "$cfg" 2>/dev/null; then
+      flags+=("--$p")
+    else
+      skipped="$skipped $p"
+    fi
+  done
+  [ -z "$skipped" ] || warn "Kapali oldugu icin atlanan ozellikler:$skipped"
+
+  log "Ana domain olusturuluyor: $MAIN_DOMAIN"
   virtualmin create-domain \
     --domain "$MAIN_DOMAIN" \
     --pass   "$pw" \
     --desc   "$MAIN_DOMAIN" \
-    --default-features
+    "${flags[@]}"
   unset pw
   ok "Ana domain olusturuldu."
-  # Ne acildigini kayda gecir: --default-features sunucunun yapilandirmasina
-  # bagli, dolayisiyla sonucu gormek onemli.
+  # Ne acildigini kayda gecir: bayraklarin bir kismi modul yapilandirmasina
+  # bagli oldugu icin sonucu gormek onemli.
   virtualmin list-domains --domain "$MAIN_DOMAIN" --multiline 2>/dev/null |
     awk '/^[[:space:]]*(Features|Plugins):/ { sub(/^[[:space:]]*/,""); print "    "$0 }'
 }

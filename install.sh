@@ -215,7 +215,7 @@ if is_truthy "$COMPOSER"; then
   else                                         log "  - Composer    : KURULACAK"; fi
 fi
 log "  - DNS sablonu : NS1=${NS1}  NS2=${NS2}   (bu sunucunun NS cifti)"
-log "  - Ana domain  : $MAIN_DOMAIN  (Virtualmin varsayilan ozellikleriyle)"
+log "  - Ana domain  : $MAIN_DOMAIN  (web, ssl, dns, mail, mysql, webmin + eklentiler)"
 log "  - SSL         : $MAIN_DOMAIN icin Lets Encrypt"
 if is_truthy "$NO_ADMIN_REDIRECT"; then
   log "  - admin.<domain> -> panel yonlendirmesi: KAPATILACAK"
