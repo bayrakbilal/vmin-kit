@@ -806,9 +806,26 @@ sub zone_mtime
 my ($d) = @_;
 my $file = eval { &virtual_server::get_domain_dns_file($d) };
 return 0 if ($@ || !$file);
-# BIND chroot altinda calisiyorsa gercek yol farkli olabilir.
-$file = &virtual_server::bind_chroot_file($file)
-	if (defined(&virtual_server::bind_chroot_file));
+# BIND chroot altinda calisiyorsa gercek yol farkli: Virtualmin dosyayi
+# chroot ICINDEKI adiyla veriyor, biz ise disaridan stat ediyoruz.
+#
+# Burada once Virtualmin'in "bind chroot file" diye bir yardimcisi
+# cagriliyordu; OYLE BIR FONKSIYON YOK (doctor.sh ilk calismasinda
+# yakaladi, Virtualmin kaynaginda hicbir yerde gecmiyor). Korumali
+# yazilmisti, o yuzden hata vermiyor ama hicbir zaman calismiyordu:
+# chroot'lu bir kurulumda yanlis yolun mtime'ina bakip senkronu hic
+# tetiklemezdik. Dogru yardimci bind8::make_chroot - izlenen dizini
+# bulurken de onu kullaniyoruz (bkz. zone_watch_dirs).
+#
+# bind8 BURADA yukleniyor: modul basinda yuklu degil, yalnizca
+# zone_watch_dirs icinde isteniyor ve zone_mtime ondan once cagrilabilir.
+# Tamami eval icinde - bu fonksiyon her senkron kontrolunde calisiyor ve
+# hicbir kosulda olmemeli; chroot cozulemezse chroot'suz yol kullanilir.
+eval {
+	local $main::error_must_die = 1;
+	&foreign_require("bind8");
+	$file = &bind8::make_chroot($file);
+	};
 my @st = stat($file);
 return @st ? $st[9] : 0;
 }

@@ -42,15 +42,22 @@ MISSING=0
 # ---------------------------------------------------------------------------
 log "Bagimliliklar kaynaktan cikariliyor..."
 
+# YORUM SATIRLARI ELENIYOR. Kaldirilmis bir cagriyi yorumda anlatmak
+# ('once su fonksiyon cagriliyordu' gibi) doctor'a hala kullaniyormusuz gibi
+# gorunuyordu - bir kez yasandi.
+strip_comments(){ grep -rhv '^[[:space:]]*#' "$@" 2>/dev/null || true; }
+
 # sigil + paket + isim
-grep -rhoE '[&$@%](virtual_server|bind8)::[a-zA-Z_0-9]+' "$ROOT_DIR/plugin" \
+strip_comments "$ROOT_DIR/plugin" \
+  | grep -oE '[&$@%](virtual_server|bind8)::[a-zA-Z_0-9]+' \
   | sed -E 's/^(.)([a-z8_]+)::(.*)$/\1\t\2\t\3/' \
   | sort -u > "$TMP/symbols"
 
 # install tarafi: oneksiz gomulu perl cagrilari. Bunlarin bir kismi Webmin
 # cekirdeginden (lock_file gibi), bir kismi Virtualmin'den; ikisi de ayni
 # yerde aranabildigi icin ayirmiyoruz.
-grep -rhoE '&[a-z_][a-z_0-9]*\(' "$ROOT_DIR/lib" "$ROOT_DIR/install.sh" \
+strip_comments "$ROOT_DIR/lib" "$ROOT_DIR/install.sh" \
+  | grep -oE '&[a-z_][a-z_0-9]*\(' \
   | sed 's/($//; s/(//; s/^&//' \
   | sort -u | sed 's/^/\&\tmain\t/' >> "$TMP/symbols"
 
