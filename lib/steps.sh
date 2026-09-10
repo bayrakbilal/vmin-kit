@@ -20,10 +20,33 @@ VMINKIT_FAILED=()
 # Donus kodu 'if "$fn"; then' ile YAKALANMAZ: basarisiz ve else'siz bir if
 # bilesik komutu 0 dondurdugu icin $? o noktada adimin degil if'in sonucudur.
 # '|| rc=$?' dogrudan komutun kodunu aliyor.
+#
+# Ekranda yalnizca bizim satirlarimiz oldugu icin, bir adim basarisiz olunca
+# SEBEBI de gostermek gerekiyor - yoksa "basarisiz" yazip susan bir ekran
+# kullaniciyi log dosyasini acmaya mahkum eder.
+#
+# Adimin ciktisini ayri bir dosyaya toplamiyoruz: log dosyasinin adim
+# oncesindeki BOYUTUNU olcup sonrasini okuyoruz. Boylece o adima ait kisim
+# tam olarak elimizde oluyor, gecici dosya da gerekmiyor.
 run_step(){
-  local fn="$1" rc=0
+  local fn="$1" rc=0 start=0
+  if [ -n "${VMINKIT_LOGFILE:-}" ] && [ -f "$VMINKIT_LOGFILE" ]; then
+    start="$(wc -c < "$VMINKIT_LOGFILE")"
+  fi
   "$fn" || rc=$?
-  [ "$rc" -eq 0 ] || VMINKIT_FAILED+=("${fn#step_}")
+  if [ "$rc" -ne 0 ]; then
+    VMINKIT_FAILED+=("${fn#step_}")
+    if [ -n "${VMINKIT_LOGFILE:-}" ] && [ -f "$VMINKIT_LOGFILE" ]; then
+      local tailtxt
+      tailtxt="$(tail -c "+$((start + 1))" "$VMINKIT_LOGFILE" |
+                 grep -v '^[[:space:]]*$' | tail -12)"
+      if [ -n "$tailtxt" ]; then
+        say "    ---- ${fn#step_}: son satirlar ----"
+        printf '    %s\n' "$tailtxt" >&3
+        say "    ---- tamami: $VMINKIT_LOGFILE ----"
+      fi
+    fi
+  fi
   return "$rc"
 }
 
@@ -73,8 +96,12 @@ step_virtualmin(){
   curl -fsSL https://software.virtualmin.com/gpl/scripts/install.sh -o /root/virtualmin-install.sh
   chmod +x /root/virtualmin-install.sh
   local args=(--force --hostname "$HOSTNAME_FQDN")
-  log "Calistiriliyor (uzun surer): virtualmin install.sh ${args[*]}"
-  sh /root/virtualmin-install.sh "${args[@]}"
+  # TEK ISTISNA: bu komutun ciktisi EKRANDA da gorunuyor. Dakikalarca surdugu
+  # icin sessiz bir ekran "takildi mi" hissi verir; ustelik en cok burada bir
+  # seyin ters gittigini anlamak isteriz. Geri kalan tum adimlarin ciktisi
+  # yalnizca log dosyasina gidiyor.
+  log "Calistiriliyor (uzun surer, cikti ekranda): virtualmin install.sh ${args[*]}"
+  run_visible sh /root/virtualmin-install.sh "${args[@]}"
   ok "Virtualmin kurulumu bitti."
 }
 
@@ -469,7 +496,7 @@ step_portainer_token(){
   docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx portainer || return 0
   local site="${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}"
 
-  echo
+  say ""
   if portainer_configured; then
     ok "Portainer : https://${site}/   (yonetici hesabi zaten olusturulmus)"
     return 0
@@ -477,12 +504,12 @@ step_portainer_token(){
 
   log "Portainer icin taze setup_token aliniyor (yeniden baslatiliyor)..."
   local tok; tok="$(portainer_restart_for_token || true)"
-  echo
+  say ""
   if [ -n "$tok" ]; then
     ok "Portainer kurulumunu SIMDI tamamlayin - token birkac dakika gecerli:"
-    echo "    Adres       : https://${site}/"
-    echo "    setup_token : $tok"
-    echo
+    say "    Adres       : https://${site}/"
+    say "    setup_token : $tok"
+    say ""
     log "Sureyi kacirirsaniz: sudo ./configure-docker.sh"
   else
     warn "setup_token okunamadi. Deneyin: sudo ./configure-docker.sh"
@@ -1016,6 +1043,9 @@ step_report(){
     echo "vmin-kit kurulum raporu - $(date '+%Y-%m-%d %H:%M:%S %z')"
     echo "======================================================="
     echo "Arac surumu  : $(vminkit_version)"
+    # Kurulum kaydinin yolu rapora da yaziliyor: rapor elde kaldiginda
+    # ayrintili ciktinin nerede oldugu da bilinsin.
+    [ -n "${VMINKIT_LOGFILE:-}" ] && echo "Kurulum kaydi: $VMINKIT_LOGFILE"
     echo "Ana domain   : $MAIN_DOMAIN"
     echo "Hostname     : $HOSTNAME_FQDN"
     echo "Sunucu IP    : ${ip:-bilinmiyor}"
@@ -1106,6 +1136,7 @@ step_report(){
   } > "$VMINKIT_REPORT"
   chmod 600 "$VMINKIT_REPORT"
   ok "Rapor: $VMINKIT_REPORT"
+  [ -n "${VMINKIT_LOGFILE:-}" ] && ok "Kurulum kaydi: $VMINKIT_LOGFILE"
 
   # Ikinci sunucu icin ayrica bir cevap dosyasi URETMIYORUZ: ayarlar zaten
   # depodaki config.env icinde duruyor. Yeni sunucuda depoyu cekip ana

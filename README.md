@@ -54,6 +54,22 @@ MAIN_DOMAIN=ornek.com sudo -E ./install.sh
 **Tekrar çalıştırmak zararsızdır.** Bütün adımlar idempotent: kurulu olanı atlar,
 eksik olanı tamamlar. Yarıda kalan bir kurulumu sürdürmenin yolu da budur.
 
+### Kurulum kaydı
+
+Ekranda yalnızca adımların sonucu görünür; çalıştırılan komutların ayrıntılı
+çıktısı `vmin-kit-kurulum-<tarih>.log` dosyasına yazılır. Dosya her kurulumda
+oluşur, ayrıca bir seçenek gerekmez. Bir adım başarısız olursa o adımın son
+satırları ekrana da basılır, yani sebebi görmek için dosyayı açmak gerekmez.
+
+Tek istisna Virtualmin kurucusudur: dakikalarca sürdüğü için çıktısı ekranda
+da akar.
+
+Her şeyi ekranda görmek isterseniz:
+
+```bash
+sudo ./install.sh --verbose
+```
+
 ---
 
 ## 2. Ayarlar — `config.env`

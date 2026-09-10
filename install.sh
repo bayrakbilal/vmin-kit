@@ -27,7 +27,51 @@ source "$ROOT_DIR/lib/common.sh"
 source "$ROOT_DIR/lib/steps.sh"
 require_root
 
-echo "==================== vmin-kit ===================="
+# ---- kurulum kaydi ----
+#
+# LOG HER ZAMAN YAZILIR, bayrakla acilmaz. Hatirlanmasi gereken bir kayit,
+# ihtiyac duyuldugu anda elde olmayan kayittir - bu aracin tum fikri zaten
+# hatirlamak zorunda kalmamak.
+#
+# Ekranda YALNIZCA bizim satirlarimiz var; calistirdigimiz komutlarin ciktisi
+# loga gidiyor. Boylece ekran okunur kaliyor ama hicbir sey kaybolmuyor:
+# '/dev/null'a gondermek yerine yakaliyoruz. (Bu hatayi bir kez yaptik:
+# deploy kancasinin ciktisini /dev/null'a vermistik ve gercek bir hata
+# haftalarca gorunmez kalmisti.)
+#
+# --verbose: komut ciktilari ayrica ekrana da basilir, yani eski davranis.
+VMINKIT_VERBOSE=0
+for a in "$@"; do
+  case "$a" in
+    -v|--verbose) VMINKIT_VERBOSE=1 ;;
+    -h|--help)
+      echo "Kullanim: sudo ./install.sh [--verbose]"
+      echo "  --verbose  komut ciktilarini ekrana da bas (log dosyasi zaten yazilir)"
+      exit 0 ;;
+    *) err "Bilinmeyen secenek: $a"; exit 1 ;;
+  esac
+done
+export VMINKIT_VERBOSE
+
+VMINKIT_LOGFILE="$ROOT_DIR/vmin-kit-kurulum-$(date +%Y%m%d-%H%M%S).log"
+: > "$VMINKIT_LOGFILE"
+chmod 0600 "$VMINKIT_LOGFILE"
+
+# Bu noktadan sonra stdout/stderr LOG DOSYASI. Bizim log/ok/warn/err
+# fonksiyonlarimiz fd 3'e (gercek terminale) yaziyor, ayrica loga duz kopya
+# birakiyor - bkz. lib/common.sh.
+#
+# --verbose'da 'tee' surec ikamesiyle calisiyor; betik bitiminde son birkac
+# satir tee'ye yetismeyebilir. Log dosyasinin kendisi bundan etkilenmiyor,
+# yalnizca ekrandaki kopya icin gecerli.
+if is_truthy "$VMINKIT_VERBOSE"; then
+  exec > >(tee -a "$VMINKIT_LOGFILE") 2>&1
+else
+  exec >>"$VMINKIT_LOGFILE" 2>&1
+fi
+
+say "==================== vmin-kit ===================="
+log "Kurulum kaydi: $VMINKIT_LOGFILE"
 
 # ---- 0) isletim sistemi ----
 OS_ID=""; OS_VER=""
@@ -78,8 +122,7 @@ log "  IP        : ${SRV_IP:-bilinmiyor}"
 log "  Virtualmin: $HAS_VIRTUALMIN"
 log "  Docker    : $HAS_DOCKER"
 log "  Portainer : $HAS_PORTAINER"
-echo
-
+say ""
 [ -n "$SRV_IP" ] || { err "Sunucu IP'si tespit edilemedi. config.env icinde SERVER_IP= verin."; exit 1; }
 
 # ---- 2) ayarlar + ana domain ----
@@ -99,7 +142,7 @@ fi
 if [ -z "${MAIN_DOMAIN:-}" ]; then
   log "Once sunu dogrulayin: ana domain ve hostname icin A kayitlari"
   log "bu sunucunun IP'sine (${SRV_IP}) isaret etmeli. Kontrol edecegim."
-  echo
+  say ""
   while :; do
     MAIN_DOMAIN="$(ask "Ana domain (or: ornek.com)" "")"
     [ -n "$MAIN_DOMAIN" ] && break
@@ -158,8 +201,7 @@ case "$DNS_MODE" in
   harici)  log "  Mod: HARICI DNS - otoriter: $AUTH_NS" ;;
   *)       warn "  Mod: belirlenemedi (NS kaydi okunamadi)." ;;
 esac
-echo
-
+say ""
 # ---- 4) ozet ----
 log "Yapilacaklar:"
 log "  - Hostname    : $HOSTNAME_FQDN"
@@ -196,8 +238,7 @@ if is_truthy "$DOCKER"; then
   log "  - Docker + Portainer"
   log "  - ${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN} -> Portainer proxy"
 fi
-echo
-
+say ""
 # ---- dogrulama ----
 errors=()
 case "$MAIN_DOMAIN" in
@@ -216,7 +257,7 @@ fi
 if [ ${#errors[@]} -gt 0 ]; then
   err "Sorunlar var - HICBIR SEY calistirilmadi:"
   for e in "${errors[@]}"; do err "  ! $e"; done
-  echo
+  say ""
   err "DNS icin: saglayicinizda su iki A kaydi $SRV_IP adresini gostermeli:"
   err "    $MAIN_DOMAIN      A   $SRV_IP"
   err "    $HOSTNAME_FQDN    A   $SRV_IP"
@@ -244,7 +285,7 @@ fi
 # Her adim run_step ile cagriliyor: basarisiz olani listeye yaziyor, boylece
 # uzun bir kurulumun sonunda ve raporda "neler tutmadi" acikca gorunuyor.
 set +e
-echo
+say ""
 run_step step_hostname
 run_step step_virtualmin
 if is_truthy "$POSTGRES"; then run_step step_postgres; fi
@@ -275,7 +316,7 @@ fi
 step_report
 set -e
 
-echo
+say ""
 if [ ${#VMINKIT_FAILED[@]} -gt 0 ]; then
   warn "Tamamlandi, ancak su adimlar basarisiz oldu: ${VMINKIT_FAILED[*]}"
   warn "Sebebi yukaridaki ciktida ve raporda. Duzeltip ./install.sh'i tekrar"

@@ -2,10 +2,88 @@
 # Ortak yardimcilar.
 set -euo pipefail
 
-log(){  printf '\033[1;34m[*]\033[0m %s\n' "$*"; }
-ok(){   printf '\033[1;32m[+]\033[0m %s\n' "$*"; }
-warn(){ printf '\033[1;33m[!]\033[0m %s\n' "$*"; }
-err(){  printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; }
+# ---------------------------------------------------------------------------
+# EKRAN ve LOG
+#
+# fd 3 = KULLANICIYA GORUNEN kanal. Burada, daha hicbir yonlendirme
+# yapilmadan aciliyor, yani gercek terminale bagli kaliyor. install.sh sonra
+# stdout/stderr'i log dosyasina cevirince komutlarin ciktisi sessizce loga
+# gidiyor, bizim satirlarimiz ise 3 uzerinden ekranda kaliyor.
+#
+# doctor.sh ve update-plugins.sh de bu dosyayi kullaniyor ve orada hicbir
+# yonlendirme yok: fd 3 = stdout = terminal, yani onlar icin hicbir sey
+# degismiyor.
+exec 3>&1
+
+# Dolu ise bizim satirlarimizin duz (renksiz) kopyasi buraya da yazilir.
+VMINKIT_LOGFILE="${VMINKIT_LOGFILE:-}"
+
+# _say <renk-kodu> <etiket> <metin...>
+# Renkli hali ekrana, duz hali loga. Metin printf'e ARGUMAN olarak veriliyor;
+# bicim dizesine gomulseydi icindeki '%' ya da ters bolu yorumlanirdi.
+_say(){
+  local color="$1" tag="$2"; shift 2
+  printf '\033[1;%sm%s\033[0m %s\n' "$color" "$tag" "$*" >&3
+  if [ -n "$VMINKIT_LOGFILE" ]; then
+    printf '%s %s\n' "$tag" "$*" >> "$VMINKIT_LOGFILE"
+  fi
+  # 'set -e' altinda son komutun kodu fonksiyonun kodu olur; yukaridaki 'if'
+  # bos logfile durumunda 1 dondurup kurulumu oldururdu.
+  return 0
+}
+
+# Etiketsiz duz satir (baslik, girinti, bos satir). Ciplak 'echo' KULLANMA:
+# install.sh stdout'u loga cevirdigi icin ekranda gorunmez.
+say(){
+  printf '%s\n' "$*" >&3
+  if [ -n "$VMINKIT_LOGFILE" ]; then printf '%s\n' "$*" >> "$VMINKIT_LOGFILE"; fi
+  return 0
+}
+
+log(){  _say 34 '[*]' "$@"; }
+ok(){   _say 32 '[+]' "$@"; }
+warn(){ _say 33 '[!]' "$@"; }
+err(){  _say 31 '[x]' "$@"; }
+
+# run_visible <komut...>
+# Ciktisi EKRANDA da gorunmesi gereken uzun komutlar icin (Virtualmin
+# kurucusu gibi): dakikalarca sessiz bir ekran "takildi mi" hissi verir.
+# Cikti hem loga hem ekrana gider.
+#
+# 'tee' KULLANILMIYOR, satirlar bash'in kendi icinde cogaltiliyor. Sebep:
+# tee'ye /dev/fd/3 verildiginde AYRI bir dosya tanimlayicisi aciliyor ve fd 3
+# gercek bir dosyaya bakiyorsa (kullanici './install.sh > ekran.log' derse)
+# iki tanimlayici ayni dosyaya bagimsiz konumlardan yaziyor:
+#   - duz 'tee'  : O_TRUNC ile aciyor, dosyanin basina yaziyor, o ana kadarki
+#                  her seyi siliyor ve arada NUL bayttan delik birakiyor
+#   - 'tee -a'   : sona ekliyor ama bash kendi konumundan devam edip tee'nin
+#                  yazdiginin uzerine biniyor
+# Ikisi de olculdu, ikisi de ekran dokumunu bozdu. Okuma dongusunde tek bir
+# tanimlayici var, sorun tamamen kalkiyor.
+#
+# Satir bazli okumanin bilinen riski, '\r' ile kendini gunceleyen ilerleme
+# ciktilarinin satir sonu gelene kadar birikmesidir. Virtualmin kurucusunda
+# HIC satir basi karakteri yok (ne '\r' kacisi ne gercek CR bayti - arandi),
+# yani bizim tek kullanicimizda bu risk yok.
+#
+# Donus kodu tee'nin/dongunun degil KOMUTUN kodu (PIPESTATUS). '|| rc=$?'
+# sart: 'set -e' ve 'pipefail' acikken basarisiz bir komut, biz kodu
+# okuyamadan betigi oldururdu.
+run_visible(){
+  local rc=0
+  if is_truthy "${VMINKIT_VERBOSE:-0}"; then
+    "$@" || rc=$?
+    return "$rc"
+  fi
+  {
+    "$@" 2>&1 | while IFS= read -r line || [ -n "$line" ]; do
+      printf '%s\n' "$line" >&3   # ekran
+      printf '%s\n' "$line"       # log (stdout zaten log dosyasi)
+    done
+    rc="${PIPESTATUS[0]}"
+  } || rc=$?
+  return "$rc"
+}
 
 require_root(){ [ "$(id -u)" -eq 0 ] || { err "root ile calistirin."; exit 1; }; }
 
@@ -44,16 +122,28 @@ set_kv(){
 is_truthy(){ case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in 1|yes|true|on|e|evet) return 0;; *) return 1;; esac; }
 
 # ask "Soru" "varsayilan" -> cevabi yazar (bos girilirse varsayilan)
+# Istem fd 3'e yaziliyor, 'read -p' ile DEGIL: bash'te '-p' istemi stderr'e
+# basiyor ve install.sh stderr'i log dosyasina cevirdiginde soru ekranda hic
+# gorunmez, kurulum sebepsiz kilitlenmis gibi durur.
 ask(){
   local q="$1" def="${2:-}" a
-  if [ -n "$def" ]; then read -rp "$q [$def]: " a; printf '%s' "${a:-$def}"
-  else read -rp "$q: " a; printf '%s' "$a"; fi
+  if [ -n "$def" ]; then
+    printf '%s [%s]: ' "$q" "$def" >&3
+    read -r a
+    printf '%s' "${a:-$def}"
+  else
+    printf '%s: ' "$q" >&3
+    read -r a
+    printf '%s' "$a"
+  fi
 }
 
 # ask_yn "Soru" "E"  -> evet ise 0 doner
 ask_yn(){
   local q="$1" def="${2:-E}" a
-  read -rp "$q [E/h] " a; a="${a:-$def}"
+  # Istem fd 3'e - bkz. ask()
+  printf '%s [E/h] ' "$q" >&3
+  read -r a; a="${a:-$def}"
   case "$(printf '%s' "$a" | tr '[:upper:]' '[:lower:]')" in e|evet|y|yes) return 0;; *) return 1;; esac
 }
 
