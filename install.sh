@@ -32,23 +32,37 @@ echo "==================== vmin-kit ===================="
 # ---- 0) isletim sistemi ----
 OS_ID=""; OS_VER=""
 if [ -r /etc/os-release ]; then . /etc/os-release; OS_ID="${ID:-}"; OS_VER="${VERSION_ID:-}"; fi
-# Kabul edilen surumler, Virtualmin'in KENDI kurucusunun destekledikleriyle
-# hizali: guncel install.sh "Debian 12 and 13" diyor. Daha ilerisini kabul
-# etmiyoruz cunku Virtualmin'in desteklemedigi bir sistemde kurulum yarida
-# kalir ve geride yarim yapilandirilmis bir sunucu birakir.
+# DESTEKLENEN SISTEMLER
 #
-# Debian 13 UZERINDE HENUZ TEMIZ KURULUM DENENMEDI (2026-09-10). Upstream
-# destekliyor, biz denemedik - once bir kez calistirilip dogrulanmali.
-if [ "$OS_ID" != debian ] || { [ "$OS_VER" != 12 ] && [ "$OS_VER" != 13 ]; }; then
+# Liste, Virtualmin'in KENDI kurucusunun KARARLI destegiyle kesisiyor: guncel
+# install.sh "Debian 12 and 13" ve "Ubuntu 22.04 LTS and 24.04 LTS" diyor.
+# Otesini kabul etmiyoruz, cunku Virtualmin'in desteklemedigi bir sistemde
+# kurulum yarida kalir ve geride yarim yapilandirilmis bir sunucu birakir.
+#
+# RHEL ailesi (AlmaLinux, Rocky, RHEL) BILEREK disarida: Virtualmin onlari
+# destekliyor ama bu arac apt/dpkg uzerine kurulu. Destekledigini iddia edip
+# yarim kurulum birakmak, hic desteklememekten kotudur.
+#
+# CentOS Stream, Fedora, Oracle, Amazon Linux ve LTS olmayan Ubuntu surumleri
+# Virtualmin'in kendi siniflandirmasinda "unstable" - onlar da disarida.
+OS_KEY="${OS_ID}-${OS_VER}"
+OS_SUPPORTED="debian-12 debian-13 ubuntu-22.04 ubuntu-24.04"
+# Uzerinde gercekten temiz kurulum yapilmis olanlar. Yeni bir sistem
+# dogrulandikca buraya eklenir; gerisi calisir ama uyari yazar.
+OS_VERIFIED="debian-12"
+
+if ! printf '%s\n' $OS_SUPPORTED | grep -qxF "$OS_KEY"; then
   if is_truthy "${ALLOW_ANY_OS:-0}"; then
-    warn "Debian 12/13 degil ($OS_ID $OS_VER) - ALLOW_ANY_OS=1 ile devam ediliyor."
+    warn "Desteklenen bir sistem degil ($OS_ID $OS_VER) - ALLOW_ANY_OS=1 ile devam ediliyor."
   else
-    err "Bu arac Debian 12 ve 13 icin yazildi (bulunan: ${OS_ID:-?} ${OS_VER:-?})."
+    err "Desteklenen sistemler: Debian 12/13, Ubuntu 22.04/24.04 LTS."
+    err "Bulunan: ${OS_ID:-?} ${OS_VER:-?}"
     err "Yine de denemek icin: ALLOW_ANY_OS=1 ./install.sh"
     exit 1
   fi
+elif ! printf '%s\n' $OS_VERIFIED | grep -qxF "$OS_KEY"; then
+  warn "$OS_ID $OS_VER: Virtualmin destekliyor ama bu arac uzerinde henuz temiz kurulum yapilmadi."
 fi
-[ "$OS_VER" = 13 ] && warn "Debian 13: upstream destekliyor ama bu arac uzerinde henuz dogrulanmadi."
 
 # ---- 1) sistem durumu ----
 # HAS_* = sistemde ZATEN ne var. Ayar degiskenleriyle (POSTGRES, DOCKER ...)

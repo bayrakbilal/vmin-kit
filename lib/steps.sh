@@ -98,6 +98,12 @@ step_postgres(){
     log "PostgreSQL kuruluyor..."
     apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-contrib
+    # SONUCU DOGRULA: adimlar 'set +e' altinda calisiyor, basarisiz bir
+    # apt-get sessizce geciliyordu ve asagidaki satir yine "kuruldu" diyordu.
+    if ! command -v psql >/dev/null 2>&1; then
+      err "PostgreSQL kurulamadi (psql bulunamadi)."
+      return 1
+    fi
     ok "PostgreSQL kuruldu. Virtualmin ilk oturum sihirbazinda secilebilir olacak."
   fi
   # Ozelligi ayrica acmaya gerek yok: Virtualmin kurulu PostgreSQL'i kendisi
@@ -117,6 +123,15 @@ step_composer(){
   log "Composer kuruluyor..."
   apt-get update -qq
   DEBIAN_FRONTEND=noninteractive apt-get install -y composer
+  # SONUCU DOGRULA: adimlar 'set +e' altinda calisiyor, basarisiz bir apt-get
+  # sessizce geciliyordu ve asagidaki satir yine "kuruldu" diyordu. Ubuntu'da
+  # 'composer' paketi 'universe' bileseninde; o bilesen kapaliysa kurulum
+  # burada takilir ve sebebini yazmis oluruz.
+  if ! command -v composer >/dev/null 2>&1; then
+    err "Composer kurulamadi. Ubuntu'da 'universe' bileseni kapali olabilir:"
+    err "  add-apt-repository universe && apt-get update && apt-get install composer"
+    return 1
+  fi
   ok "Composer kuruldu."
 }
 
@@ -849,13 +864,25 @@ step_docker(){
   done
   apt-get update; apt-get install -y ca-certificates curl gnupg
   install -m 0755 -d /etc/apt/keyrings
+  # Docker'in deposu DAGITIM BASINA ayri: .../linux/debian ve .../linux/ubuntu
+  # farkli dizinler ve ubuntu'nunkinde bookworm/trixie, debian'inkinde
+  # jammy/noble yok. Bu yuzden dagitim adi /etc/os-release'den okunuyor,
+  # sabit yazilmiyor. VERSION_CODENAME de oradan geliyor.
+  local os_id code arch
+  os_id="$(. /etc/os-release && echo "${ID:-debian}")"
+  code="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+  arch="$(dpkg --print-architecture)"
+  case "$os_id" in
+    debian|ubuntu) ;;
+    *) warn "Docker deposu icin bilinmeyen dagitim ($os_id); debian varsayiliyor."
+       os_id=debian ;;
+  esac
   if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
-    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+    curl -fsSL "https://download.docker.com/linux/${os_id}/gpg" | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
     chmod a+r /etc/apt/keyrings/docker.gpg
   fi
-  local arch code; arch="$(dpkg --print-architecture)"; code="$(. /etc/os-release && echo "$VERSION_CODENAME")"
   if [ ! -f /etc/apt/sources.list.d/docker.list ]; then
-    echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian ${code} stable" > /etc/apt/sources.list.d/docker.list
+    echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/${os_id} ${code} stable" > /etc/apt/sources.list.d/docker.list
   fi
   apt-get update; apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   systemctl enable --now docker

@@ -1,8 +1,15 @@
 # vmin-kit
 
-**Debian 12** üzerinde Virtualmin (GPL) tabanlı bir hosting sunucusunu tek
-komutla kurar. **Debian 13** de kabul edilir — Virtualmin'in kendi kurucusu
-destekliyor — ama bu araçla henüz doğrulanmadı, kurulum bir uyarı yazar. Kurulum bittiğinde ana domain hazır, SSL'li ve yayında olur;
+Virtualmin (GPL) tabanlı bir hosting sunucusunu tek komutla kurar.
+
+**Desteklenen sistemler:** Debian 12, Debian 13, Ubuntu 22.04 LTS, Ubuntu
+24.04 LTS. Bunların dışındaki bir sistemde kurulum başlamadan durur
+(`ALLOW_ANY_OS=1` ile zorlanabilir). Şu an yalnızca **Debian 12** üzerinde
+temiz kurulum doğrulandı; diğerlerinde kurulum bir uyarı yazar.
+
+RHEL ailesi (AlmaLinux, Rocky, RHEL) **bilerek kapsam dışı**: Virtualmin
+onları destekliyor ama bu araç `apt`/`dpkg` üzerine kurulu. Desteklediğini
+iddia edip yarım kurulum bırakmak, hiç desteklememekten kötü olurdu. Kurulum bittiğinde ana domain hazır, SSL'li ve yayında olur;
 panel, webmail ve Docker arayüzü kendi alt alanlarından erişilebilir olur.
 
 Yanında üç Webmin eklentisi gelir: **Git Deploy**, **Composer**, **Cloudflare
