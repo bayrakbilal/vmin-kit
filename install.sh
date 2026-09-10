@@ -316,11 +316,17 @@ fi
 step_report
 set -e
 
+# Token EN SON uretilir: omru birkac dakika oldugu icin araya baska adimlar
+# girse bile ekranda gorunen degerin taze olmasi gerekiyor. Kapanis satirlari
+# bu yuzden token'dan SONRA geliyor - eskiden token "Tamamlandi" blogunun
+# altinda kaliyor ve ekranin sonu kapanis gibi gorunmuyordu.
+if is_truthy "$DOCKER"; then step_portainer_token; fi
+
 say ""
 if [ ${#VMINKIT_FAILED[@]} -gt 0 ]; then
   warn "Tamamlandi, ancak su adimlar basarisiz oldu: ${VMINKIT_FAILED[*]}"
-  warn "Sebebi yukaridaki ciktida ve raporda. Duzeltip ./install.sh'i tekrar"
-  warn "calistirabilirsiniz: tamamlanmis adimlar atlanir."
+  warn "Sebebi yukaridaki ciktida ve kurulum kaydinda. Duzeltip ./install.sh'i"
+  warn "tekrar calistirabilirsiniz: tamamlanmis adimlar atlanir."
 else
   ok "Tamamlandi."
 fi
@@ -331,7 +337,3 @@ else
 fi
 log "Site  : https://${MAIN_DOMAIN}"
 log "Kayit : $VMINKIT_LOGFILE"
-
-# Token EN SON uretilir: omru birkac dakika oldugu icin araya baska adimlar
-# girse bile ekranda gorunen degerin taze olmasi gerekiyor.
-if is_truthy "$DOCKER"; then step_portainer_token; fi

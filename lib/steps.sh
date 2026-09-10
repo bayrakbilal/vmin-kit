@@ -57,7 +57,12 @@ vminkit_version(){
   local v
   v="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || true)"
   [ -n "$v" ] || { printf 'bilinmiyor'; return; }
-  if [ -n "$(git -C "$ROOT_DIR" status --porcelain 2>/dev/null)" ]; then
+  # '-uno': IZLENMEYEN dosyalar sayilmaz. Yoksa kurulumun kendi biraktigi bir
+  # dosya (eski vmin-kit-rapor.txt gibi) yuzunden, kodda hicbir degisiklik
+  # olmadigi halde "degistirilmis" yaziyordu. Bu satirin tek isi "bu sunucu
+  # hangi vmin-kit ile kuruldu" sorusuna cevap vermek; yanlis alarm degeri
+  # dusuruyor.
+  if [ -n "$(git -C "$ROOT_DIR" status --porcelain -uno 2>/dev/null)" ]; then
     v="$v (degistirilmis calisma kopyasi)"
   fi
   printf '%s' "$v"
@@ -1047,12 +1052,13 @@ step_report(){
   # pratikte hic acilmiyordu. Oysa portlar, adresler ve yapilacaklar tam da
   # kurulum biter bitmez bakilacak seyler. Artik 'say' ile hem ekranda hem
   # log dosyasinda.
+  say ""
   say "vmin-kit kurulum raporu - $(date '+%Y-%m-%d %H:%M:%S %z')"
   say "======================================================="
   say "Arac surumu  : $(vminkit_version)"
-  if [ -n "${VMINKIT_LOGFILE:-}" ]; then
-    say "Kurulum kaydi: $VMINKIT_LOGFILE"
-  fi
+  # Kayit yolu burada TEKRAR EDILMIYOR: kurulumun basinda bir kez, kapanista
+  # bir kez yaziliyor. Ucuncu kez yazmak raporu gurultuye bogar - ustelik bu
+  # metin zaten o kaydin icinde duruyor.
   say "Ana domain   : $MAIN_DOMAIN"
   say "Hostname     : $HOSTNAME_FQDN"
   say "Sunucu IP    : ${ip:-bilinmiyor}"
@@ -1149,10 +1155,9 @@ step_report(){
     say "yayinlanan kopya harici saglayicidadir. Yeni domain/alt domain eklerken"
     say "A kaydini orada olusturmayi unutmayin."
   fi
+  # Kayit yolu raporun basinda zaten yaziyor; burada tekrar etmiyoruz.
+  # install.sh kapanista bir kez daha gosteriyor, o kadari yeter.
   say ""
-  if [ -n "${VMINKIT_LOGFILE:-}" ]; then
-    ok "Kurulum kaydi: $VMINKIT_LOGFILE"
-  fi
 
   # Ikinci sunucu icin ayrica bir cevap dosyasi URETMIYORUZ: ayarlar zaten
   # depodaki config.env icinde duruyor. Yeni sunucuda depoyu cekip ana
