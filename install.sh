@@ -330,7 +330,7 @@ else
   log "Panel : https://${HOSTNAME_FQDN}:10000"
 fi
 log "Site  : https://${MAIN_DOMAIN}"
-log "Rapor : $VMINKIT_REPORT"
+log "Kayit : $VMINKIT_LOGFILE"
 
 # Token EN SON uretilir: omru birkac dakika oldugu icin araya baska adimlar
 # girse bile ekranda gorunen degerin taze olmasi gerekiyor.

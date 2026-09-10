@@ -3,8 +3,7 @@
 # değişkeni olarak verilir (ör. SERVER_IP=... ./install.sh).
 *.log
 
-# kurulum ciktisi
-vmin-kit-rapor.txt
+# kurulum ciktisi (vmin-kit-kurulum-*.log zaten *.log ile kapsaniyor)
 
 # yerel çalışma dosyaları (ekran görüntüleri vb.)
 *.png

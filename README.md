@@ -123,7 +123,7 @@ Dosyanın sonunda kaçış kapıları var (`SKIP_DNS_CHECK`, `ALLOW_ANY_OS`,
 | `docker` | Docker + Portainer + `docker.` alt alanı *(isteğe bağlı)* |
 | `webmail` | `webmail.` alt alanı + Roundcube *(isteğe bağlı)* |
 | `lock-panel-ports` | Vekilin çalıştığı doğrulandıktan **sonra** panel portlarını kapatır |
-| `report` | `vmin-kit-rapor.txt` üretir |
+| `report` | Özeti ekrana ve kurulum kaydına yazar |
 
 Bir adım hata verirse kurulum durmaz; o adım atlanır, kalanlar çalışır ve durum
 raporda görünür.
@@ -147,9 +147,10 @@ Dışarıya açık yönetim portu bırakılmaz: Webmin, Usermin ve Portainer
 
 ### İlk yapılacaklar
 
-1. **Raporu okuyun:** araç klasöründeki `vmin-kit-rapor.txt` — ne yapıldı, ne
-   yapılmadı, sırada ne var. Başarısız olan adımlar, dışarıya açık dinleyen
-   portlar ve sunucunun hangi vmin-kit sürümüyle kurulduğu da orada.
+1. **Özeti okuyun:** kurulum bitince ekrana basılır — ne yapıldı, ne yapılmadı,
+   sırada ne var. Başarısız olan adımlar, dışarıya açık dinleyen portlar ve
+   sunucunun hangi vmin-kit sürümüyle kurulduğu da oradadır. Aynısı kurulum
+   kaydının sonunda durur.
 2. **Ana domain şifresi** rastgele üretilir ve **saklanmaz**. Panel girişi ya da
    FTP gerekirse *Edit Virtual Server → Password* ile yeni şifre belirleyin.
 3. **Portainer** ilk açılışta bir kurulum token'ı ister ve token kısa ömürlüdür.
