@@ -1204,10 +1204,18 @@ step_report(){
         # Yalnizca yerel dinleyenler bizi ilgilendirmiyor.
         #
         # TUM 127.0.0.0/8 eleniyor, yalnizca 127.0.0.1 degil: systemd-resolved
-        # 127.0.0.53 uzerinde dinliyor ve dar suzgec onu "disariya acik"
-        # gosteriyordu (temiz kurulumda "53 systemd-resolve" diye cikti).
-        # Yanlis alarm, listenin tum degerini dusuruyor.
-        if (addr ~ /^127\./ || addr ~ /^\[::1\]:/) next
+        # "127.0.0.53%lo" ve "127.0.0.54" uzerinde dinliyor. Dar suzgec bunu
+        # "disariya acik" gosteriyor, ustelik ayni porttaki GERCEK dinleyiciyi
+        # (named) de gizliyordu - temiz kurulumda "53 systemd-resolve" diye
+        # cikti, oysa dogrusu "53 named". Gercek 'ss' ciktisiyla dogrulandi.
+        #
+        # fe80::/10 de eleniyor: baglanti-yerel adresler yalnizca ayni ag
+        # segmentinden erisilebilir, "disariya acik" sayilmaz. named her
+        # arayuz icin bir tane aciyor (ens192, docker0, veth...).
+        #
+        # Docker koprusu (172.17.x) BILEREK eleniyor DEGIL: oradan bir
+        # konteyner erisebilir, yani gercek bir yol.
+        if (addr ~ /^127\./ || addr ~ /^\[::1\]:/ || addr ~ /^\[[Ff][Ee]80:/) next
         n = split(addr, a, ":")
         port = a[n]
         # users:(("ad",pid=...  -> ad. Onek 9 karakter, kapanis tirnagi 1.
