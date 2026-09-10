@@ -54,14 +54,26 @@ step_hostname(){
 step_virtualmin(){
   if command -v virtualmin >/dev/null 2>&1; then ok "Virtualmin zaten kurulu (atlaniyor)."; return; fi
   ensure_pkg curl curl || { err "curl kurulamadi."; return 1; }
+  # ADRES ONEMLI: 'install.sh', 'virtualmin-install.sh' DEGIL.
+  #
+  # Eski ad hala servis ediliyor ama BIR SURUMDE DONMUS: VER=7.5.2, 1716
+  # satir, desteklenen sistemler "Debian 10, 11 and 12". Guncel olan
+  # 'install.sh': VER=8.1.2, 2281 satir, "Debian 12 and 13" (arm64 dahil).
+  # Ikisi de indirilip karsilastirildi.
+  #
+  # Sonucu suydu: kurulum bir yil eski Virtualmin 7.5.2 yukluyordu ve sunucu
+  # ancak sonradan apt ile 8.x'e cikiyordu. Debian 13'un onundeki engel de
+  # bizim OS kontrolumuz degil, indirdigimiz bu eski dosyaydi.
+  #
+  # Kullandigimiz iki bayrak yeni surumde de aynen var ve ayni sekilde
+  # ayristiriliyor (--hostname|-n deger alir, --force|-f|--yes|-y onay atlar).
+  # Yenisinde ayrica --minimal/--bundle/--include/--extra var; eski notumuz
+  # "bu bayraklar servis edilen surumde yok" diyordu, o not artik gecersiz.
   log "Virtualmin resmi installer indiriliyor..."
-  curl -fsSL https://software.virtualmin.com/gpl/scripts/virtualmin-install.sh -o /root/virtualmin-install.sh
+  curl -fsSL https://software.virtualmin.com/gpl/scripts/install.sh -o /root/virtualmin-install.sh
   chmod +x /root/virtualmin-install.sh
-  # Dikkat: software.virtualmin.com'un servis ettigi installer, kaynak
-  # depodaki surumden eskidir; --extra / --include / --type gibi bayraklar
-  # orada YOK. Yalnizca her surumde bulunan bayraklar kullanilir.
   local args=(--force --hostname "$HOSTNAME_FQDN")
-  log "Calistiriliyor (uzun surer): virtualmin-install.sh ${args[*]}"
+  log "Calistiriliyor (uzun surer): virtualmin install.sh ${args[*]}"
   sh /root/virtualmin-install.sh "${args[@]}"
   ok "Virtualmin kurulumu bitti."
 }

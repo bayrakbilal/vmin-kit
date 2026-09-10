@@ -32,15 +32,23 @@ echo "==================== vmin-kit ===================="
 # ---- 0) isletim sistemi ----
 OS_ID=""; OS_VER=""
 if [ -r /etc/os-release ]; then . /etc/os-release; OS_ID="${ID:-}"; OS_VER="${VERSION_ID:-}"; fi
-if [ "$OS_ID" != debian ] || [ "$OS_VER" != 12 ]; then
+# Kabul edilen surumler, Virtualmin'in KENDI kurucusunun destekledikleriyle
+# hizali: guncel install.sh "Debian 12 and 13" diyor. Daha ilerisini kabul
+# etmiyoruz cunku Virtualmin'in desteklemedigi bir sistemde kurulum yarida
+# kalir ve geride yarim yapilandirilmis bir sunucu birakir.
+#
+# Debian 13 UZERINDE HENUZ TEMIZ KURULUM DENENMEDI (2026-09-10). Upstream
+# destekliyor, biz denemedik - once bir kez calistirilip dogrulanmali.
+if [ "$OS_ID" != debian ] || { [ "$OS_VER" != 12 ] && [ "$OS_VER" != 13 ]; }; then
   if is_truthy "${ALLOW_ANY_OS:-0}"; then
-    warn "Debian 12 degil ($OS_ID $OS_VER) - ALLOW_ANY_OS=1 ile devam ediliyor."
+    warn "Debian 12/13 degil ($OS_ID $OS_VER) - ALLOW_ANY_OS=1 ile devam ediliyor."
   else
-    err "Bu arac Debian 12 icin yazildi (bulunan: ${OS_ID:-?} ${OS_VER:-?})."
+    err "Bu arac Debian 12 ve 13 icin yazildi (bulunan: ${OS_ID:-?} ${OS_VER:-?})."
     err "Yine de denemek icin: ALLOW_ANY_OS=1 ./install.sh"
     exit 1
   fi
 fi
+[ "$OS_VER" = 13 ] && warn "Debian 13: upstream destekliyor ama bu arac uzerinde henuz dogrulanmadi."
 
 # ---- 1) sistem durumu ----
 # HAS_* = sistemde ZATEN ne var. Ayar degiskenleriyle (POSTGRES, DOCKER ...)
