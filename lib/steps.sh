@@ -1247,24 +1247,23 @@ step_report(){
       # 'ss' var ve calisti; bos sonuc "okunamadi" degil "hicbiri" demek.
       say "  (yok - yalnizca 127.0.0.1 uzerinde dinleyenler var)"
     fi
-    # GUVENLIK DUVARININ DURUMU. Eskiden yalnizca "bu arac yonetmiyor"
-    # yaziyordu ve bu "guvenlik duvari yok" gibi okunuyordu - oysa Virtualmin
-    # kurulumda nftables ve fail2ban yapilandiriyor (kurulum kaydinda
-    # "Configuring Nftables / Fail2ban" adimlari goruluyor).
+    # GUVENLIK DUVARI DURUMU BURADA RAPORLANMIYOR - bilerek.
     #
-    # Servisin 'active' olup olmadigina BAKMIYORUZ: webmin-nftables oneshot,
-    # kurallari uygulayip cikiyor, yani 'inactive' gorunmesi normal. Gercek
-    # olcut yuklu kural seti.
-    local fw
-    if ! command -v nft >/dev/null 2>&1; then
-      fw="nft komutu yok"
-    elif nft list ruleset 2>/dev/null | grep -q '[^[:space:]]'; then
-      fw="nftables kural seti yuklu"
-    else
-      fw="nftables kural seti BOS"
-    fi
-    say "  (dinleyen soket != erisilebilir; erisim guvenlik duvarina bagli)"
-    say "  (vmin-kit guvenlik duvari yonetmiyor - $fw)"
+    # Bir sure "nftables kural seti yuklu/bos" diye bir satir vardi ve iki
+    # sekilde birden yanlisti:
+    #
+    #   1) KAPSAM DISI. Bu bir kurulum araci; "hangi portlar dinliyor" bir
+    #      olgu, "guvenlik duvari ne durumda" ise ayri bir konu ve henuz
+    #      incelemedigimiz bir sey hakkinda yorum yapmis oluyorduk.
+    #
+    #   2) OLCUM DE YANLISTI. 'nft list ruleset | grep -q ...' kaliyordu:
+    #      grep ilk eslesmede cikinca nft SIGPIPE ile 141 donuyor ve
+    #      'set -o pipefail' bunu tum boru hattinin hatasi sayiyor - kural
+    #      seti DOLUYKEN "BOS" yaziyordu. (Kucuk ciktilarda uremiyor, boru
+    #      arabellegine sigiyor; gercek nft ciktisi sigmiyor.)
+    #
+    # Gerektiginde guvenlik duvari yapilandirmasi ayri bir adim olarak
+    # eklenir; o zamana kadar burada yalnizca dinleyen soketler yaziyor.
   fi
 
   # NOTLAR: yalnizca ILERIDE YAPILACAK, kendiliginden olmayacak seyler.
