@@ -669,6 +669,36 @@ step_webmail(){
       ok "Roundcube oturum anahtari rastgele bir degerle degistirildi."
     fi
   fi
+
+  # --- kurulum sihirbazini kaldir ---
+  #
+  # Roundcube'un dizin duzeni (kaynagindan dogrulandi):
+  #   <kok>/installer                 sihirbazin asil kodu
+  #   <kok>/public_html/installer.php on denetleyici
+  # enable_installer varsayilani false, yani sihirbaz calismayi reddediyor;
+  # yine de Roundcube'un kendi tavsiyesi kurulumdan sonra silmek. Ayarin
+  # yanlislikla acilmasi ya da bir surumde varsayilanin degismesi ihtimaline
+  # karsi kod hic durmasin.
+  #
+  # DIKKAT: Virtualmin'in script yukseltmesi tarball'i yeniden actigi icin
+  # sihirbaz geri gelebilir. Bu blok tekrarlanabilir, install.sh'i yeniden
+  # calistirmak yeterli.
+  #
+  # $dir bos olamaz - buraya gelmeden once $cfg="$dir/config/config.inc.php"
+  # dosyasinin varligi kontrol edildi. Yine de silme islemi oldugu icin acikca
+  # bir kez daha bakiyoruz.
+  if [ -n "$dir" ] && [ -d "$dir" ]; then
+    local removed=0
+    if [ -e "$dir/installer" ]; then rm -rf "$dir/installer"; removed=1; fi
+    if [ -e "$dir/public_html/installer.php" ]; then
+      rm -f "$dir/public_html/installer.php"; removed=1
+    fi
+    if [ "$removed" = 1 ]; then
+      ok "Roundcube kurulum sihirbazi kaldirildi."
+    else
+      ok "Roundcube kurulum sihirbazi zaten yok."
+    fi
+  fi
 }
 
 # docker.<domain> alt sunucusu + Portainer'a proxy.
