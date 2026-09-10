@@ -108,7 +108,11 @@ CMD_COUNT="$(wc -l < "$TMP/commands")"
 } | grep -E '^[a-z_][a-z_0-9]{2,}$' | sort -u > "$TMP/keys"
 KEY_COUNT="$(wc -l < "$TMP/keys")"
 
-log "Bulundu: $SYM_COUNT perl sembolu, $CMD_COUNT CLI komutu, $KEY_COUNT config anahtari"
+# BENZERSIZ ad sayisi: uc eklenti ayni kancayi ayri ayri tanimliyor (toplam
+# tanim ~53), ama dogrulanan sey adin kendisi.
+HOOK_COUNT="$(grep -hoE '^sub feature_[a-z_0-9]+' "$ROOT_DIR"/plugin/*/virtual_feature.pl \
+  | sort -u | wc -l)"
+log "Bulundu: $SYM_COUNT perl sembolu, $CMD_COUNT CLI komutu, $KEY_COUNT config anahtari, $HOOK_COUNT kanca adi"
 echo
 
 # ---------------------------------------------------------------------------
@@ -201,6 +205,41 @@ while read -r key; do
   fi
 done < "$TMP/keys"
 ok "$KEY_OK config anahtari yerinde"
+echo
+
+# ---------------------------------------------------------------------------
+# 7) EKLENTI KANCALARI - sozlesmenin BIZI CAGIRAN tarafi
+#
+# Yukaridaki bolumler bizim Virtualmin'den ne istedigimize bakiyor. Bu bolum
+# tersini kontrol ediyor: Virtualmin bizim yazdigimiz feature_* kancalarini
+# hala cagiriyor mu?
+#
+# Bir kanca yeniden adlandirilir ya da kaldirilirsa HICBIR HATA OLMAZ -
+# fonksiyonumuz dosyada oylece durur, hic cagrilmaz. Ozellik sessizce
+# kurulmaz, yedek sessizce alinmaz. Fark edilmesi en zor bozulma bicimi.
+#
+# Olcut: kanca adinin Virtualmin'in kaynaginda TIRNAK ICINDE gecmesi. Cagri
+# sozdizimini ('plugin_call($f, "feature_x"') eslestirmek denendi ve
+# YETMEDI: cagrilarin bir kismi cok satirli, ad ayri satira dusuyor ve
+# satir bazli arama kaciriyor - feature_restore boyle kacmisti.
+# ---------------------------------------------------------------------------
+log "Eklenti kancalari dogrulaniyor..."
+grep -hoE '^sub feature_[a-z_0-9]+' "$ROOT_DIR"/plugin/*/virtual_feature.pl \
+  | sed 's/^sub //' | sort -u > "$TMP/hooks_ours"
+grep -hoE "['\"]feature_[a-z_0-9]+['\"]" "$VS_DIR"/*.pl "$VS_DIR"/*.cgi 2>/dev/null \
+  | tr -d "\"'" | sort -u > "$TMP/hooks_called"
+
+HOOK_OK=0
+while read -r h; do
+  [ -n "$h" ] || continue
+  if grep -qxF "$h" "$TMP/hooks_called"; then
+    HOOK_OK=$((HOOK_OK + 1))
+  else
+    err "Virtualmin bu kancayi hic cagirmiyor: $h"
+    MISSING=$((MISSING + 1))
+  fi
+done < "$TMP/hooks_ours"
+ok "$HOOK_OK eklenti kancasi Virtualmin tarafindan cagriliyor"
 echo
 
 # ---------------------------------------------------------------------------
