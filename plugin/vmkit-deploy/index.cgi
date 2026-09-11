@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# Bir domainin deployment listesi.
+# A domain's deployment list.
 use strict;
 use warnings;
 our (%text, %in, $module_name);
@@ -23,7 +23,7 @@ if (&indexof($module_name, @virtual_server::plugins) < 0) {
 	}
 use warnings "once";
 
-# ---- domain secilmedi: erisebildiklerimizi listele ----
+# ---- no domain chosen: list the ones this user may edit ----
 if (!$d) {
 	my @doms = grep { $_->{$module_name} && &can_edit_domain($_) }
 			&virtual_server::list_domains();
@@ -46,10 +46,10 @@ if (!$d->{$module_name}) {
 	&ui_print_endpage(&text('index_eoff', $d->{'dom'}));
 	}
 
-# Webmin'in ui-lib'i surumden surume BUYUYOR: yeni yardimcilar ekleniyor.
-# Hedef sunucuda olmayan birini cagirmak sayfayi "Undefined subroutine" ile
-# oldurur - ui_badge ile bunu bir kez yasadik (2.660'ta yok). Renk gibi
-# suslemeler bu yuzden dogrudan cagrilmiyor: yoksa duz metne dusuyoruz.
+# Webmin's ui-lib GROWS from release to release. Calling a helper that the
+# target server does not have kills the page with "Undefined subroutine" -
+# ui_badge does not exist in 2.660. Decoration like colour is therefore never
+# called directly: when it is missing we fall back to plain text.
 sub colour
 {
 my ($txt, $type) = @_;
@@ -58,18 +58,19 @@ return defined(&ui_text_color) ? &ui_text_color($txt, $type) : $txt;
 
 my @deps = &list_deploys($d);
 if (@deps) {
-	# Cekme ve dagitim birer MUTASYON: baglanti degil POST dugmesi. Bir
-	# baglantiya tiklamak, onu onbelleklemek ya da tarayicinin onceden
-	# getirmesi bir dagitimi tetiklememeli.
-	# HEDEF 'deploy_progressive.cgi': dosya adindaki "_progressive.cgi"
-	# temanin akitma listesine giren tek genel kural (bkz. o dosyanin
-	# basindaki not). Adi degistirirsek cikti yine sonda tek seferde gelir.
+	# Pulling and deploying are MUTATIONS: a POST button, not a link.
+	# Clicking a link, caching it or a browser prefetch must never trigger
+	# a deployment.
+	# The target is 'deploy_progressive.cgi': the "_progressive.cgi" suffix
+	# is the only general rule that puts a page on the theme's streaming
+	# list (see the note at the top of that file). Rename it and the output
+	# arrives in one lump at the end again.
 	#
-	# Satirdaki DORT dugme de ayni bilesenden: hepsi kucuk bir POST formu.
-	# Sebep GORUNUM - ui_link_button gercek bir <button> uretiyor ama
-	# temanin dugme bicimlendirmesine girmedigi icin otekilerden kucuk
-	# kaliyordu. commits/log yalnizca OKUYOR; POST ile gelmeleri hicbir sey
-	# degistirmiyor, sadece boylari tutuyor. Composer sayfasi da boyle.
+	# All FOUR buttons in a row use the same small POST form. The reason is
+	# APPEARANCE: ui_link_button emits a real <button> but misses the
+	# theme's button styling, so it came out smaller than the others.
+	# commits/log only READ; arriving by POST changes nothing and keeps the
+	# sizes consistent.
 	my $btn = sub {
 		my ($dep, $cgi, $op, $label) = @_;
 		return &ui_form_start($cgi, "post", undef,
@@ -83,9 +84,8 @@ if (@deps) {
 
 	my @table;
 	foreach my $dep (@deps) {
-		# Gecerli renk tipleri: success, info, warn, danger. Baska bir ad
-		# verilince ui_text_color hicbir renk uygulamiyor - 'good'/'bad'
-		# yazmistim ve sessizce renksiz kaliyordu.
+		# Valid colour types: success, info, warn, danger. Any other name
+		# and ui_text_color applies no colour at all, silently.
 		my $last = $dep->{'last_time'}
 			? &colour($dep->{'last_status'} eq 'ok'
 					 ? $text{'st_ok'} : $text{'st_failed'},
@@ -93,14 +93,15 @@ if (@deps) {
 					 ? 'success' : 'danger')." - ".
 			  &op_label($dep->{'last_op'} || 'both')." - ".
 			  &make_date($dep->{'last_time'}).
-			  # Elle mi kancadan mi tetiklendi: kanca calisiyor mu
-			  # sorusunun cevabi listede gorunsun.
+			  # Manual or hook: the list answers "is the hook
+			  # working?" without opening anything.
 			  (($dep->{'last_trigger'} || '') eq 'hook'
 				? " <small>(".$text{'trigger_hook'}.")</small>" : "")
 			: $text{'never'};
 
-		# Yayindaki ve cekilmis ucu ayri gosteriyoruz: manuel modun butun
-		# anlami "cekildi ama daha yayinlanmadi" ara durumunu gormek.
+		# The live and the pulled revision are shown separately: the
+		# whole point of manual mode is seeing the "pulled but not yet
+		# published" state.
 		my $state;
 		if (&pending($d, $dep)) {
 			$state = &colour(&text('state_pending',
@@ -118,45 +119,42 @@ if (@deps) {
 			$state = "-";
 			}
 
-		# Dugme adlari SABIT: "Cek" ve "Dagit". Cekme dugmesi otomatik
-		# modda "Cek ve dagit" olurken satirlar farkli genislikte
-		# cikiyordu ve liste tutarsiz gorunuyordu; oysa modun ne yaptigi
-		# zaten Mod sutununda yaziyor.
+		# The button labels are FIXED ("Pull" and "Deploy"). Letting the
+		# pull button read "Pull and deploy" in automatic mode made rows
+		# different widths, and the Mode column already says what the
+		# mode does.
 		#
-		# Islem degismiyor: op gonderilmiyor, ne yapilacagina sayfa
-		# modun kendisine bakarak karar veriyor - otomatikse cekip
-		# dagitiyor. Boylece bu karar tek yerde, kancayla ayni yerde.
+		# No 'op' is sent: the page decides from the mode, so that
+		# decision lives in one place, the same one the hook uses.
 		#
-		# DIL ANAHTARLARININ ADI RENGI VE IKONU BELIRLIYOR. Tema once
-		# etiketi %text icinde arayip anahtari buluyor, sonra anahtar
-		# adinin icinde kelime ariyor (get_button_style/string_contains):
-		#   'update'  -> mavi + yenileme ikonu   (cekme)
-		#   'install' -> yesil + paket ikonu     (dagitim)
-		#   'delete'  -> kirmizi + carpi ikonu
-		# Etiketler yine "Cek" ve "Dagit"; degisen yalnizca anahtar adi.
+		# THE LANGUAGE KEY NAME DETERMINES THE COLOUR AND ICON. The theme
+		# looks the label up in %text to find the key, then searches the
+		# key name for a word (get_button_style/string_contains):
+		#   'update'  -> blue + refresh icon   (pull)
+		#   'install' -> green + package icon  (deploy)
+		#   'delete'  -> red + cross icon
 		#
-		# DIKKAT: bir dugmenin ETIKET METNI dil dosyasinda BENZERSIZ
-		# olmali. Tema anahtari soyle buluyor:
+		# CAREFUL: a button's LABEL TEXT must be UNIQUE in the language
+		# file. The theme finds the key with
 		#     ($keys) = grep { $module_text{$_} eq $label } keys %module_text
-		# Ayni metne sahip iki anahtar varsa 'keys' her istekte farkli
-		# sirada geldigi icin bazen digeri secilir ve renk gelip gider.
-		# Bunu yasadik: 'Pull' hem pull_update hem op_pull idi.
+		# so two keys sharing one text make 'keys' return them in a
+		# different order per request and the colour comes and goes.
 		my @acts = ( &$btn($dep, "deploy_progressive.cgi", '',
 				   $text{'pull_update'}) );
 		push(@acts, &$btn($dep, "deploy_progressive.cgi", 'deploy',
 				  $text{'deploy_install'}))
 			if (-d &deploy_repo_path($d, $dep));
-		# Repo yalnizca ilk cekmeden sonra olusuyor; ikisini de o zaman
-		# gosteriyoruz.
+		# The repository only exists after the first pull, so these two
+		# appear from then on.
 		if ($dep->{'last_time'}) {
 			push(@acts,
 			     &$btn($dep, "commits.cgi", '', $text{'act_commits'}),
 			     &$btn($dep, "deploylog.cgi", '', $text{'act_log'}));
 			}
 		push(@table, [
-			# Adi duzenleme sayfasina baglamak Webmin'in kalibi:
-			# satirin kimligi tiklanir, ayrica "Duzenle" dugmesi
-			# gerekmez.
+			# Linking the name to the edit page is Webmin's pattern:
+			# the row's identity is clickable, so no separate
+			# "Edit" button is needed.
 			&ui_link("edit_deploy.cgi?dom=$d->{'id'}&id=$dep->{'id'}",
 				 $dep->{'name'} || $dep->{'id'}),
 			$dep->{'repo'},
@@ -179,9 +177,9 @@ else {
 	print "<p><i>$text{'index_none'}</i></p>\n";
 	}
 
-# Sayfa altindaki eylemler: Webmin'in kalibi dugme + yaninda ne yaptigini
-# anlatan aciklama (ui_buttons_row). Ikisi de bir sayfaya goturuyor, o yuzden
-# form degil baglanti dugmesi.
+# Actions at the foot of the page: Webmin's pattern is a button with a short
+# description beside it (ui_buttons_row). Both just open a page, so these are
+# links rather than forms.
 print &ui_buttons_start();
 print &ui_buttons_row("edit_deploy.cgi", $text{'index_add'},
 		      $text{'index_add_desc'},
