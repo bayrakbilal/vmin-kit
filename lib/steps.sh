@@ -583,15 +583,16 @@ PERL
   # sertifikasiz kurulumda 0 kaliyor ve az once olusturdugumuz sunucu ilk
   # yeniden denetlemede silinirdi.
   #
-  # Deger 2 = "evet, ve yapilandirilabilir olsun": panel listelerinde de
-  # gorunuyor (list_visible_domains yalnizca 2'de gizlemiyor), boylece SSL'i
-  # panelden de yonetebiliyorsun. 1 de silinmeyi engellerdi ama gizli kalirdi.
+  # Deger 1 ("Yes"): Virtualmin'in sertifikali kurulumda kendi yazdigi deger.
+  # Ayni degeri yazmak, sertifika alinabilen ve alinamayan kurulumlari ayni
+  # noktaya getiriyor. 2 ("Yes, and have it configurable") hostname domainini
+  # panel listelerinde de gosterirdi; orada gorunmesini istemiyoruz.
   # Zaten bir deger varsa DOKUNULMUYOR - kullanicinin secimi bizden onceliklidir.
   local vcfg="/etc/webmin/virtual-server/config"
   if [ -f "$vcfg" ]; then
     case "$(awk -F= '/^default_domain_ssl=/{print $2; exit}' "$vcfg")" in
       1|2) ;;
-      *) set_kv "$vcfg" default_domain_ssl 2
+      *) set_kv "$vcfg" default_domain_ssl 1
          ok "  Hostname domaini Virtualmin ayarlarinda etkinlestirildi." ;;
     esac
   fi
