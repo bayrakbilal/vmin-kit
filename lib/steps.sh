@@ -884,70 +884,65 @@ step_docker_site(){
   # closed only when the proxy address has a certificate a browser will trust,
   # so there is never a moment with no way in at all.
   #
-  # PORTAINER_BIND_LOCAL=no diyen kullaniciya karisilmiyor: bilerek disariya
-  # acmis, sertifika durumu bu karari degistirmiyor.
+  # A user who set PORTAINER_BIND_LOCAL=no opened it deliberately; the
+  # certificate state does not override that.
   [ "${PORTAINER_BIND_LOCAL:-yes}" = "yes" ] || return 0
 
   if site_cert_ok "$prefix"; then
     portainer_set_publish "127.0.0.1:${port}:9000"
     return
   fi
-  warn "Portainer ${port} acik birakildi: ${prefix}.${MAIN_DOMAIN} sertifikasiz."
+  warn "Portainer ${port} left open: ${prefix}.${MAIN_DOMAIN} has no certificate."
   portainer_set_publish "${port}:9000"
-  return 1   # sertifika eksik: adim basarisiz sayiliyor, ozette gorunsun
+  return 1   # missing certificate: count the step as failed so it is visible
 }
 
-# Webmin/Usermin, istegin Referer basligindaki adresi kendi gordugu
-# Host + PORT ile karsilastiriyor (web-lib-funcs.pl, referer kontrolu).
-# Vekilin arkasinda referer https://webmin.<domain> yani port 443, arayuzun
-# kendi portu ise 10000 oldugu icin esitlik tutmuyor ve istek "Security
-# Warning" sayfasiyla reddediliyor.
+# Webmin and Usermin compare the request's Referer against the Host AND PORT
+# they see. Behind the proxy the referer is https://webmin.<domain> (port 443)
+# while the interface's own port is 10000, so the check fails and the request
+# is refused with a "Security Warning" page.
 #
-# Cozum panelin kendi onerdigi sey: adresi guvenilen siteler listesine eklemek.
-# Panelde Webmin Configuration -> Trusted Referrers ile ayni yer.
-# Bu dosya her istekte yeniden okundugu icin servisi yeniden baslatmak gerekmez.
+# The fix is the panel's own: add the address to the trusted referrers list
+# (Webmin Configuration -> Trusted Referrers). The file is re-read on every
+# request, so no restart is needed.
 add_trusted_referer(){
   local conf="$1" site="$2" cur
   [ -f "$conf" ] || return 0
   cur="$(awk -F= '/^referers=/{sub(/^referers=/,""); print; exit}' "$conf")"
   case " $cur " in
-    *" $site "*) ok "  Guvenilen adres zaten kayitli: $site"; return 0 ;;
+    *" $site "*) ok "  Trusted address already registered: $site"; return 0 ;;
   esac
   [ -f "${conf}.vmin-kit.bak" ] || cp -a "$conf" "${conf}.vmin-kit.bak"
   set_kv "$conf" referers "$(echo "$cur $site" | xargs)"
-  ok "  Guvenilen adres eklendi: $site"
+  ok "  Trusted address added: $site"
 }
 
 
-# Vekilin arkasinda arayuzun DIS adresini bilmesi gerekiyor: kendi portu 10000
-# ama disaridan gelen istek 443'ten geliyor. miniserv izin verilen websocket
-# origin listesini bu bilgiden kuruyor (miniserv-lib.pl,
-# get_websocket_allowed_origins - "canonical externally-visible URL" satiri).
-# Bildirilmezse tarayici https://webmin.<domain> origin'i gonderiyor, miniserv
-# https://webmin.<domain>:10000 bekliyor ve baglantiyi
-# "403 Invalid Websockets origin" ile reddediyor. Authentic tema panosu,
-# dosya yoneticisi ve terminali websocket kullandigi icin bu sart.
+# Behind the proxy the interface must know its EXTERNAL port: its own is 10000
+# but requests arrive on 443, and miniserv builds the list of allowed websocket
+# origins from that. Without it the browser sends https://webmin.<domain> while
+# miniserv expects https://webmin.<domain>:10000 and answers "403 Invalid
+# Websockets origin" - which breaks the theme's dashboard, file manager and
+# terminal.
 #
-# Konak adi ayrica yazilmiyor: redirect_host bos oldugunda miniserv gelen Host
-# basligini kullaniyor, ProxyPreserveHost sayesinde o zaten dogru.
+# The host name is not written: with redirect_host empty miniserv uses the
+# incoming Host header, which ProxyPreserveHost already makes correct.
 set_panel_external_port(){
   local name="$1" conf="$2" svc="$3"
   [ -f "$conf" ] || return 0
   if [ "$(sed -n 's/^redirect_port=//p' "$conf" | head -1)" = "443" ]; then
-    ok "  $name dis portu zaten bildirilmis (443)."
+    ok "  $name external port is already declared (443)."
     return 0
   fi
   [ -f "${conf}.vmin-kit.bak" ] || cp -a "$conf" "${conf}.vmin-kit.bak"
   set_kv "$conf" redirect_port "443"
-  systemctl restart "$svc" >/dev/null 2>&1 || warn "  $svc yeniden baslatilamadi."
-  ok "  $name dis portu 443 olarak bildirildi (websocket origin icin)."
+  systemctl restart "$svc" >/dev/null 2>&1 || warn "  Could not restart $svc."
+  ok "  $name external port declared as 443 (for websocket origins)."
 }
 
-# Yonetim arayuzleri ana domain altinda birer alt alan olarak yayinlanir:
-#   webmin.<ana-domain>  -> 127.0.0.1:10000
-#   usermin.<ana-domain> -> 127.0.0.1:20000
-# Amac disariya acik yonetim portu birakmamak. Kilitleme ayri bir adimda
-# (step_lock_panel_ports), once vekilin calistigi dogrulaniyor.
+# The management interfaces are published as sub-domains of the main domain,
+# so no management port has to stay open. Closing the ports is a separate step
+# (step_lock_panel_ports) that first verifies the proxy works.
 step_panel_sites(){
   local wport uport
   wport="$(awk -F= '/^port=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null)"
@@ -965,13 +960,12 @@ step_panel_sites(){
     add_trusted_referer /etc/usermin/config "${USERMIN_PREFIX:-usermin}.${MAIN_DOMAIN}"
     set_panel_external_port "Usermin" /etc/usermin/miniserv.conf usermin
   else
-    log "Usermin kurulu degil; usermin.<domain> atlaniyor."
+    log "Usermin is not installed; skipping usermin.<domain>."
   fi
 
-  # Sertifika alinamadiysa adim BASARISIZ sayiliyor. Site ve vekil calisiyor
-  # ama istenen sonuc - tarayicinin guvendigi bir panel adresi - olusmadi ve
-  # bu yuzden yonetim portu da acik kaldi. Ozetteki "BASARISIZ ADIMLAR"
-  # satirinda gorunmesi gereken tam olarak bu.
+  # A missing certificate fails this step: the site and the proxy work, but the
+  # intended result - a panel address the browser trusts - was not reached, and
+  # the management port therefore stayed open.
   local p rc=0
   for p in "${WEBMIN_PREFIX:-webmin}" "${USERMIN_PREFIX:-usermin}"; do
     [ "${VMINKIT_SITE_CERT[$p]:-1}" = "0" ] && rc=1
@@ -979,49 +973,48 @@ step_panel_sites(){
   return "$rc"
 }
 
-# Yonetim portlarini yalnizca 127.0.0.1'e baglar.
+# Binds the management ports to 127.0.0.1 only.
 #
-# TEHLIKELI ADIM: baglandiktan sonra panele tek erisim vekil uzerinden olur.
-# Bu yuzden ONCE vekilin gercekten cevap verdigini dogruluyoruz; dogrulama
-# basarisizsa kilitleme YAPILMIYOR ve nasil elle yapilacagi yaziliyor.
+# A DANGEROUS step: afterwards the panel is reachable only through the proxy.
+# So the proxy is verified first, and if that fails the port is left open with
+# instructions for doing it by hand.
 #
-# Arayuz kendi SSL'inde kaliyor ve vekil ona https ile gidiyor; boylece Webmin
-# kendini guvenli sayiyor ve urettigi baglantilar https oluyor.
+# The interface keeps its own SSL and the proxy talks https to it, so Webmin
+# still considers itself secure and emits https links.
 lock_panel_port(){
   local name="$1" conf="$2" svc="$3" prefix="$4"
-  [ -f "$conf" ] || { log "  $name kurulu degil, atlaniyor."; return 0; }
+  [ -f "$conf" ] || { log "  $name is not installed, skipping."; return 0; }
 
   if [ "$(awk -F= '/^bind=/{print $2; exit}' "$conf")" = "127.0.0.1" ]; then
-    ok "$name zaten yalnizca 127.0.0.1 dinliyor."
+    ok "$name already listens on 127.0.0.1 only."
     return 0
   fi
 
   if ! proxy_site_works "$prefix"; then
-    warn "$name kilitlenmedi: ${prefix}.${MAIN_DOMAIN} vekili dogrulanamadi."
-    warn "  Vekil calistiktan sonra elle: $conf icine bind=127.0.0.1 ekleyip"
-    warn "  systemctl restart $svc"
+    warn "$name not locked: the ${prefix}.${MAIN_DOMAIN} proxy could not be verified."
+    warn "  Once the proxy works: add bind=127.0.0.1 to $conf and restart $svc"
     return 1
   fi
 
-  # IKINCI SART: alt alanin gecerli bir sertifikasi olmali.
+  # Second condition: the sub-domain must have a valid certificate.
   #
-  # Vekilin cevap vermesi yetmez - curl'e -k veriyoruz, self-signed sertifika
-  # da 200 dondurur. Tarayici ise donmez: HSTS devredeyse "yine de devam et"
-  # secenegi bile cikmaz. O noktada port da kapaliysa panele hicbir yoldan
-  # girilemez. Ubuntu 24.04 turunda tam olarak bu oldu.
+  # A responding proxy is not enough - curl is given -k and a self-signed
+  # certificate still returns 200, while a browser refuses, and with HSTS in
+  # play there is not even a "continue anyway" option. Closing the port at that
+  # moment leaves no way in at all.
   #
-  # Bu yuzden sertifika yoksa port ACIK BIRAKILIYOR. Guvenli olan davranis bu:
-  # acik kalan port bilinen ve raporda yazan bir durum, kapali port ise
-  # kullaniciyi kendi sunucusunun disinda birakiyor.
+  # So a missing certificate leaves the port OPEN. An open port is a known
+  # state that the summary reports; a closed one locks the user out of their
+  # own server.
   if ! site_cert_ok "$prefix"; then
-    warn "$name portu acik birakildi: ${prefix}.${MAIN_DOMAIN} sertifikasiz."
+    warn "$name port left open: ${prefix}.${MAIN_DOMAIN} has no certificate."
     return 0
   fi
 
   [ -f "${conf}.vmin-kit.bak" ] || cp -a "$conf" "${conf}.vmin-kit.bak"
   set_kv "$conf" bind "127.0.0.1"
-  systemctl restart "$svc" >/dev/null 2>&1 || warn "  $svc yeniden baslatilamadi."
-  ok "$name yalnizca 127.0.0.1 dinliyor -> https://${prefix}.${MAIN_DOMAIN}/"
+  systemctl restart "$svc" >/dev/null 2>&1 || warn "  Could not restart $svc."
+  ok "$name listens on 127.0.0.1 only -> https://${prefix}.${MAIN_DOMAIN}/"
 }
 
 step_lock_panel_ports(){
@@ -1030,24 +1023,24 @@ step_lock_panel_ports(){
 }
 
 step_docker(){
-  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then ok "Docker zaten kurulu (atlaniyor)."; return; fi
+  if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then ok "Docker is already installed (skipping)."; return; fi
   local pkg
   for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do
-    if dpkg -s "$pkg" >/dev/null 2>&1; then log "Cakisan paket kaldiriliyor: $pkg"; apt-get remove -y "$pkg" || true; fi
+    if dpkg -s "$pkg" >/dev/null 2>&1; then log "Removing conflicting package: $pkg"; apt-get remove -y "$pkg" || true; fi
   done
   apt-get update; apt-get install -y ca-certificates curl gnupg
   install -m 0755 -d /etc/apt/keyrings
-  # Docker'in deposu DAGITIM BASINA ayri: .../linux/debian ve .../linux/ubuntu
-  # farkli dizinler ve ubuntu'nunkinde bookworm/trixie, debian'inkinde
-  # jammy/noble yok. Bu yuzden dagitim adi /etc/os-release'den okunuyor,
-  # sabit yazilmiyor. VERSION_CODENAME de oradan geliyor.
+  # Docker's repository is per distribution: .../linux/debian and
+  # .../linux/ubuntu are separate trees and neither carries the other's
+  # codenames. So the distribution and codename are read from /etc/os-release
+  # rather than hard-coded.
   local os_id code arch
   os_id="$(. /etc/os-release && echo "${ID:-debian}")"
   code="$(. /etc/os-release && echo "$VERSION_CODENAME")"
   arch="$(dpkg --print-architecture)"
   case "$os_id" in
     debian|ubuntu) ;;
-    *) warn "Docker deposu icin bilinmeyen dagitim ($os_id); debian varsayiliyor."
+    *) warn "Unknown distribution for the Docker repository ($os_id); assuming debian."
        os_id=debian ;;
   esac
   if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
