@@ -1,40 +1,46 @@
 # vmin-kit
 
-Virtualmin (GPL) tabanlı bir hosting sunucusunu tek komutla kurar.
+*[Türkçe](README-tr.md)*
 
-**Desteklenen sistemler:** Debian 12, Debian 13, Ubuntu 22.04 LTS, Ubuntu
-24.04 LTS. Bunların dışındaki bir sistemde kurulum başlamadan durur
-(`ALLOW_ANY_OS=1` ile zorlanabilir). Şu an yalnızca **Debian 12** üzerinde
-temiz kurulum doğrulandı; diğerlerinde kurulum bir uyarı yazar.
+Sets up a Virtualmin (GPL) hosting server with a single command.
 
-RHEL ailesi (AlmaLinux, Rocky, RHEL) **bilerek kapsam dışı**: Virtualmin
-onları destekliyor ama bu araç `apt`/`dpkg` üzerine kurulu. Desteklediğini
-iddia edip yarım kurulum bırakmak, hiç desteklememekten kötü olurdu. Kurulum bittiğinde ana domain hazır, SSL'li ve yayında olur;
-panel, webmail ve Docker arayüzü kendi alt alanlarından erişilebilir olur.
+**Supported systems:** Debian 12, Debian 13, Ubuntu 22.04 LTS, Ubuntu 24.04
+LTS. On anything else the installer stops before it starts (`ALLOW_ANY_OS=1`
+forces it). A clean install has been verified on all four.
 
-Yanında üç Webmin eklentisi gelir: **Git Deploy**, **Composer**, **Cloudflare
-DNS** — üçü de Virtualmin panelinde domain başına çalışır.
+The RHEL family (AlmaLinux, Rocky, RHEL) is **deliberately out of scope**:
+Virtualmin supports it, but this tool is built on `apt`/`dpkg`. Claiming
+support and leaving a half-finished install would be worse than not supporting
+it at all.
+
+When the run finishes the main domain is created, has a certificate and is
+live; the panel, webmail and the Docker interface are reachable on their own
+sub-domains.
+
+Three Webmin plugins come with it: **Git Deploy**, **Composer** and
+**Cloudflare DNS** — all three work per domain inside the Virtualmin panel.
 
 ---
 
-## 1. Kurulum
+## 1. Installation
 
-### Önce DNS
+### DNS first
 
-Ana domain ve hostname için **A kayıtları sunucunun IP'sini göstermeli**:
+The main domain and the hostname need **A records pointing at the server's
+IP**:
 
 ```
-ornek.com        A   <sunucu-ip>
-s.ornek.com      A   <sunucu-ip>
+example.com      A   <server-ip>
+s.example.com    A   <server-ip>
 ```
 
-Cloudflare kullanıyorsanız kurulum sırasında **proxy kapalı (gri bulut)** olsun;
-sertifika alındıktan sonra açabilirsiniz.
+On Cloudflare, keep the **proxy off (grey cloud)** during installation; you can
+turn it on once the certificates are issued.
 
-Kurulum bunu kendisi kontrol eder; yanlışsa hiçbir şey çalıştırmadan ne yapmanız
-gerektiğini yazar.
+The installer checks this itself and, if something is wrong, tells you what to
+fix without running anything.
 
-### Çalıştır
+### Run it
 
 ```bash
 git clone <repo-url>
@@ -42,29 +48,30 @@ cd vmin-kit
 sudo ./install.sh
 ```
 
-Tek soru sorulur: **ana domain**. Ardından kullanılacak ayarların özeti gösterilir
-ve onay istenir.
+There is one question: **the main domain**. After that a summary of the
+settings to be used is shown for confirmation.
 
-Betikten çalıştırmak için domain ortam değişkeni olarak verilebilir:
+To run it from a script, pass the domain as an environment variable:
 
 ```bash
-MAIN_DOMAIN=ornek.com sudo -E ./install.sh
+MAIN_DOMAIN=example.com sudo -E ./install.sh
 ```
 
-**Tekrar çalıştırmak zararsızdır.** Bütün adımlar idempotent: kurulu olanı atlar,
-eksik olanı tamamlar. Yarıda kalan bir kurulumu sürdürmenin yolu da budur.
+**Running it again is harmless.** Every step is idempotent: what is installed is
+skipped, what is missing is completed. That is also how an interrupted install
+is resumed.
 
-### Kurulum kaydı
+### The install log
 
-Ekranda yalnızca adımların sonucu görünür; çalıştırılan komutların ayrıntılı
-çıktısı `vmin-kit-kurulum-<tarih>.log` dosyasına yazılır. Dosya her kurulumda
-oluşur, ayrıca bir seçenek gerekmez. Bir adım başarısız olursa o adımın son
-satırları ekrana da basılır, yani sebebi görmek için dosyayı açmak gerekmez.
+The screen shows only the result of each step; the detailed output of the
+commands goes to `vmin-kit-install-<timestamp>.log`. The file is written on
+every run, no option needed. When a step fails the screen says so and the
+reason is in the log.
 
-Tek istisna Virtualmin kurucusudur: dakikalarca sürdüğü için çıktısı ekranda
-da akar.
+The one exception is the Virtualmin installer: it takes minutes, so its output
+streams to the screen as well.
 
-Her şeyi ekranda görmek isterseniz:
+To see everything on screen:
 
 ```bash
 sudo ./install.sh --verbose
@@ -72,275 +79,284 @@ sudo ./install.sh --verbose
 
 ---
 
-## 2. Ayarlar — `config.env`
+## 2. Settings — `config.env`
 
-Ana domain dışındaki her şey bu dosyadan gelir. Dosya **depoda durur**:
-değiştirin, commit'leyin — sonraki sunucu depoyu çektiğinde aynı şekilde kurulur.
+Everything except the main domain comes from this file. The file **lives in the
+repository**: change it, commit it, and the next server that clones the
+repository installs the same way.
 
-| Ayar | Ne yapar | Varsayılan |
+| Setting | What it does | Default |
 |---|---|---|
-| `POSTGRES` | PostgreSQL kurar (Virtualmin onu kendisi görür; veritabanı seçeneklerinde çıkar) | 1 |
-| `COMPOSER` | Composer kurar (Composer eklentisinin gereksinimi) | 1 |
-| `DOCKER` | Docker Engine + Portainer + `docker.<domain>` sitesi | 1 |
-| `PLUGIN_DEPLOY` | Git Deploy eklentisini kurar | 1 |
-| `PLUGIN_COMPOSER` | Composer eklentisini kurar | 1 |
-| `PLUGIN_CLOUDFLARE` | Cloudflare DNS eklentisini kurar | 1 |
-| `PANEL_PROXY` | `webmin.<domain>` ve `usermin.<domain>` alt alanlarını yayınlar | 1 |
-| `LOCK_PANEL_PORTS` | 10000/20000 portlarını yalnızca `127.0.0.1`'e bağlar | 1 |
-| `ROUNDCUBE` | `webmail.<domain>` alt sunucusu + Roundcube | 1 |
-| `ROLE_ALIASES` | Yeni domainlerde açık kalacak rol adresleri | `postmaster abuse` |
-| `NO_ADMIN_REDIRECT` | Virtualmin'in `admin.<domain>` → panel kısayolunu kapatır | 1 |
-| `NO_WEBMAIL_REDIRECT` | `webmail.<domain>` → Usermin kısayolunu kapatır | 1 |
-| `HOST_PREFIX` | Hostname ve panel adı | `s` |
-| `NS1_PREFIX` / `NS2_PREFIX` | Zone'un nameserver çifti | `ns1` / `ns2` |
-| `DOCKER_PREFIX` `WEBMIN_PREFIX` `USERMIN_PREFIX` `WEBMAIL_PREFIX` | Arayüzlerin alt alan adları | `docker` `webmin` `usermin` `webmail` |
-| `PORTAINER_IMAGE` / `PORTAINER_PORT` | Portainer konteyneri | `ce:lts` / `9000` |
+| `POSTGRES` | Installs PostgreSQL (Virtualmin picks it up itself and offers it among the database options) | 1 |
+| `COMPOSER` | Installs Composer (required by the Composer plugin) | 1 |
+| `DOCKER` | Docker Engine + Portainer + the `docker.<domain>` site | 1 |
+| `PLUGIN_DEPLOY` | Installs the Git Deploy plugin | 1 |
+| `PLUGIN_COMPOSER` | Installs the Composer plugin | 1 |
+| `PLUGIN_CLOUDFLARE` | Installs the Cloudflare DNS plugin | 1 |
+| `PANEL_PROXY` | Publishes the `webmin.<domain>` and `usermin.<domain>` sub-domains | 1 |
+| `LOCK_PANEL_PORTS` | Binds ports 10000/20000 to `127.0.0.1` only | 1 |
+| `ROUNDCUBE` | The `webmail.<domain>` sub-server + Roundcube | 1 |
+| `ROLE_ALIASES` | Role addresses kept on new domains | `postmaster abuse` |
+| `NO_ADMIN_REDIRECT` | Turns off Virtualmin's `admin.<domain>` → panel shortcut | 1 |
+| `NO_WEBMAIL_REDIRECT` | Turns off the `webmail.<domain>` → Usermin shortcut | 1 |
+| `HOST_PREFIX` | The hostname and panel name | `s` |
+| `NS1_PREFIX` / `NS2_PREFIX` | The zone's nameserver pair | `ns1` / `ns2` |
+| `DOCKER_PREFIX` `WEBMIN_PREFIX` `USERMIN_PREFIX` `WEBMAIL_PREFIX` | Sub-domain names of the interfaces | `docker` `webmin` `usermin` `webmail` |
+| `PORTAINER_IMAGE` / `PORTAINER_PORT` | The Portainer container | `ce:lts` / `9000` |
 
-Eklenti bayrağını 0 yapmak **kurulu olanı sökmez**, yalnızca kurmaz. Kaldırmak
-için: `sudo ./update-plugins.sh --remove`.
+Setting a plugin flag to 0 does **not remove an installed plugin**, it only
+skips installing it. To remove one: `sudo ./update-plugins.sh --remove`.
 
-Dosyanın sonunda kaçış kapıları var (`SKIP_DNS_CHECK`, `ALLOW_ANY_OS`,
-`SERVER_IP`, `DNS_RESOLVER`) — normalde gerekmez, yorum satırında dururlar.
-
----
-
-## 3. Kurulum ne yapar
-
-| Adım | Ne yapar |
-|------|----------|
-| `hostname` | Hostname'i `s.<domain>` yapar |
-| `virtualmin` | Resmi installer ile Virtualmin kurar |
-| `host-domain` | Hostname sanal sunucusu (sunucunun varsayılan sitesi ve servis sertifikalarının kaynağı); sertifika alınamasa da oluşturulur |
-| `postgres` / `composer` | PostgreSQL ve Composer paketleri *(isteğe bağlı)* |
-| `dns-template` | Yeni domainler için DNS varsayılanları |
-| `panel-redirects` | `admin.<domain>` ve `webmail.<domain>` kısayollarını kapatır |
-| `domain-defaults` | SPF + DMARC açık, rol adresleri sınırlı |
-| `dkim` | DKIM'i açar; bundan sonra oluşan her domain giden postayı imzalar |
-| `plugins` | Eklentileri paketleyip kurar ve Virtualmin'e tanıtır |
-| `main-domain` | Ana domaini açık bir özellik listesiyle oluşturur (spam/virüs ve PostgreSQL hariç — onlara kurulum sihirbazı karar verir) |
-| `host-dns` | Hostname için A kaydı ekler |
-| `ssl` | Let's Encrypt sertifikası + otomatik yenileme |
-| `panel-sites` | `webmin.` ve `usermin.` alt alanlarını yayınlar |
-| `docker` | Docker + Portainer + `docker.` alt alanı *(isteğe bağlı)* |
-| `webmail` | `webmail.` alt alanı + Roundcube *(isteğe bağlı)* |
-| `lock-panel-ports` | Vekilin çalıştığı doğrulandıktan **ve** alt alanın geçerli sertifikası olduğu görüldükten sonra panel portlarını kapatır |
-| `report` | Özeti ekrana ve kurulum kaydına yazar |
-
-Bir adım hata verirse kurulum durmaz; o adım atlanır, kalanlar çalışır ve durum
-raporda görünür.
-
-**Sertifika ve port ilişkisi.** Her alt alan (`webmin.`, `usermin.`, `webmail.`,
-`docker.`) oluşturulduğu adımda sertifikası kontrol edilir; yoksa bir kez daha
-istenir. Sertifika alınamazsa — DNS henüz yayılmamışsa ya da Let's Encrypt
-kotası dolmuşsa — **o servisin yönetim portu dışarıya kapatılmaz**: tarayıcı
-self-signed sertifikalı vekil adresine güvenmeyeceği için port da kapanırsa
-hiçbir erişim yolu kalmaz. Engel kalktığında `./install.sh` tekrar
-çalıştırıldığında sertifika istenir ve port kapatılır.
+At the end of the file are the escape hatches (`SKIP_DNS_CHECK`,
+`ALLOW_ANY_OS`, `SERVER_IP`, `DNS_RESOLVER`) — normally unnecessary, and left
+commented out.
 
 ---
 
-## 4. Kurulumdan sonra
+## 3. What the installer does
 
-### Adresler
+| Step | What it does |
+|------|--------------|
+| `hostname` | Sets the hostname to `s.<domain>` |
+| `virtualmin` | Installs Virtualmin with the official installer |
+| `host-domain` | The hostname virtual server (the server's default site and the source of the service certificates); created even when no certificate can be issued |
+| `postgres` / `composer` | The PostgreSQL and Composer packages *(optional)* |
+| `dns-template` | DNS defaults for new domains |
+| `panel-redirects` | Turns off the `admin.<domain>` and `webmail.<domain>` shortcuts |
+| `domain-defaults` | SPF + DMARC on, role addresses limited |
+| `dkim` | Enables DKIM; every domain created from then on signs outgoing mail |
+| `plugins` | Packages and installs the plugins and registers them with Virtualmin |
+| `main-domain` | Creates the main domain with an explicit feature list (spam/virus scanning and PostgreSQL excluded — the post-install wizard decides those) |
+| `host-dns` | Adds the A record for the hostname |
+| `ssl` | Let's Encrypt certificate + automatic renewal |
+| `panel-sites` | Publishes the `webmin.` and `usermin.` sub-domains |
+| `webmail` | The `webmail.` sub-domain + Roundcube *(optional)* |
+| `docker` / `portainer` / `docker-site` | Docker Engine, the Portainer container and the `docker.` sub-domain *(optional)* |
+| `lock-panel-ports` | Closes the panel ports once the proxy is verified to answer **and** the sub-domain is seen to have a valid certificate |
+| `report` | Writes the summary to the screen and to the install log |
 
-| Adres | Ne |
+A failing step does not stop the installation: that step is skipped, the rest
+run, and the state shows up in the report.
+
+**Certificates and ports.** Every sub-domain (`webmin.`, `usermin.`,
+`webmail.`, `docker.`) has its certificate checked in the step that creates it,
+and is asked for once more if it is missing. If no certificate can be issued —
+DNS has not propagated yet, or the Let's Encrypt quota is exhausted — **that
+service's management port is not closed**: a browser will not trust a proxy
+address on a self-signed certificate, so closing the port too would leave no
+way in at all. Once the obstacle is gone, another `./install.sh` requests the
+certificate and closes the port.
+
+---
+
+## 4. After the install
+
+### Addresses
+
+| Address | What |
 |---|---|
-| `https://webmin.<domain>` | Virtualmin / Webmin paneli |
-| `https://usermin.<domain>` | Usermin (kullanıcı arayüzü) |
+| `https://webmin.<domain>` | The Virtualmin / Webmin panel |
+| `https://usermin.<domain>` | Usermin (the user interface) |
 | `https://webmail.<domain>` | Roundcube |
 | `https://docker.<domain>` | Portainer |
-| `https://s.<domain>:10000` | Panelin doğrudan adresi — `LOCK_PANEL_PORTS=1` ise kapalıdır |
+| `https://s.<domain>:10000` | The panel's direct address — closed when `LOCK_PANEL_PORTS=1` |
 
-Dışarıya açık yönetim portu bırakılmaz: Webmin, Usermin ve Portainer
-`127.0.0.1`'de dinler, dışarıya Apache üzerinden kendi sertifikalarıyla çıkar.
+No management port is left open to the outside: Webmin, Usermin and Portainer
+listen on `127.0.0.1` and are published through Apache with their own
+certificates.
 
-### İlk yapılacaklar
+### First things to do
 
-1. **Özeti okuyun:** kurulum bitince ekrana basılır — ne yapıldı, ne yapılmadı,
-   sırada ne var. Başarısız olan adımlar, dışarıya açık dinleyen portlar ve
-   sunucunun hangi vmin-kit sürümüyle kurulduğu da oradadır. Aynısı kurulum
-   kaydının sonunda durur.
-2. **Ana domain şifresi** rastgele üretilir ve **saklanmaz**. Panel girişi ya da
-   FTP gerekirse *Edit Virtual Server → Password* ile yeni şifre belirleyin.
-3. **Portainer** ilk açılışta bir kurulum token'ı ister ve token kısa ömürlüdür.
-   Token kurulum çıktısındadır; kaçırırsanız `sudo ./configure-docker.sh`.
-4. **BIND modundaysanız** registrar tarafında `ns1` / `ns2` için glue kaydı
-   gerekir.
+1. **Read the summary:** it is printed when the install finishes — what was
+   done, what was not, and what comes next. Failed steps, ports listening to
+   the outside world and the vmin-kit version the server was built with are all
+   there. The same summary sits at the end of the install log.
+2. **The main domain's password** is generated randomly and **not stored**. If
+   you need it for the panel or FTP, set a new one under *Edit Virtual Server →
+   Password*.
+3. **Portainer** asks for a setup token on first use, and the token is
+   short-lived. It is in the install output; if you miss it, run
+   `sudo ./configure-docker.sh`.
+4. **In BIND mode** the registrar needs glue records for `ns1` / `ns2`.
 
-### Posta
+### Mail
 
-Domain sahibinin unix hesabı aynı zamanda bir posta kutusudur ve rol adresleri
-(postmaster, abuse) oraya düşer. Kendi adreslerinizi ayrı kutular olarak açın
-(*Edit Users → Add a user to this server*). Kullanıcı adı e-posta adresinin
-kendisidir; webmail'e tam adresle girilir.
+The domain owner's unix account is also a mailbox, and the role addresses
+(postmaster, abuse) land there. Create your own addresses as separate mailboxes
+(*Edit Users → Add a user to this server*). The username is the email address
+itself; webmail is logged into with the full address.
 
-Giden postalar DKIM ile imzalanır; SPF ve DMARC kayıtları da her yeni domaine
-eklenir. Kurulum bunları ilk domaindan önce açar. DMARC `p=none` ile başlar —
-birkaç hafta sonra panelden `quarantine`'e sıkabilirsiniz.
+Outgoing mail is signed with DKIM, and SPF and DMARC records are added to every
+new domain. The installer enables these before the first domain. DMARC starts
+at `p=none` — after a few weeks you can tighten it to `quarantine` from the
+panel.
 
 ### DNS
 
-Araç, domainin NS kayıtlarına bakıp modu kendisi tespit eder:
+The tool looks at the domain's NS records and detects the mode itself:
 
-- **Harici DNS** (Cloudflare vb.) — A kayıtlarını orada yönetirsiniz; Cloudflare
-  eklentisi yerel zone'u oraya senkronlayabilir.
-- **BIND** — sunucu otoriter, kayıtlar panelden yönetilir.
+- **External DNS** (Cloudflare and the like) — you manage the A records there;
+  the Cloudflare plugin can sync the local zone to it.
+- **BIND** — the server is authoritative and the records are managed from the
+  panel.
 
-İki modda da yerel zone her zaman üretilir ve nameserver çifti
-`ns1.<domain>` / `ns2.<domain>`'dir.
+In both modes the local zone is always generated, and the nameserver pair is
+`ns1.<domain>` / `ns2.<domain>`.
 
 ---
 
-## 5. Eklentiler
+## 5. The plugins
 
-Üçü de **domain başına** çalışır. Bir domainde kullanmak için *Edit Virtual
-Server* içinde ilgili onay kutusu açık olmalı (yeni domainlerde varsayılan
-açıktır). Açıkken sol menüde domainin altında görünürler.
+All three work **per domain**. To use one on a domain, its checkbox has to be
+on under *Edit Virtual Server* (on by default for new domains). When it is,
+they appear in the left menu under the domain.
 
-Root bütün domainleri yönetir; domain sahibi kendi hesabıyla girip yalnızca
-kendi domainini görür.
+Root manages every domain; a domain owner logs in with their own account and
+sees only their own domain.
 
 ### Git Deploy
 
-Uzak bir git reposundan sunucuya deploy eder — repo sunucuda barındırılmaz.
+Deploys to the server from a remote git repository — the repository is not
+hosted here.
 
 1. **Git Deploy → Add a deployment.**
-2. Repo adresini yazıp **Kontrol et** deyin; ulaşılabiliyorsa dallar listeden
-   seçilir, ulaşılamıyorsa kayıt hiç oluşmaz.
-3. **Hedef dizin:** web dizininin altındaki bir klasör. Formda sabit önek
-   (`/home/<kullanıcı>/public_html/`) yazar, siz yalnızca alt klasörü
-   yazarsınız; boş bırakırsanız o dizinin kendisine deploy edilir.
-4. **Dağıtım modu:** *Manuel* — çekmek siteye dokunmaz, dağıtımı siz
-   başlatırsınız. *Otomatik* — her çekmeden hemen sonra dağıtır.
-5. İsterseniz **dağıtım sonrası komutlar** yazın (her komut ayrı satırda).
+2. Enter the repository address and press **Check**; if it is reachable the
+   branches are offered in a list, and if it is not, no record is created.
+3. **Target directory:** a folder under the web directory. The form shows a
+   fixed prefix (`/home/<user>/public_html/`) and you write only the
+   sub-folder; leave it empty to deploy into that directory itself.
+4. **Deployment mode:** *Manual* — a pull does not touch the site, you start
+   the deployment yourself. *Automatic* — deploys straight after every pull.
+5. Optionally write **post-deploy commands** (one command per line).
 
-**Çekme ve dağıtım ayrı işlemlerdir.** Çekme uzak repodan yerel kopyaya alır,
-site değişmez; **Commits** sayfasından ne geldiğine bakıp sonra **Dağıt**
-dersiniz. Listedeki *Durum* sütunu yayındaki ve çekilmiş commit'i ayrı gösterir,
-yani bekleyen bir dağıtım olduğunu oradan görürsünüz. **Log** son işlemin
-çıktısıdır.
+**Pulling and deploying are separate operations.** A pull fetches from the
+remote into the local copy and the site does not change; you look at what
+arrived on the **Commits** page and then press **Deploy**. The *State* column
+in the list shows the live and the pulled commit separately, so a pending
+deployment is visible there. **Log** is the output of the last operation.
 
-Dağıtım sonrası komutlar hedef klasörde, domainin kendi kullanıcısı olarak bir
-kabuk betiği gibi çalışır — tek oturumdur, yani bir satırdaki `cd` sonraki
-satırda da geçerlidir ve `if` / `for` gibi çok satırlı yapılar çalışır. O
-klasörün PHP sürümü `php` adıyla hazırdır, bu yüzden `php artisan migrate` ve
-`composer install` olduğu gibi çalışır, tam yol yazmanız gerekmez. Hata veren
-ilk komutta dağıtım durur ve başarısız işaretlenir; çalışan her komut log'a
-yazılır.
+The post-deploy commands run in the target directory, as the domain's own user,
+like a shell script — it is one session, so a `cd` on one line still applies on
+the next and multi-line `if` / `for` constructs work. That directory's PHP
+version is available as `php`, so `php artisan migrate` and `composer install`
+work as written, with no full paths. The deployment stops at the first failing
+command and is marked failed; every command that runs is written to the log.
 
-**Web kancası.** Formda her deployment için bir kanca adresi görünür:
-`https://webmin.<ana-domain>/vmkit-deploy/hook.cgi?uuid=...`. Bu adresi git
-sunucunuzun webhook ayarına yazın — sağlayıcı fark etmez (GitHub, GitLab,
-Gitea) ve `curl` ile elle de çağırabilirsiniz. Çağrıldığında dağıtım moduna
-uyar: otomatikse çeker ve dağıtır, manuelse yalnızca çeker.
+**The webhook.** The form shows a hook address for each deployment:
+`https://webmin.<main-domain>/vmkit-deploy/hook.cgi?uuid=...`. Put that address
+in your git server's webhook settings — the provider does not matter (GitHub,
+GitLab, Gitea) and you can call it by hand with `curl`. When called it follows
+the deployment mode: automatic pulls and deploys, manual only pulls.
 
-Adresteki UUID **paroladır**: giriş istemez, adresi bilen tetikler. Sunucu
-loglarına düştüğü için paylaşmayın; sızarsa formdaki "yeni adres üret" ile
-eskisi anında geçersiz olur.
+The UUID in the address is **a password**: it needs no login, and whoever knows
+the address can trigger a deployment. It ends up in server logs, so do not
+share it; if it leaks, "generate a new address" on the form invalidates the old
+one immediately.
 
-Özel (private) repolar için **Domain SSH key** sayfasındaki açık anahtarı
-GitHub'da **hesabınıza** ekleyin (Settings → SSH keys). Tek bir repoya deploy
-key olarak eklemeyin: GitHub bir deploy anahtarını yalnızca tek repoda kabul
-eder, ikinci özel repo eklendiğinde tıkanır.
+For private repositories, add the public key from the **Domain SSH key** page
+to **your account** on GitHub (Settings → SSH keys). Do not add it as a deploy
+key on a single repository: GitHub accepts a deploy key on one repository only,
+so the second private repository would be stuck.
 
-Uygulama bir alt klasörden yayın yapıyorsa (Laravel gibi) Virtualmin'in kendi
-ayarını kullanın: *Website Options → Website documents sub-directory =
-`public_html/public`*. Deploy kökü yine `public_html` kalır.
+If the application serves from a sub-folder (Laravel and the like), use
+Virtualmin's own setting: *Website Options → Website documents sub-directory =
+`public_html/public`*. The deploy root stays `public_html`.
 
 ### Composer
 
-Web dizini altında `composer.json` içeren klasörleri kendiliğinden bulur ve her
-birini **kendi PHP sürümüyle** çalıştırır (Virtualmin klasör başına PHP sürümü
-tutabilir).
+Finds the folders containing a `composer.json` under the web directory by
+itself and runs each one **with its own PHP version** (Virtualmin can hold a
+PHP version per directory).
 
-- **İşlemler:** install, update, dump-autoload.
-- **Paketler** sayfası kurulu paketleri, son sürümlerini ve güncellenebilir
-  olanları listeler — yalnızca okur, bir şey değiştirmez.
+- **Operations:** install, update, dump-autoload.
+- The **Packages** page lists the installed packages, their latest versions and
+  which ones can be updated — it only reads, it changes nothing.
 
-Komutlar varsayılan olarak `--no-dev --optimize-autoloader` ile çalışır, yani
-Composer'ın üretim için önerdiği biçimde: geliştirme paketleri kurulmaz ve
-otoyükleyici hızlandırılır. Bir projede geliştirme paketlerine ihtiyacınız
-varsa modül ayarlarından kapatabilirsiniz — ayar sunucu geneli, tek bir proje
-için istisna yapılamaz.
+The commands run with `--no-dev --optimize-autoloader` by default, the form
+Composer recommends for production: development packages are not installed and
+the autoloader is optimised. If a project needs the development packages you
+can turn that off in the module configuration — the setting is server-wide,
+there is no exception for a single project.
 
-Ev dizininin tamamı değil yalnızca web dizini taranır; alt sunucuların dizinleri
-kendi panellerinde görünür.
+Only the web directory is scanned, not the whole home directory; a sub-server's
+directories show up in its own panel.
 
 ### Cloudflare DNS
 
-Yerel BIND zone'u modeldir, Cloudflare yayınlanan kopyadır.
+The local BIND zone is the model, Cloudflare is the published copy.
 
-1. **Cloudflare DNS** sayfasında domainin **API token**'ını girin. Token domain
-   başınadır — her domain kendi hesabının token'ını taşır.
-2. **Senkronizasyon** anahtarı o domainin takibini açıp kapatır; token kayıtlı
-   kalır. Token boşsa domain zaten işleme alınmaz.
-3. **Local zone vs Cloudflare** sayfası ne olacağını **önce gösterir**, hiçbir şey
-   yazmaz. Kapsam dışı kayıtlar için içe aktar / sahiplen / sil düğmeleri vardır.
-   Proxy sütunundaki duruma tıklayarak turuncu/gri bulutu değiştirebilirsiniz.
+1. Enter the domain's **API token** on the **Cloudflare DNS** page. The token is
+   per domain — each domain carries the token of its own account.
+2. The **Sync** switch turns tracking on and off for that domain while the token
+   stays stored. With no token the domain is not processed at all.
+3. The **Local zone vs Cloudflare** page **shows what would happen first** and
+   writes nothing. Records out of scope get import / adopt / delete buttons.
+   Clicking the state in the Proxy column switches the orange/grey cloud.
 
-Yalnızca `vmkit` etiketli kayıtlara dokunulur: elle eklediğiniz kayıtlar,
-tüneller ve Email Routing kayıtları etkilenmez.
+Only records tagged `vmkit` are touched: records you added by hand, tunnels and
+Email Routing records are left alone.
 
-Senkron elle çalıştırılabilir ama asıl çalışma biçimi otomatiktir: eklenti
-kurulduğunda kendi systemd birimlerini oluşturur, zone dosyası değiştiği anda
-tetiklenir ve ayrıca 15 dakikada bir kontrol eder. Zone değişmediyse hiçbir API
-çağrısı yapılmaz. Eklentinin ana sayfası servisin durumunu gösterir ve durmuşsa
-yeniden başlatır.
+The sync can be run by hand, but automatic is how it is meant to work: when the
+plugin is installed it creates its own systemd units, is triggered the moment
+the zone file changes, and checks every 15 minutes besides. An unchanged zone
+makes no API call at all. The plugin's main page shows the state of the service
+and restarts it if it has stopped.
 
 ---
 
-## 6. Yardımcı betikler
+## 6. Helper scripts
 
 ```bash
-sudo ./install.sh                    # kurulum (tekrar çalıştırmak zararsız)
-sudo ./update-plugins.sh             # eklentileri güncelle (git pull sonrası)
-sudo ./update-plugins.sh --remove    # eklentileri kaldır
-sudo ./configure-docker.sh           # Portainer kurulum ekranını yeni token'la aç
-./build-plugins.sh [modül]           # eklentileri .wbm.gz olarak paketle (dist/)
+sudo ./install.sh                    # install (running it again is harmless)
+sudo ./update-plugins.sh             # update the plugins (after a git pull)
+sudo ./update-plugins.sh --remove    # remove the plugins
+sudo ./configure-docker.sh           # reopen the Portainer setup screen with a new token
+./build-plugins.sh [module]          # package the plugins as .wbm.gz (dist/)
 ```
 
-**DNS sonradan oturduysa:** ayrı bir betik yok, `sudo ./install.sh` yeter.
-Hostname dahil bütün adresler için sertifikası olmayanlar tekrar istenir,
-alındığında yönetim portları kapatılır.
+**When DNS settles later:** there is no separate script, `sudo ./install.sh` is
+enough. Every address without a certificate, the hostname included, is
+requested again, and the management ports are closed once they are issued.
 
-**`update-plugins.sh` ne yapar:** eklenti dosyalarını doğrudan Webmin'in modül
-dizinine kopyalar. Derleme yoktur, sayfayı yenilemeniz yeterlidir. Geliştirme
-döngüsü: `git pull && sudo ./update-plugins.sh`.
+**What `update-plugins.sh` does:** copies the plugin files straight into
+Webmin's module directory. There is no build step, refreshing the page is
+enough. The development loop is `git pull && sudo ./update-plugins.sh`.
 
 ---
 
-## 7. Sorun giderme
+## 7. Troubleshooting
 
-**Panele erişemiyorum — portlar kilitli, vekil de çalışmıyor.**
-SSH ile girin, `/etc/webmin/miniserv.conf` içindeki `bind=` satırını silin ve
-`systemctl restart webmin` deyin. Panel yine `:10000`'den açılır.
+**I cannot reach the panel — the ports are locked and the proxy is not working
+either.**
+Log in over SSH, delete the `bind=` line from `/etc/webmin/miniserv.conf` and
+run `systemctl restart webmin`. The panel opens on `:10000` again.
 
-**Sertifika alınamadı, self-signed kaldı.**
-DNS'in sunucuyu gösterdiğinden emin olun (Cloudflare'de gri bulut), sonra
-`sudo ./install.sh` tekrar çalıştırın.
+**No certificate was issued, it stayed self-signed.**
+Make sure DNS points at the server (grey cloud on Cloudflare), then run
+`sudo ./install.sh` again.
 
-**Portainer kurulum ekranı "timed out" diyor.**
-`sudo ./configure-docker.sh` — konteyneri yeniden başlatır ve yeni token verir.
+**The Portainer setup screen says "timed out".**
+`sudo ./configure-docker.sh` — it restarts the container and gives you a new
+token.
 
-**Cloudflare senkronu çalışmıyor.**
-Eklentinin ana sayfasındaki servis durumuna bakın; durmuşsa sayfa açıldığında
-yeniden başlatılır. Ayrıca: `systemctl status vmkit-cloudflare-sync.path`.
+**The Cloudflare sync is not working.**
+Look at the service state on the plugin's main page; if it has stopped, opening
+the page restarts it. Also: `systemctl status vmkit-cloudflare-sync.path`.
 
-**Bir kurulum adımı hata verdi.**
-Hatayı düzeltip `sudo ./install.sh` tekrar çalıştırın; tamamlanmış adımlar
-atlanır.
+**A step of the installation failed.**
+Fix the cause and run `sudo ./install.sh` again; completed steps are skipped.
 
 ---
 
-## 8. Dosya düzeni
+## 8. Layout
 
 ```
-install.sh           # tek giriş noktası
-config.env           # ayarlar (depoda tutulur)
-lib/common.sh        # yardımcı fonksiyonlar
-lib/steps.sh         # kurulum adımları
-plugin/              # Webmin eklentilerinin kaynağı
-build-plugins.sh     # plugin/ -> dist/<modül>.wbm.gz
-update-plugins.sh    # eklentileri sunucuya kopyala (geliştirme)
-configure-docker.sh  # Portainer kurulum ekranı
+install.sh           # the single entry point
+config.env           # settings (kept in the repository)
+lib/common.sh        # helper functions
+lib/steps.sh         # the installation steps
+plugin/              # source of the Webmin plugins
+build-plugins.sh     # plugin/ -> dist/<module>.wbm.gz
+update-plugins.sh    # copy the plugins to the server (development)
+configure-docker.sh  # the Portainer setup screen
 ```
