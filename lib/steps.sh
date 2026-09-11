@@ -1052,51 +1052,51 @@ step_docker(){
   fi
   apt-get update; apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
   systemctl enable --now docker
-  if docker run --rm hello-world >/dev/null 2>&1; then ok "Docker kuruldu ($(docker --version))."; else err "Docker hello-world testi basarisiz."; return 1; fi
+  if docker run --rm hello-world >/dev/null 2>&1; then ok "Docker installed ($(docker --version))."; else err "The Docker hello-world test failed."; return 1; fi
 }
 
 step_portainer(){
-  command -v docker >/dev/null 2>&1 || { err "Docker yok; portainer atlaniyor."; return 1; }
+  command -v docker >/dev/null 2>&1 || { err "Docker missing; skipping Portainer."; return 1; }
   local image="${PORTAINER_IMAGE:-portainer/portainer-ce:lts}" port="${PORTAINER_PORT:-9000}" pub
   if [ "${PORTAINER_BIND_LOCAL:-yes}" = "yes" ]; then pub="127.0.0.1:${port}:9000"; else pub="${port}:9000"; fi
   if docker ps -a --format '{{.Names}}' | grep -x portainer >/dev/null; then
-    if docker ps --format '{{.Names}}' | grep -x portainer >/dev/null; then ok "Portainer zaten calisiyor (atlaniyor)."; return; fi
-    docker start portainer >/dev/null; ok "Portainer baslatildi."; return
+    if docker ps --format '{{.Names}}' | grep -x portainer >/dev/null; then ok "Portainer is already running (skipping)."; return; fi
+    docker start portainer >/dev/null; ok "Portainer started."; return
   fi
   docker volume inspect portainer_data >/dev/null 2>&1 || docker volume create portainer_data >/dev/null
-  # Imaji once ayrica cekiyoruz: etiket yoksa (ornegin 'lts' bir gun kalkarsa)
-  # bunu ACIKCA gorup 'latest'e dusmek, 'docker run'in anlasilmaz bir hatayla
-  # patlamasindan iyi.
+  # Pull the image separately so a missing tag (if 'lts' ever disappears) is
+  # seen explicitly and can fall back to 'latest', rather than docker run
+  # failing with something cryptic.
   if ! docker pull "$image" >/dev/null 2>&1; then
-    warn "Imaj cekilemedi: $image"
+    warn "Could not pull the image: $image"
     if [ "$image" != "portainer/portainer-ce:latest" ] &&
        docker pull portainer/portainer-ce:latest >/dev/null 2>&1; then
-      warn "portainer/portainer-ce:latest ile devam ediliyor."
+      warn "Continuing with portainer/portainer-ce:latest."
       image="portainer/portainer-ce:latest"
     else
-      err "Portainer imaji indirilemedi."; return 1
+      err "Could not download a Portainer image."; return 1
     fi
   fi
   portainer_run "$pub" "$image" || return 1
-  ok "Portainer calisiyor -> $pub"
+  ok "Portainer running -> $pub"
 }
 
-# portainer_run <yayin> <imaj>
-# Konteyneri olusturan TEK yer. Iki cagiran var (ilk kurulum ve yayin
-# degisikligi); komut iki yere kopyalanirsa biri gun gelir digerinden sapar.
+# portainer_run <publish> <image>
+# The ONLY place the container is created. Two callers (first install and a
+# publish change); duplicating the command would let them drift apart.
 portainer_run(){
   docker run -d --name portainer --restart=always -p "$1" \
     -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data "$2" >/dev/null
 }
 
-# portainer_set_publish <yayin>   ornek: "127.0.0.1:9000:9000" ya da "9000:9000"
+# portainer_set_publish <publish>  e.g. "127.0.0.1:9000:9000" or "9000:9000"
 #
-# Docker calisan bir konteynerin port yayinini DEGISTIREMIYOR; tek yol silip
-# yeniden olusturmak. Veri portainer_data biriminde durdugu icin kayipsiz -
-# yonetici hesabi ve ayarlar yerinde kaliyor.
+# Docker cannot change a running container's published ports, so the container
+# is removed and recreated. State lives in the portainer_data volume, so the
+# admin account and settings survive.
 #
-# Zaten istenen durumdaysa hicbir sey yapmiyor: temiz bir kurulumda konteyner
-# bir kez olusturulur, bir daha dokunulmaz.
+# Does nothing when the container is already published as wanted: on a clean
+# install it is created once and never touched again.
 portainer_set_publish(){
   local want="$1" cur expect image
   docker ps -a --format '{{.Names}}' 2>/dev/null | grep -x portainer >/dev/null || return 0
@@ -1107,43 +1107,40 @@ portainer_set_publish(){
     *:*) ;;
     *)   expect="0.0.0.0:$expect" ;;
   esac
-  # 'docker port' 0.0.0.0 ve [::] icin iki satir yazabiliyor; ilki yeterli.
-  # Boru hatti yerine degisken kirpmasi: 'head -1' ureticiyi SIGPIPE ile
-  # oldurup pipefail altinda yanlis negatif uretebiliyor.
+  # 'docker port' can print two lines (0.0.0.0 and [::]); the first is enough.
+  # Trimmed with parameter expansion rather than 'head -1', which can kill the
+  # producer with SIGPIPE and read as a false negative under pipefail.
   cur="$(docker port portainer 9000/tcp 2>/dev/null || true)"
   cur="${cur%%$'\n'*}"
   cur="${cur%$'\r'}"
   [ "$cur" = "$expect" ] && return 0
 
-  log "Portainer yayini degistiriliyor: ${cur:-yok} -> $expect"
+  log "Changing the Portainer publish address: ${cur:-none} -> $expect"
   image="$(docker inspect -f '{{.Config.Image}}' portainer 2>/dev/null || true)"
   [ -n "$image" ] || image="${PORTAINER_IMAGE:-portainer/portainer-ce:lts}"
   docker rm -f portainer >/dev/null 2>&1 || true
   if portainer_run "$want" "$image"; then
-    ok "Portainer yayini: $expect"
+    ok "Portainer published on: $expect"
   else
-    err "Portainer yeniden olusturulamadi."
+    err "Could not recreate Portainer."
     return 1
   fi
 }
 
-# Eklentiler: paketleri uretip Webmin'in KENDI kurulum yoluyla kur.
+# Plugins: build the packages and install them Webmin's OWN way.
 #
-# install-module.pl (Webmin ile gelir) su isleri yapiyor: arsivi acip modulu
-# yerine koymak (eskisini silerek), module.info'daki bagimliligi dogrulamak,
-# webmin.acl'e erisim vermek, copyconfig.pl ile /etc/webmin/<modul>/config'i
-# kurup MEVCUT degerleri koruyarak birlestirmek, module.infos.cache'leri
-# temizlemek ve postinstall.pl -> module_install() calistirmak. Cloudflare
-# eklentisi systemd birimlerini iste orada kuruyor.
+# install-module.pl replaces the old copy, checks module.info's depends=,
+# grants access in webmin.acl, merges the module config (keeping existing
+# values) and runs postinstall.pl -> module_install(), which is where the
+# Cloudflare plugin installs its systemd units.
 #
-# Yapmadigi tek sey Virtualmin'in 'plugins=' listesine eklemek - o Virtualmin'e
-# ozgu bir ayar (gercek Virtualmin eklentileri de kendini eklemiyor, panelden
-# tikleniyor). Onu biz yapiyoruz.
+# The one thing it does not do is add the module to Virtualmin's 'plugins='
+# list - that is Virtualmin-specific, and real Virtualmin plugins do not
+# self-register either - so we do it.
 #
-# Bayraklar config.env'den: PLUGIN_DEPLOY, PLUGIN_COMPOSER, PLUGIN_CLOUDFLARE
-# (varsayilan 1). 0 = KURMA demek; kurulu olani SOKMEZ - calisan bir eklentiyi
-# bir bayrak degisti diye sessizce kaldirmak istemiyoruz. Kaldirmak icin:
-#   sudo ./update-plugins.sh --remove
+# Flags come from config.env (PLUGIN_DEPLOY, PLUGIN_COMPOSER,
+# PLUGIN_CLOUDFLARE, default 1). 0 means "do not install"; it never uninstalls
+# a working plugin because a flag changed. To remove: ./update-plugins.sh --remove
 plugin_flag(){   # vmkit-deploy -> PLUGIN_DEPLOY
   printf 'PLUGIN_%s' "$(printf '%s' "${1#vmkit-}" | tr '[:lower:]-' '[:upper:]_')"
 }
@@ -1153,7 +1150,7 @@ plugin_enabled(){
   is_truthy "${!var:-1}"
 }
 
-# Ozet ekraninda gosterilecek liste.
+# The list shown on the summary screen.
 plugin_list_enabled(){
   local dir mod out=""
   for dir in "$ROOT_DIR"/plugin/*/; do
@@ -1161,15 +1158,15 @@ plugin_list_enabled(){
     mod="$(basename "$dir")"
     plugin_enabled "$mod" && out="$out ${mod#vmkit-}"
   done
-  printf '%s' "${out:- (hicbiri)}"
+  printf '%s' "${out:- (none)}"
 }
 
 step_plugins(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; eklentiler atlaniyor."; return 1; }
+  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping plugins."; return 1; }
   local wroot im
   wroot="$(webmin_root)"
   im="$wroot/install-module.pl"
-  [ -r "$im" ] || { err "Webmin'in install-module.pl'i yok: $im"; return 1; }
+  [ -r "$im" ] || { err "Webmin's install-module.pl is missing: $im"; return 1; }
 
   local dir mod pkg any=0 skipped=""
   for dir in "$ROOT_DIR"/plugin/*/; do
@@ -1180,56 +1177,52 @@ step_plugins(){
       continue
     fi
 
-    # Paketi kurulum aninda kaynaktan uret: paket asla bayatlamaz.
-    # 'bash ile' cagriliyor: git calistirma bitini her ortamda tasimiyor
-    # (Windows'ta core.filemode=false), dosya izni yuzunden kurulum patlamasin.
+    # Build the package from source at install time, so it can never be stale.
+    # Called through 'bash' because git does not carry the execute bit in every
+    # environment (core.filemode=false on Windows).
     if ! bash "$ROOT_DIR/build-plugins.sh" "$mod" >/dev/null; then
-      err "  $mod paketlenemedi."; continue
+      err "  Could not package $mod."; continue
     fi
     pkg="$ROOT_DIR/dist/$mod.wbm.gz"
 
-    # Shebang'i /usr/local/bin/perl oldugu icin dogrudan degil, perl ile.
+    # Through perl, not directly: its shebang is /usr/local/bin/perl.
     if perl "$im" --acl root "$pkg" >/dev/null 2>&1; then
-      log "  kuruldu: $mod"
+      log "  installed: $mod"
     else
-      err "  $mod kurulamadi (install-module.pl)."
+      err "  Could not install $mod (install-module.pl)."
       continue
     fi
     plugins_add "$mod" || true
     any=1
   done
 
-  [ -n "$skipped" ] && log "  atlandi (bayrak 0):$skipped"
+  [ -n "$skipped" ] && log "  skipped (flag is 0):$skipped"
 
   if [ "$any" = 1 ]; then
     if clear_links_cache; then :; else
-      warn "  Menu onbellegi temizlenemedi; degisiklik gorunmezse domaini kaydedin."
+      warn "  Could not clear the menu cache; save a domain if changes do not appear."
     fi
-    systemctl restart webmin 2>/dev/null || warn "  webmin restart edilemedi."
-    ok "Eklentiler kuruldu. Panelde: System Settings -> Features and Plugins."
+    systemctl restart webmin 2>/dev/null || warn "  Could not restart webmin."
+    ok "Plugins installed. In the panel: System Settings -> Features and Plugins."
   else
-    ok "Kurulacak eklenti yok."
+    ok "No plugins to install."
   fi
 }
 
-# Kurulum ozeti: BU SUNUCU NE, adresleri neler, disariya ne acik.
+# Installation summary: what this server is, its addresses, what is exposed.
 #
-# DURUM EKRANI, KILAVUZ DEGIL. Eskiden burada "vekil bozulursa sunu yap",
-# "kendi posta kutunuzu soyle acin", "DMARC'i su menuden sikin" gibi uzun
-# anlatimlar vardi ve elli satirin yarisi ogut oluyordu. Hepsi README'de
-# zaten var (tek tek kontrol edildi); burada yalnizca OLGU duruyor, bir de
-# en fazla birkac satirlik hatirlatma.
+# A STATUS SCREEN, NOT A MANUAL. Anything that reads as advice belongs in the
+# README; this prints facts, plus at most a couple of short reminders.
 #
-# Ekrana ve kurulum kaydina yaziliyor, ayri bir .txt dosyasi yok.
+# Written to the screen and to the install log; there is no separate report file.
 step_report(){
   local ip dfeat dplug dinfo cmp
 
   ip="$(detect_ip)"
 
-  # BILESENLER: yalnizca VAR OLANLAR yaziliyor. Eskiden her biri icin
-  # "kuruldu / var / calisiyor" ya da "yok / atlandi" yazan bir satir vardi;
-  # olmayan bir seyi saymak ozeti uzatmaktan baska ise yaramiyor. Durumu
-  # kelimeyle anlatmak da gereksiz: listede varsa vardir.
+  # Only components that EXIST are listed. Counting absent things just makes
+  # the summary longer, and no status word is needed: if it is in the list,
+  # it is there.
   local -a comps=()
   command -v psql >/dev/null 2>&1 && comps+=("PostgreSQL")
   command -v docker >/dev/null 2>&1 && comps+=("Docker")
