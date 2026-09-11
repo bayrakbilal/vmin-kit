@@ -1,13 +1,13 @@
 #!/usr/bin/perl
-# Yerel zone ile Cloudflare'i karsilastirir. HICBIR SEY YAZMAZ.
+# Compares the local zone with Cloudflare. IT WRITES NOTHING.
 #
-# Siniflandirma sync_plan()'dan geliyor: senkronun kullandigi kodun AYNISI.
-# Bu ekranda yazan ile gerceklesecek olan boylece ayrisamaz. (Eskiden burada
-# ayni mantigin ikinci bir kopyasi vardi ve zamanla ayristi.)
+# The classification comes from sync_plan(): THE SAME code the sync uses, so
+# what this screen says and what will happen cannot drift apart. (A second copy
+# of the same logic used to live here and did drift.)
 #
-# Karsilastirma ad+tip GRUBU uzerinden yapilir, tek tek kayit uzerinden degil:
-# ayni ad ve tipte degeri farkli bir kayit, iki ayri satir degil TEK BIR
-# CAKISMADIR.
+# The comparison works on name+type GROUPS, not on individual records: a record
+# with the same name and type but a different value is ONE CONFLICT, not two
+# separate rows.
 use strict;
 use warnings;
 our (%text, %in, $module_name);
@@ -35,26 +35,26 @@ print "<p><b>",&html_escape($in{'msg'}),"</b></p>\n" if ($in{'msg'});
 
 my $cf = &get_cf($d);
 
-# Islem dugmesi. Mutasyon oldugu icin POST: bir baglantiyi onbellek ya da
-# tarayicinin onceden getirmesi tetikleyebilir, tiklamadan hicbir sey
-# olmamali. Yine de dogrudan calistirmiyor, onay sayfasini aciyor.
+# An action button. POST because it is a mutation: a cache or a browser
+# prefetch could trigger a link, and nothing must happen without a click. It
+# still does not act directly - it opens the confirmation page.
 #
-# RENK VE IKON DIL ANAHTARININ ADINDAN GELIYOR. Temanin get_button_style'i
-# once etiketi %text icinde arayip hangi anahtardan geldigini buluyor, sonra
-# ANAHTAR ADININ ICINDE kelime ariyor (string_contains):
-#   'delete' geciyorsa  -> kirmizi + carpi ikonu
-#   'keys_import'       -> yesil + iceri aktarma ikonu
-#   'update'            -> mavi + yenileme ikonu
-# Anahtar adlari bu yuzden boyle secildi; ikonu da tema kendisi ekliyor,
-# etikete elle simge koymuyoruz.
+# THE COLOUR AND ICON COME FROM THE LANGUAGE KEY'S NAME. The theme's
+# get_button_style looks the label up in %text to find which key it came from,
+# then searches THE KEY NAME for a word (string_contains):
+#   contains 'delete' -> red + cross icon
+#   'keys_import'     -> green + import icon
+#   'update'          -> blue + refresh icon
+# That is why the key names are what they are; the theme adds the icon itself,
+# no symbol is put in the label by hand.
 #
-# Baglanti denendi ve birakildi: kucuk cerceveli gorunumu veriyor ama
-# renklendirilemiyor - temada baglanti renkleri modul ve href'e gore ELLE
-# yazilmis, ucuncu parti bir modul icin kanca yok.
+# A link was tried and abandoned: it gives the small outlined look but cannot
+# be coloured - the theme's link colours are written BY HAND per module and
+# href, with no hook for a third-party module.
 my $btn = sub {
 	my ($id, $act, $label) = @_;
-	# Her dugme kendi formu; form blok eleman oldugu icin inline-block
-	# olmadan alt alta dizilirler.
+	# Each button is its own form, and a form is a block element - without
+	# inline-block they would stack vertically.
 	return &ui_form_start("action.cgi", "post", undef,
 			      "style='display:inline-block;margin-right:6px'").
 	       &ui_hidden("dom", $d->{'id'}).
@@ -64,21 +64,20 @@ my $btn = sub {
 	       &ui_form_end();
 	};
 
-# Proxy hucresi: yazili dugme degil BULUT SIMGESI.
+# The proxy cell: a CLOUD ICON, not a labelled button.
 #
-# Yazili dugmeler satirlari dikeyde buyutuyordu; simge yer kaplamiyor ve
-# Cloudflare'in kendi turuncu/gri bulut gosterimiyle ayni dili konusuyor.
-# Ayrica dugme rengini temanin dil anahtarina gore vermesi sorunu da
-# ortadan kalkiyor: burada rengi metin olarak biz veriyoruz.
+# Labelled buttons made the rows taller; the icon takes no space and speaks the
+# same language as Cloudflare's own orange/grey cloud. It also sidesteps the
+# theme colouring buttons by language key - here the colour is set directly.
 my $cloud = sub {
 	my ($on) = @_;
 	return $on ? &ui_text_color("&#9729;", 'warn')
 		   : "<span style='opacity:0.45'>&#9729;</span>";
 	};
 
-# Tiklanabilir bulut: govdesi HTML olabilsin diye ui_submit degil duz bir
-# <button type=submit>. Tema SINIFI VERILMIYOR - dugme gorunumu istemiyoruz
-# zaten, yalnizca tiklanabilir bir simge. Islem mutasyon oldugu icin POST.
+# A clickable cloud: a plain <button type=submit> rather than ui_submit so its
+# body can be HTML. No theme class is applied - a button look is not wanted
+# here, only a clickable icon. POST, because it is a mutation.
 my $cloud_btn = sub {
 	my ($id, $on) = @_;
 	return &ui_form_start("action.cgi", "post", undef,
@@ -93,15 +92,16 @@ my $cloud_btn = sub {
 	       &ui_form_end();
 	};
 
-# Bizim kayitlarimizda simge tiklanabilir; bizim olmayanlarda (tunel gibi)
-# yalnizca durumu gosterir. Proxy yalnizca A, AAAA ve CNAME icin gecerli.
-# Simge tek basina yeterince acik olmadigi icin anlami her zaman title'da.
+# On our records the icon is clickable; on records that are not ours (a tunnel,
+# say) it only shows the state. Proxying applies to A, AAAA and CNAME only. The
+# icon alone is not self-explanatory, so its meaning is always in the title.
 my $proxy_cell = sub {
 	my ($e) = @_;
 	return "-" if ($e->{'type'} !~ /^(A|AAAA|CNAME)$/);
 	my @cr = @{$e->{'crecs'}};
 	if (!@cr) {
-		# Kayit henuz yok: olusturuldugunda alacagi durum, soluk.
+		# The record does not exist yet: the state it would get on
+		# creation, shown faded.
 		my $on = $cf->{'proxy'} &&
 			 !&never_proxy(&record_label($d, $e->{'name'})) ? 1 : 0;
 		return "<span style='opacity:0.5' title=\"".
@@ -134,23 +134,23 @@ foreach my $e (@$plan) {
 	my $lcol = @lv ? "<tt>".&short_value(join(", ", sort @lv))."</tt>" : "-";
 	my $ccol = @cv ? "<tt>".&short_value(join(", ", sort @cv))."</tt>" : "-";
 
-	# Durum METNI ve RENK TIPI ayri tutuluyor; renk en sonda, uyari
-	# simgesiyle BIRLIKTE uygulaniyor. Eskiden simge renkli metnin disinda
-	# kaliyordu ve tek basina renksiz duruyordu.
+	# The status TEXT and the COLOUR TYPE are kept apart; the colour is
+	# applied at the end, TOGETHER with the warning icon, so the icon is not
+	# left outside the coloured text and colourless.
 	#
-	# Gecerli tipler: success / info / warn / danger. Baska bir ad verilirse
-	# ui_text_color sessizce renksiz birakiyor.
+	# Valid types: success / info / warn / danger. Any other name and
+	# ui_text_color silently applies no colour.
 	my ($state, $type, $note, $out, $acts) = ("", "", "", 0, "");
 	my $op = $e->{'op'};
 	if    ($op eq 'create') { ($state, $type) = ($text{'st_willcreate'}, 'success'); }
 	elsif ($op eq 'delete') { ($state, $type) = ($text{'st_willdelete'}, 'danger'); }
 	elsif ($op eq 'update') { ($state, $type) = ($text{'st_willupdate'}, 'warn'); }
 	elsif ($op eq 'adopt')  { ($state, $type) = ($text{'st_willadopt'}, 'info'); }
-	# Senkron olan satirlar da yesil: tablonun cogunlugu bunlar ve "her sey
-	# yerinde" bilgisi renksiz birakilinca gorunmuyordu.
+	# Rows that are in sync are green too: they are most of the table, and
+	# left colourless the "all in place" message did not register.
 	elsif ($op eq 'none')   { ($state, $type) = ($text{'st_insync'}, 'success'); }
 	else {
-		# skip: kapsam disi. Neden oldugu 'why' alaninda.
+		# skip: out of scope. The reason is in the 'why' field.
 		$out = 1;
 		my @links;
 		if ($e->{'why'} eq 'cnameclash') {
@@ -161,9 +161,9 @@ foreach my $e (@$plan) {
 			}
 		elsif ($e->{'why'} eq 'notours') {
 			($state, $type) = ($text{'st_notours'}, 'info');
-			# Proxy'li kayitlara eylem YOK: tipik ornek Cloudflare
-			# tuneli; icerigi yerel zone'da anlamsiz, silinmesi
-			# calisan bir kurulumu bozar.
+			# NO actions on proxied records: the typical case is a
+			# Cloudflare tunnel, whose content is meaningless in the
+			# local zone and whose deletion breaks a working setup.
 			foreach my $r (@cr) {
 				next if ($r->{'proxied'});
 				push(@links,
@@ -182,20 +182,21 @@ foreach my $e (@$plan) {
 				}
 			}
 		$acts = join("", @links);
-		# Eylemi olmayan satirlar da ayni yukseklikte dursun: gorunmez
-		# ve devre disi bir dugme yer tutuyor. Yoksa proxy'li satirlar
-		# digerlerinden alcak kalip tabloyu tirtikli gosteriyor.
+		# Rows without actions keep the same height: an invisible,
+		# disabled button holds the space. Otherwise proxied rows sit
+		# lower than the rest and the table looks ragged.
 		$acts = "<span style='visibility:hidden'>".
 			&ui_submit($text{'cf_delete'}, undef, 1)."</span>"
 			if (!@links);
-		# Eylem cikmamasinin sebebini not olarak acikla.
+		# Say in the note why no action is offered.
 		$note = $text{'st_proxied2'} if (!@links && $e->{'proxied'});
 		}
 
-	# Not, ayri bir sutun yerine durumun basindaki uyari simgesinde:
-	# ilk tabloda not hic olmuyordu, ikincide uzun metin satiri sisiriyordu.
+	# The note lives in a warning icon at the start of the status rather than
+	# in a column of its own: the first table has no notes at all, and in the
+	# second long text bloated the rows.
 	#
-	# Simge metnin ICINDE renklendiriliyor, ipucu ise disaridaki sarmalayicida.
+	# The icon is coloured INSIDE the text; the tooltip sits on the wrapper.
 	my $scell = $note ? "&#9888; ".$state : $state;
 	$scell = &ui_text_color($scell, $type) if ($type);
 	$scell = "<span title=\"".&quote_escape($note)."\">".$scell."</span>"
