@@ -1,24 +1,23 @@
 #!/usr/bin/env bash
-# install.sh - vmin-kit tek giris noktasi.
+# install.sh - the single entry point of vmin-kit.
 #   sudo ./install.sh
 #
-# Amac: bu araci calistiran kisinin kurulum adimlarini HATIRLAMAK zorunda
-# kalmamasi. Tek zorunlu soru ana domaindir; gerisi ya varsayilan ya tespit.
+# The point of the tool is that nobody has to REMEMBER the installation steps.
+# The main domain is the only question; everything else is a default or is
+# detected.
 #
-# KAPSAM KURALI (bu dosyayi buyutmeden once oku):
-#   Buraya yalnizca ILK DOMAIN OLUSMADAN ONCE ya da SUNUCU BASINA BIR KEZ
-#   yapilmasi gereken isler girer. Gunluk kullanimda tekrarlanan, domain
-#   basina degisen ya da panelden yonetilmesi gereken her sey EKLENTIDIR
-#   (plugin/ altina). Yedekleme, saglik kontrolu, deploy sonrasi gorevler
-#   gibi isler bu yuzden burada degil.
+# SCOPE RULE (read before growing this file):
+#   Only work that must happen BEFORE THE FIRST DOMAIN or ONCE PER SERVER
+#   belongs here. Anything repeated, per-domain or panel-managed is a plugin.
+#   Backups, health checks and post-deploy tasks are therefore not here.
 #
-# Akis:
-#   1) Sistem durumu
-#   2) Ayarlar    : config.env (depoda, tercihlerin yeri) + ana domaini sor
-#   3) DNS kontrol: domain ve hostname bu sunucuya cozumluyor mu + DNS modu
-#   4) Ozet + dogrulama (sorun varsa HICBIR SEY calistirilmaz)
-#   5) Adimlar    : acik sirayla
-#   6) Rapor      : ne yapildi + ikinci sunucu icin config.env
+# Flow:
+#   1) System state
+#   2) Settings   : config.env (tracked, where preferences live) + ask the domain
+#   3) DNS check  : do the domain and hostname resolve here, and in which mode
+#   4) Summary and validation (on a problem, NOTHING is run)
+#   5) Steps      : in an explicit order
+#   6) Report     : what was done
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
@@ -27,43 +26,38 @@ source "$ROOT_DIR/lib/common.sh"
 source "$ROOT_DIR/lib/steps.sh"
 require_root
 
-# ---- kurulum kaydi ----
+# ---- install log ----
 #
-# LOG HER ZAMAN YAZILIR, bayrakla acilmaz. Hatirlanmasi gereken bir kayit,
-# ihtiyac duyuldugu anda elde olmayan kayittir - bu aracin tum fikri zaten
-# hatirlamak zorunda kalmamak.
+# The log is ALWAYS written, never behind a flag: a record you have to enable
+# in advance is the record you do not have when you need it.
 #
-# Ekranda YALNIZCA bizim satirlarimiz var; calistirdigimiz komutlarin ciktisi
-# loga gidiyor. Boylece ekran okunur kaliyor ama hicbir sey kaybolmuyor:
-# '/dev/null'a gondermek yerine yakaliyoruz. (Bu hatayi bir kez yaptik:
-# deploy kancasinin ciktisini /dev/null'a vermistik ve gercek bir hata
-# haftalarca gorunmez kalmisti.)
+# The screen carries only our own lines; the output of the commands we run goes
+# to the log. Nothing is sent to /dev/null - we made that mistake once with the
+# deploy hook and a real error stayed invisible for weeks.
 #
-# --verbose: komut ciktilari ayrica ekrana da basilir, yani eski davranis.
+# --verbose additionally echoes command output to the screen.
 VMINKIT_VERBOSE=0
 for a in "$@"; do
   case "$a" in
     -v|--verbose) VMINKIT_VERBOSE=1 ;;
     -h|--help)
-      echo "Kullanim: sudo ./install.sh [--verbose]"
-      echo "  --verbose  komut ciktilarini ekrana da bas (log dosyasi zaten yazilir)"
+      echo "Usage: sudo ./install.sh [--verbose]"
+      echo "  --verbose  also print command output on screen (the log is written either way)"
       exit 0 ;;
-    *) err "Bilinmeyen secenek: $a"; exit 1 ;;
+    *) err "Unknown option: $a"; exit 1 ;;
   esac
 done
 export VMINKIT_VERBOSE
 
-VMINKIT_LOGFILE="$ROOT_DIR/vmin-kit-kurulum-$(date +%Y%m%d-%H%M%S).log"
+VMINKIT_LOGFILE="$ROOT_DIR/vmin-kit-install-$(date +%Y%m%d-%H%M%S).log"
 : > "$VMINKIT_LOGFILE"
 chmod 0600 "$VMINKIT_LOGFILE"
 
-# Bu noktadan sonra stdout/stderr LOG DOSYASI. Bizim log/ok/warn/err
-# fonksiyonlarimiz fd 3'e (gercek terminale) yaziyor, ayrica loga duz kopya
-# birakiyor - bkz. lib/common.sh.
+# From here on stdout/stderr are THE LOG FILE. log/ok/warn/err write to fd 3
+# (the real terminal) and leave a plain copy in the log - see lib/common.sh.
 #
-# --verbose'da 'tee' surec ikamesiyle calisiyor; betik bitiminde son birkac
-# satir tee'ye yetismeyebilir. Log dosyasinin kendisi bundan etkilenmiyor,
-# yalnizca ekrandaki kopya icin gecerli.
+# With --verbose, 'tee' runs in a process substitution and the last few lines
+# may not reach it before the script exits. The log file itself is unaffected.
 if is_truthy "$VMINKIT_VERBOSE"; then
   exec > >(tee -a "$VMINKIT_LOGFILE") 2>&1
 else
@@ -71,82 +65,80 @@ else
 fi
 
 say "==================== vmin-kit ===================="
-log "Kurulum kaydi: $VMINKIT_LOGFILE"
+log "Install log: $VMINKIT_LOGFILE"
 
 # ---- 0) isletim sistemi ----
 OS_ID=""; OS_VER=""
 if [ -r /etc/os-release ]; then . /etc/os-release; OS_ID="${ID:-}"; OS_VER="${VERSION_ID:-}"; fi
-# DESTEKLENEN SISTEMLER
+# SUPPORTED SYSTEMS
 #
-# Liste, Virtualmin'in KENDI kurucusunun KARARLI destegiyle kesisiyor: guncel
-# install.sh "Debian 12 and 13" ve "Ubuntu 22.04 LTS and 24.04 LTS" diyor.
-# Otesini kabul etmiyoruz, cunku Virtualmin'in desteklemedigi bir sistemde
-# kurulum yarida kalir ve geride yarim yapilandirilmis bir sunucu birakir.
+# The list matches what Virtualmin's OWN installer supports: "Debian 12 and 13"
+# and "Ubuntu 22.04 LTS and 24.04 LTS". Anything else is refused, because on a
+# system Virtualmin does not support the install stops halfway and leaves a
+# half-configured server behind.
 #
-# RHEL ailesi (AlmaLinux, Rocky, RHEL) BILEREK disarida: Virtualmin onlari
-# destekliyor ama bu arac apt/dpkg uzerine kurulu. Destekledigini iddia edip
-# yarim kurulum birakmak, hic desteklememekten kotudur.
+# The RHEL family is deliberately out: Virtualmin supports it, but this tool is
+# built on apt/dpkg. Claiming support and leaving a half install is worse than
+# not supporting it. CentOS Stream, Fedora, Oracle, Amazon Linux and non-LTS
+# Ubuntu are "unstable" in Virtualmin's own classification, so also out.
 #
-# CentOS Stream, Fedora, Oracle, Amazon Linux ve LTS olmayan Ubuntu surumleri
-# Virtualmin'in kendi siniflandirmasinda "unstable" - onlar da disarida.
-#
-# TEK LISTE: "destekliyoruz" demek "test ettik" demek. Bir sistem once test
-# edilir, sonra buraya eklenir - o yuzden "destekleniyor ama dogrulanmadi"
-# diye ikinci bir listeye gerek yok.
+# ONE list: "supported" means "tested". A system is tested first, then added -
+# hence no second "supported but unverified" list.
 OS_KEY="${OS_ID}-${OS_VER}"
 OS_SUPPORTED="debian-12 debian-13 ubuntu-22.04 ubuntu-24.04"
 
 if ! printf '%s\n' $OS_SUPPORTED | grep -xF "$OS_KEY" >/dev/null; then
   if is_truthy "${ALLOW_ANY_OS:-0}"; then
-    warn "Desteklenen bir sistem degil ($OS_ID $OS_VER) - ALLOW_ANY_OS=1 ile devam ediliyor."
+    warn "Not a supported system ($OS_ID $OS_VER) - continuing because ALLOW_ANY_OS=1."
   else
-    err "Desteklenen sistemler: Debian 12/13, Ubuntu 22.04/24.04 LTS."
-    err "Bulunan: ${OS_ID:-?} ${OS_VER:-?}"
-    err "Yine de denemek icin: ALLOW_ANY_OS=1 ./install.sh"
+    err "Supported systems: Debian 12/13, Ubuntu 22.04/24.04 LTS."
+    err "Found: ${OS_ID:-?} ${OS_VER:-?}"
+    err "To try anyway: ALLOW_ANY_OS=1 ./install.sh"
     exit 1
   fi
 fi
 
-# ---- 1) sistem durumu ----
-# HAS_* = sistemde ZATEN ne var. Ayar degiskenleriyle (POSTGRES, DOCKER ...)
-# karismasin diye ayri onek tasiyorlar.
+# ---- 1) system state ----
+# HAS_* is what the system ALREADY has, prefixed so it cannot be confused with
+# the settings of the same name (POSTGRES, DOCKER, ...).
 HAS_VIRTUALMIN=no; if command -v virtualmin >/dev/null 2>&1; then HAS_VIRTUALMIN=yes; fi
 HAS_DOCKER=no;     if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then HAS_DOCKER=yes; fi
 HAS_PORTAINER=no;  if command -v docker >/dev/null 2>&1 && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -x portainer >/dev/null; then HAS_PORTAINER=yes; fi
 CUR_HOST="$(hostname -f 2>/dev/null || hostname)"
 SRV_IP="$(detect_ip)"
 
-log "Sistem durumu:"
+log "System state:"
 log "  Hostname  : $CUR_HOST"
-log "  IP        : ${SRV_IP:-bilinmiyor}"
+log "  IP        : ${SRV_IP:-unknown}"
 log "  Virtualmin: $HAS_VIRTUALMIN"
 log "  Docker    : $HAS_DOCKER"
 log "  Portainer : $HAS_PORTAINER"
 say ""
-[ -n "$SRV_IP" ] || { err "Sunucu IP'si tespit edilemedi. config.env icinde SERVER_IP= verin."; exit 1; }
+[ -n "$SRV_IP" ] || { err "Could not detect the server IP. Set SERVER_IP= in config.env."; exit 1; }
 
-# ---- 2) ayarlar + ana domain ----
-# Ayarlar config.env'den gelir. O dosya DEPODA durur ve tercihlerin yeridir:
-# degistir, commit'le; sonraki sunucu ayni sekilde kurulur.
+# ---- 2) settings and main domain ----
+# Settings come from config.env, which is TRACKED in the repository and is
+# where preferences live: edit it, commit it, and the next server installs the
+# same way.
 #
-# Ana domain orada TUTULMAZ, her calistirmada sorulur - her sunucuda farkli
-# olan tek deger odur. Betikten calistirmak icin ortam degiskeni verilebilir:
-#   MAIN_DOMAIN=ornek.com ./install.sh
+# The main domain is NOT kept there - it is the one value that differs on every
+# server, so it is asked each run. For scripted use:
+#   MAIN_DOMAIN=example.com ./install.sh
 if [ -f "$ROOT_DIR/config.env" ]; then
   # shellcheck source=/dev/null
   source "$ROOT_DIR/config.env"
 else
-  warn "config.env bulunamadi; her ayar icin varsayilan kullanilacak."
+  warn "config.env not found; defaults will be used for every setting."
 fi
 
 if [ -z "${MAIN_DOMAIN:-}" ]; then
-  log "Once sunu dogrulayin: ana domain ve hostname icin A kayitlari"
-  log "bu sunucunun IP'sine (${SRV_IP}) isaret etmeli. Kontrol edecegim."
+  log "First make sure the A records for the main domain and the hostname"
+  log "point at this server (${SRV_IP}). They are checked below."
   say ""
   while :; do
-    MAIN_DOMAIN="$(ask "Ana domain (or: ornek.com)" "")"
+    MAIN_DOMAIN="$(ask "Main domain (e.g. example.com)" "")"
     [ -n "$MAIN_DOMAIN" ] && break
-    warn "Bos olamaz."
+    warn "It cannot be empty."
   done
 fi
 
@@ -159,21 +151,21 @@ NO_WEBMAIL_REDIRECT="${NO_WEBMAIL_REDIRECT:-1}"
 PANEL_PROXY="${PANEL_PROXY:-1}"
 ROUNDCUBE="${ROUNDCUBE:-1}"
 LOCK_PANEL_PORTS="${LOCK_PANEL_PORTS:-1}"
-# Docker ve Portainer tek bayrak: Portainer, Docker olmadan anlamsiz ve
-# Docker'i Portainer'siz kurmak istemedigimiz icin ikisi birlikte gider.
+# Docker and Portainer share one flag: Portainer is pointless without Docker,
+# and we do not want Docker without Portainer, so they travel together.
 DOCKER="${DOCKER:-1}"
 
-# ---- 3) DNS kontrolu + mod tespiti ----
-ensure_pkg dig bind9-dnsutils dnsutils || { err "dig kurulamadi (bind9-dnsutils)."; exit 1; }
+# ---- 3) DNS check and mode detection ----
+ensure_pkg dig bind9-dnsutils dnsutils || { err "Could not install dig (bind9-dnsutils)."; exit 1; }
 
-log "DNS kontrol ediliyor (disaridan bakan resolver: $DNS_RESOLVER)"
+log "Checking DNS (external resolver: $DNS_RESOLVER)"
 mapfile -t MAIN_IPS < <(resolve_a "$MAIN_DOMAIN")
 mapfile -t HOST_IPS < <(resolve_a "$HOSTNAME_FQDN")
 mapfile -t NS_NAMES < <(resolve_ns "$MAIN_DOMAIN")
 
-log "  $MAIN_DOMAIN -> ${MAIN_IPS[*]:-(cozumlemiyor)}"
-log "  $HOSTNAME_FQDN -> ${HOST_IPS[*]:-(cozumlemiyor)}"
-log "  NS: ${NS_NAMES[*]:-(yok)}"
+log "  $MAIN_DOMAIN -> ${MAIN_IPS[*]:-(does not resolve)}"
+log "  $HOSTNAME_FQDN -> ${HOST_IPS[*]:-(does not resolve)}"
+log "  NS: ${NS_NAMES[*]:-(none)}"
 
 DNS_MODE=unknown
 if [ ${#NS_NAMES[@]} -gt 0 ]; then
@@ -186,10 +178,10 @@ if [ ${#NS_NAMES[@]} -gt 0 ]; then
   done
 fi
 
-# NS1/NS2 her zaman bu sunucunun kendi nameserver ciftidir - DNS modundan
-# bagimsiz. Yerel BIND zone'u "NS yonetimi bizde" modeline gore uretilir;
-# Cloudflare senkronunda NS/SOA kayitlari gonderilmez, geri kalan her sey
-# aynen gider. Boylece iki mod arasinda tek fark delegasyonun nerede oldugudur.
+# NS1/NS2 are always this server's own nameserver pair, whatever the DNS mode:
+# the local BIND zone is always built as if we managed the delegation, and the
+# Cloudflare sync simply does not push NS/SOA. The only difference between the
+# two modes is therefore where the delegation points.
 NS1="${NS1_PREFIX:-ns1}.${MAIN_DOMAIN}"
 NS2="${NS2_PREFIX:-ns2}.${MAIN_DOMAIN}"
 
@@ -202,95 +194,93 @@ case "$DNS_MODE" in
   *)        warn "  Mode: undetermined (no NS record could be read)." ;;
 esac
 say ""
-# ---- 4) ozet ----
-log "Yapilacaklar:"
+# ---- 4) summary ----
+log "Plan:"
 log "  - Hostname    : $HOSTNAME_FQDN"
-if [ "$HAS_VIRTUALMIN" = yes ]; then log "  - Virtualmin  : kurulu (atlanacak)"; else log "  - Virtualmin  : KURULACAK"; fi
+if [ "$HAS_VIRTUALMIN" = yes ]; then log "  - Virtualmin  : installed (skipping)"; else log "  - Virtualmin  : WILL BE INSTALLED"; fi
 if is_truthy "$POSTGRES"; then
-  if command -v psql >/dev/null 2>&1; then log "  - PostgreSQL  : kurulu (atlanacak)"
-  else                                     log "  - PostgreSQL  : KURULACAK"; fi
+  if command -v psql >/dev/null 2>&1; then log "  - PostgreSQL  : installed (skipping)"
+  else                                     log "  - PostgreSQL  : WILL BE INSTALLED"; fi
 fi
 if is_truthy "$COMPOSER"; then
-  if command -v composer >/dev/null 2>&1; then log "  - Composer    : kurulu (atlanacak)"
-  else                                         log "  - Composer    : KURULACAK"; fi
+  if command -v composer >/dev/null 2>&1; then log "  - Composer    : installed (skipping)"
+  else                                         log "  - Composer    : WILL BE INSTALLED"; fi
 fi
-log "  - DNS sablonu : NS1=${NS1}  NS2=${NS2}   (bu sunucunun NS cifti)"
-log "  - Ana domain  : $MAIN_DOMAIN  (web, ssl, dns, mail, mysql, webmin + eklentiler)"
-log "  - SSL         : $MAIN_DOMAIN icin Lets Encrypt"
+log "  - DNS template: NS1=${NS1}  NS2=${NS2}   (this server's NS pair)"
+log "  - Main domain : $MAIN_DOMAIN  (web, ssl, dns, mail, mysql, webmin + plugins)"
+log "  - SSL         : Let's Encrypt for $MAIN_DOMAIN"
 if is_truthy "$NO_ADMIN_REDIRECT"; then
-  log "  - admin.<domain> -> panel yonlendirmesi: KAPATILACAK"
+  log "  - admin.<domain> -> panel redirect: WILL BE DISABLED"
 fi
 if is_truthy "$NO_WEBMAIL_REDIRECT"; then
-  log "  - webmail.<domain> -> Usermin yonlendirmesi: KAPATILACAK"
+  log "  - webmail.<domain> -> Usermin redirect: WILL BE DISABLED"
 fi
 if is_truthy "$PANEL_PROXY"; then
-  log "  - ${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN} -> Webmin (vekil)"
-  log "  - ${USERMIN_PREFIX:-usermin}.${MAIN_DOMAIN} -> Usermin (vekil)"
+  log "  - ${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN} -> Webmin (proxy)"
+  log "  - ${USERMIN_PREFIX:-usermin}.${MAIN_DOMAIN} -> Usermin (proxy)"
   is_truthy "$LOCK_PANEL_PORTS" &&
-    log "  - Yonetim portlari (10000/20000) yalnizca 127.0.0.1'e baglanacak"
+    log "  - Management ports (10000/20000) will bind to 127.0.0.1 only"
 fi
 if is_truthy "$ROUNDCUBE"; then
   log "  - ${WEBMAIL_PREFIX:-webmail}.${MAIN_DOMAIN} -> Roundcube"
 fi
-log "  - Eklentiler  :$(plugin_list_enabled)"
+log "  - Plugins     :$(plugin_list_enabled)"
 
 if is_truthy "$DOCKER"; then
   log "  - Docker + Portainer"
   log "  - ${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN} -> Portainer proxy"
 fi
 say ""
-# ---- dogrulama ----
+# ---- validation ----
 errors=()
 case "$MAIN_DOMAIN" in
   *.*) ;;
-  *) errors+=("MAIN_DOMAIN gecerli bir domain degil: $MAIN_DOMAIN");;
+  *) errors+=("MAIN_DOMAIN is not a valid domain: $MAIN_DOMAIN");;
 esac
 if ! is_truthy "${SKIP_DNS_CHECK:-0}"; then
   if [ ${#MAIN_IPS[@]} -eq 0 ] || ! ip_in_list "$SRV_IP" "${MAIN_IPS[@]}"; then
-    errors+=("$MAIN_DOMAIN -> ${MAIN_IPS[*]:-cozumlemiyor} ; beklenen: $SRV_IP  (A kaydini duzeltin)")
+    errors+=("$MAIN_DOMAIN -> ${MAIN_IPS[*]:-does not resolve} ; expected: $SRV_IP  (fix the A record)")
   fi
   if [ ${#HOST_IPS[@]} -eq 0 ] || ! ip_in_list "$SRV_IP" "${HOST_IPS[@]}"; then
-    errors+=("$HOSTNAME_FQDN -> ${HOST_IPS[*]:-cozumlemiyor} ; beklenen: $SRV_IP  (A kaydini ekleyin)")
+    errors+=("$HOSTNAME_FQDN -> ${HOST_IPS[*]:-does not resolve} ; expected: $SRV_IP  (add the A record)")
   fi
 fi
 
 if [ ${#errors[@]} -gt 0 ]; then
-  err "Sorunlar var - HICBIR SEY calistirilmadi:"
+  err "There are problems - NOTHING was run:"
   for e in "${errors[@]}"; do err "  ! $e"; done
   say ""
-  err "DNS icin: saglayicinizda su iki A kaydi $SRV_IP adresini gostermeli:"
+  err "For DNS, these two A records must point at $SRV_IP at your provider:"
   err "    $MAIN_DOMAIN      A   $SRV_IP"
   err "    $HOSTNAME_FQDN    A   $SRV_IP"
-  err "Cloudflare kullaniyorsaniz kurulum sirasinda proxy KAPALI (gri bulut) olsun."
-  err "Yayilmayi bekleyip tekrar calistirin. Kontrolu atlamak icin: SKIP_DNS_CHECK=1 ./install.sh"
+  err "On Cloudflare, keep the proxy OFF (grey cloud) during the install."
+  err "Wait for propagation and run again. To skip the check: SKIP_DNS_CHECK=1 ./install.sh"
   exit 1
 fi
 
-# ---- onay ----
-# Ozet her zaman gosterilir ve onay her zaman istenir: yanlis bir ayar
-# gorursen iptal edip config.env'i duzeltir, yeniden calistirirsin.
-if ! ask_yn "Bu ayarlarla devam edeyim mi?" Y; then
-  warn "Iptal edildi. Ayarlar burada: $ROOT_DIR/config.env"
+# ---- confirmation ----
+# The summary is always shown and confirmation is always asked: if a setting
+# looks wrong, cancel, fix config.env and run again.
+if ! ask_yn "Continue with these settings?" Y; then
+  warn "Cancelled. The settings are in: $ROOT_DIR/config.env"
   exit 0
 fi
 
-# ---- ADIMLAR: SIRA BURADA, ACIKCA ----
+# ---- STEPS, IN AN EXPLICIT ORDER ----
 #
-# Burada set -e KAPALI. Her adim kendi hatasini kendisi bildirip 'return 1'
-# ile cikiyor; bir adimin basarisiz olmasi geri kalanini iptal etmemeli.
-# set -e acik kalsaydi ilk basarisiz adim tum kurulumu oldururdu - "atlaniyor"
-# yazip duruyordu. Yukaridaki hazirlik ve dogrulama bolumu set -e ile korunmaya
-# devam ediyor, orada durmak DOGRU davranis.
+# set -e is OFF here. Each step reports its own error and returns 1; one
+# failing step must not cancel the rest. With set -e on, the first failure
+# killed the whole install. The preparation and validation above keep set -e,
+# where stopping IS the right behaviour.
 #
-# Her adim run_step ile cagriliyor: basarisiz olani listeye yaziyor, boylece
-# uzun bir kurulumun sonunda ve raporda "neler tutmadi" acikca gorunuyor.
+# run_step records the failures so the end of a long install, and the report,
+# can say what did not work.
 set +e
 say ""
 run_step step_hostname
 run_step step_virtualmin
-# Hostname sanal sunucusu, Virtualmin kurulumunun hemen ardinda: kurucu da tam
-# bu noktada olusturuyor (henuz hicbir domain yokken), ayni yerde olmasi
-# basarili kurulumlardaki yapiyla birebir ayni sonucu veriyor.
+# The hostname virtual server right after the Virtualmin install: that is where
+# the installer creates it too, while no domain exists yet.
 run_step step_host_domain
 if is_truthy "$POSTGRES"; then run_step step_postgres; fi
 if is_truthy "$COMPOSER"; then run_step step_composer; fi
@@ -298,9 +288,9 @@ run_step step_dns_template
 run_step step_panel_redirects
 run_step step_domain_defaults
 run_step step_dkim
-# Eklentiler domainlerden ONCE: boylece domain olusturulurken ozellikleri
-# secilebilir hale geliyor. Virtualmin kurulu oldugu icin BIND de kurulu,
-# senkron servisinin izleyecegi zone dizini bu asamada mevcut.
+# Plugins BEFORE any domain, so their features can be selected while the domain
+# is created. Virtualmin is installed by now, so BIND is too and the zone
+# directory the sync service watches already exists.
 run_step step_plugins
 run_step step_main_domain
 run_step step_host_dns
@@ -312,26 +302,26 @@ if is_truthy "$DOCKER"; then
   run_step step_portainer
   run_step step_docker_site
 fi
-# Kilitleme EN SON: once vekillerin calistigi dogrulanir, dogrulanamazsa
-# port kapatilmaz. Yanlis sirada yapilirsa panele erisim kaybedilir.
+# Locking LAST: the proxies are verified first, and the port stays open if they
+# cannot be. In the wrong order this loses access to the panel.
 if is_truthy "$PANEL_PROXY" && is_truthy "$LOCK_PANEL_PORTS"; then
   run_step step_lock_panel_ports
 fi
 step_report
 set -e
 
-# Token EN SON uretilir: omru birkac dakika oldugu icin araya baska adimlar
-# girse bile ekranda gorunen degerin taze olmasi gerekiyor. Kapanis satirlari
-# bu yuzden token'dan SONRA geliyor - eskiden token "Tamamlandi" blogunun
-# altinda kaliyor ve ekranin sonu kapanis gibi gorunmuyordu.
+# The token is produced LAST because it is valid for only a few minutes, so it
+# must be fresh however many steps are added before it. The closing lines come
+# after it, otherwise the token ends up above them and the screen does not look
+# like it has finished.
 if is_truthy "$DOCKER"; then step_portainer_token; fi
 
-# Adresler ozet blogunda toplu halde duruyor; burada TEKRAR EDILMIYOR.
-# Kapanis yalnizca "bitti mi" ve "ayrintili cikti nerede" sorularina cevap.
+# The addresses are already together in the summary and are NOT repeated here.
+# The closing lines only answer "did it finish" and "where is the full output".
 say ""
 if [ ${#VMINKIT_FAILED[@]} -gt 0 ]; then
-  warn "Eksik tamamlandi."
+  warn "Finished with problems."
 else
-  ok "Tamamlandi."
+  ok "Done."
 fi
-log "Kurulum kaydi: $VMINKIT_LOGFILE"
+log "Install log: $VMINKIT_LOGFILE"
