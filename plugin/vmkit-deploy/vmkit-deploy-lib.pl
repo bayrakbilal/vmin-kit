@@ -1007,52 +1007,72 @@ foreach my $f ("miniserv-lib.pl", "miniserv.pl") {
 return $src;
 }
 
+# unauth_key() -> kancanin yazilacagi miniserv anahtari
+#
+# 'unauth' DEGIL, 'unauthcgi'. Ikisi ayni mekanizma ama farkli anlam tasiyor:
+#
+#   foreach my $u (@unauth)    { $unauth = 4 if ($simple =~ /$u/); }
+#   foreach my $u (@unauthcgi) { $unauth = 3 if ($simple =~ /$u/); }
+#
+# ve calistirma kapisi:
+#
+#   if (&get_type($full) eq "internal/cgi" && $validated != 4) { ... CGI ... }
+#
+# Yani 'unauth' listesindeki bir .cgi CALISTIRILMIYOR, kaynak kodu dosya
+# olarak gonderiliyor. Olculdu: oturumsuz bir istek '200 internal/cgi' ve
+# hook.cgi'nin Perl kaynagini donduruyordu, kanca hic tetiklenmiyordu. Giris
+# yapilmis tarayicidan denenince calisiyor gorunuyor, cunku o durumda liste
+# hic okunmuyor - yanilticiligi buradan geliyordu.
+#
+# 'unauthcgi' $validated=3 verip CGI'yi calistiriyor ve ortama
+# ANONYMOUS_USER=1 koyuyor; bizim istedigimiz bu.
+#
+# Anahtar kurulu kaynakta yoksa undef donuyor: yazacak dogru yer olmadan
+# yazmaktansa kancayi kaydetmemek dogru. 'unauth'a dusmek kaynak kodu
+# servis ettirirdi.
 sub unauth_key
 {
 my $src = &miniserv_source();
-return "unauthenticated"
-	if ($src && $src =~ /config\{["']unauthenticated["']\}/);
-return "unauth";
+return $src =~ /["']unauthcgi["']/ ? "unauthcgi" : undef;
 }
 
-# unauth_default() -> miniserv'in KODUNDA gomulu varsayilan liste
+# unauth_default(anahtar) -> miniserv'in KODUNDA gomulu varsayilan liste
 #
-# BU FONKSIYON OLMADAN EKLENTI WEBMIN'I BOZUYORDU. Varsayilan liste
-# miniserv.conf'ta DURMUYOR, miniserv'in kendi %vital tablosunda duruyor ve
-# yalnizca dosyada o anahtar hic yokken devreye giriyor:
+# BU FONKSIYON OLMADAN EKLENTI WEBMIN'I BOZUYORDU. Varsayilan listeler
+# miniserv.conf'ta DURMUYOR, miniserv'in %vital tablosunda duruyor ve yalnizca
+# dosyada o anahtar hic yokken devreye giriyor:
 #
 #   foreach my $v (keys %vital) { if (!$config{$v}) { $config{$v} = $vital{$v} } }
 #
 # Dolayisiyla "dosyadaki degere ekle" mantigi, dosyada deger olmadigi icin
-# listeyi bizim tek yolumuzla DEGISTIRIYORDU. Varsayilanin ilk kalemi
-# '^/unauthenticated/' oldugu icin Webmin'in giris ekrani kendi CSS/JS
-# dosyalarini artik alamiyor, tarayici .css yerine HTML aliyordu. Giris
-# yapilmis oturumlarda gorunmuyor, cunku o durumda liste hic okunmuyor.
+# listeyi bizim tek yolumuzla DEGISTIRIYOR. 'unauthcgi'nin varsayilani parola
+# kurtarma sayfalari; onlari silmek de kabul edilemez.
 #
-# Liste ELLE KOPYALANMIYOR: Webmin surumu degistiginde tekrar sapmasin diye
-# kurulu kaynaktan okunuyor. Kaynaktaki dize cift tirnak icinde, yani '\$'
-# gibi kacislar Perl tarafindan cozulecek sekilde yazilmis; burada onlari biz
+# Liste ELLE KOPYALANMIYOR: Webmin surumu degistiginde sapmasin diye kurulu
+# kaynaktan okunuyor. Kaynaktaki dize cift tirnak icinde, yani '\$' gibi
+# kacislar Perl tarafindan cozulecek sekilde yazilmis; burada onlari biz
 # cozuyoruz - regexte '\$' ile '$' ayni sey degil.
 sub unauth_default
 {
+my ($key) = @_;
 my $src = &miniserv_source();
-return "" if (!$src);
-return "" if ($src !~ /["']unauth["']\s*,\s*"((?:[^"\\]|\\.)*)"/);
+return "" if (!$src || !$key);
+return "" if ($src !~ /["']\Q$key\E["']\s*,\s*"((?:[^"\\]|\\.)*)"/);
 my $def = $1;
 $def =~ s/\\([\$\@\\"])/$1/g;
 return $def;
 }
 
-# wanted_unauth_list() -> listenin olmasi gereken hali
+# wanted_unauth_list(anahtar, mevcut) -> listenin olmasi gereken hali
 # Varsayilan + dosyada zaten duranlar + bizim yolumuz, sirasi korunarak ve
 # tekrarsiz. Dosyada duranlari elemiyoruz: baska bir seyin ekledigi yol varsa
 # onu silmek bize dusmez.
 sub wanted_unauth_list
 {
-my ($cur) = @_;
+my ($key, $cur) = @_;
 my @want;
 my %seen;
-foreach my $p (split(/\s+/, &unauth_default()),
+foreach my $p (split(/\s+/, &unauth_default($key)),
 	       split(/\s+/, $cur || ''),
 	       &hook_path()) {
 	next if ($p eq '' || $seen{$p}++);
@@ -1061,9 +1081,12 @@ foreach my $p (split(/\s+/, &unauth_default()),
 return join(" ", @want);
 }
 
+# Listedeki kalemler REGEX olarak degerlendiriliyor ($simple =~ /$u/), duz
+# metin olarak degil. Capasiz birakilirsa yol, adresin herhangi bir yerinde
+# eslesirdi.
 sub hook_path
 {
-return "/$module_name/hook.cgi";
+return "^/$module_name/hook\\.cgi\$";
 }
 
 sub miniserv_conf
@@ -1077,6 +1100,7 @@ sub hook_path_registered
 my $conf = &miniserv_conf();
 return 0 if (!-r $conf);
 my $key = &unauth_key();
+return 0 if (!$key);
 my $cur = "";
 foreach my $l (split(/\n/, &read_file_contents($conf))) {
 	$cur = $1 if ($l =~ /^\Q$key\E=(.*)$/);
@@ -1093,21 +1117,22 @@ sub ensure_hook_path
 my $conf = &miniserv_conf();
 return (0, undef) if (!-r $conf);
 my $key = &unauth_key();
+return (0, &text('hook_econf', $conf)) if (!$key);
 my %mc;
 &read_file($conf, \%mc);
 my $cur = $mc{$key};
 
-# Varsayilan okunamadiysa DOKUNMUYORUZ: eksik bir liste yazmak giris ekranini
-# bozar. Dosyada zaten bir deger varsa ona eklemek guvenli, cunku o durumda
-# ezilen bir varsayilan yok.
-my $def = &unauth_default();
+# Varsayilan okunamadiysa DOKUNMUYORUZ: eksik bir liste yazmak Webmin'in
+# kendi sayfalarini bozar. Dosyada zaten bir deger varsa ona eklemek guvenli,
+# cunku o durumda ezilen bir varsayilan yok.
+my $def = &unauth_default($key);
 if ($def eq '' && ($cur || '') eq '') {
 	return (0, &text('hook_econf', $conf));
 	}
 
 my $want = $def eq '' ? join(" ", grep { $_ ne '' }
 				  (split(/\s+/, $cur || ''), &hook_path()))
-		      : &wanted_unauth_list($cur);
+		      : &wanted_unauth_list($key, $cur);
 # Icerige gore karsilastiriliyor, "yolumuz listede mi" diye degil: eski
 # surumun bozdugu kurulumlarda yolumuz listedeydi ama varsayilanlar
 # eksikti, o hal boyle onariliyor.
@@ -1132,6 +1157,7 @@ sub remove_hook_path
 my $conf = &miniserv_conf();
 return 0 if (!-w $conf);
 my $key = &unauth_key();
+return 0 if (!$key);
 my %mc;
 &read_file($conf, \%mc);
 my $p = &hook_path();
@@ -1140,7 +1166,7 @@ return 0 if (join(" ", @keep) eq ($mc{$key} || ''));
 # Geriye yalnizca varsayilan kaldiysa anahtari tumden siliyoruz: miniserv o
 # zaman kendi gomulu listesini kullanir ve miniserv.conf'ta bizden kalma bir
 # kopya durmaz.
-if (join(" ", @keep) eq &unauth_default()) {
+if (join(" ", @keep) eq &unauth_default($key)) {
 	delete($mc{$key});
 	}
 else {

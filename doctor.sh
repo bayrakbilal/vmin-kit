@@ -254,46 +254,47 @@ ok "$HOOK_OK eklenti kancasi Virtualmin tarafindan cagriliyor"
 echo
 
 # ---------------------------------------------------------------------------
-# 8) MINISERV'IN 'unauth' LISTESI
+# 8) MINISERV'IN 'unauthcgi' LISTESI
 #
-# vmkit-deploy, webhook adresini miniserv'in kimlik istemeyen yollar listesine
-# ekliyor. O anahtarin varsayilani miniserv.conf'ta DURMUYOR, miniserv'in
-# kodundaki %vital tablosunda duruyor ve yalnizca dosyada anahtar hic yokken
-# uygulaniyor. Dolayisiyla anahtari yazan taraf varsayilanin tamamini yeniden
-# uretmek zorunda; uretmezse varsayilan sessizce kayboluyor.
+# vmkit-deploy, webhook adresini miniserv'in giris istemeden CALISTIRILACAK
+# CGI'ler listesine ekliyor. O anahtarin varsayilani miniserv.conf'ta DURMUYOR,
+# miniserv'in kodundaki %vital tablosunda duruyor ve yalnizca dosyada anahtar
+# hic yokken uygulaniyor:
 #
-# Bunun bedeli somut: listenin ilk kalemi '^/unauthenticated/' ve o kayboldugu
-# anda Webmin'in GIRIS EKRANI kendi CSS/JS dosyalarini alamiyor. Giris yapilmis
-# oturumda gorunmuyor, cunku o durumda liste hic okunmuyor - yani fark
-# edilmesi zor bir bozulma.
+#   foreach my $v (keys %vital) { if (!$config{$v}) { $config{$v} = $vital{$v} } }
 #
-# Eklenti bu listeyi her calistiginda kaynaktan okuyup birlestiriyor, ama
-# aradaki bir Webmin yukseltmesi varsayilana yeni bir kalem eklerse dosyadaki
-# kopya eksik kalir. Kontrol edilen sozlesme bu: kaynaktaki her kalem dosyadaki
+# Dolayisiyla anahtari yazan taraf varsayilanin tamamini yeniden uretmek
+# zorunda; uretmezse varsayilan sessizce kayboluyor - 'unauthcgi' icin bu
+# Webmin'in parola kurtarma sayfalari demek.
+#
+# Eklenti listeyi her calistiginda kaynaktan okuyup birlestiriyor, ama aradaki
+# bir Webmin yukseltmesi varsayilana yeni bir kalem eklerse dosyadaki kopya
+# eksik kalir. Kontrol edilen sozlesme bu: kaynaktaki her kalem dosyadaki
 # listede de var mi?
 #
-# Surumler arasinda gercekten degisiyor: 1.990'dan 2.111'e kadar ayni kalmis,
-# 2.202'de sonuna '^/service-worker.js$' eklenmis.
+# Varsayilanlarin surumler arasinda degistigi olculdu: 'unauth' listesi
+# 1.990'dan 2.111'e kadar ayni kalmis, 2.202'de '^/service-worker.js$'
+# eklenmis. Yani bu senaryo kuramsal degil.
 # ---------------------------------------------------------------------------
-log "miniserv unauth listesi dogrulaniyor..."
+log "miniserv unauthcgi listesi dogrulaniyor..."
 MSCONF="${WEBMIN_CONFIG:-/etc/webmin}/miniserv.conf"
-UNAUTH_CUR="$(sed -n 's/^unauth=//p' "$MSCONF" 2>/dev/null | head -1)"
+UNAUTH_CUR="$(sed -n 's/^unauthcgi=//p' "$MSCONF" 2>/dev/null | head -1)"
 if [ -z "$UNAUTH_CUR" ]; then
   # Anahtar dosyada yok: miniserv kendi varsayilanini kullaniyor, dogrulanacak
   # bir sapma da yok.
-  ok "unauth anahtari dosyada yok (miniserv varsayilani gecerli)"
+  ok "unauthcgi anahtari dosyada yok (miniserv varsayilani gecerli)"
 else
   # Kaynaktaki dize cift tirnak icinde yazilmis; '\$' ve '\\' kacislari Perl
   # tarafindan cozuluyor, burada da biz cozuyoruz. Regexte '\$' ile '$' ayni
   # sey degil, eslestirme bu yuzden kacislar cozulmeden yapilamaz.
-  UNAUTH_RAW="$(grep -hoE '"unauth", "[^"]*"' \
+  UNAUTH_RAW="$(grep -hoE '"unauthcgi", "[^"]*"' \
                   "$WEBMIN_ROOT/miniserv-lib.pl" "$WEBMIN_ROOT/miniserv.pl" \
                   2>/dev/null | head -1)"
   if [ -z "$UNAUTH_RAW" ]; then
-    warn "miniserv kaynaginda unauth varsayilani bulunamadi; karsilastirilamadi"
+    warn "miniserv kaynaginda unauthcgi varsayilani bulunamadi; karsilastirilamadi"
     MISSING=$((MISSING + 1))
   else
-    UNAUTH_DEF="${UNAUTH_RAW#\"unauth\", \"}"
+    UNAUTH_DEF="${UNAUTH_RAW#\"unauthcgi\", \"}"
     UNAUTH_DEF="${UNAUTH_DEF%\"}"
     UNAUTH_DEF="$(printf '%s' "$UNAUTH_DEF" | sed 's/\\\$/$/g; s/\\\\/\\/g')"
     UNAUTH_OK=0
