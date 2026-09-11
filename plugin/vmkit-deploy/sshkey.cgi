@@ -1,9 +1,9 @@
 #!/usr/bin/perl
-# Domainin SSH anahtarini uretir ve acik kismini gosterir.
+# Generates the domain's SSH key and shows the public half.
 #
-# Anahtar domain basinadir ve standart konumdadir (~/.ssh/id_ed25519).
-# Acik kismi GitHub/Gitea'da HESABA eklenir; boylece o hesabin erisebildigi
-# butun ozel repolar bu domain icin calisir.
+# The key is per domain and in the standard place (~/.ssh/id_ed25519). Its
+# public half is added to the ACCOUNT on GitHub/Gitea, so every private
+# repository that account can reach works for this domain.
 use strict;
 use warnings;
 our (%text, %in, $module_name);

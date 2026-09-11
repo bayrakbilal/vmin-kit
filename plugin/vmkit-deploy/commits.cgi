@@ -1,6 +1,6 @@
 #!/usr/bin/perl
-# Bir deployment'in dalindaki son commit'ler.
-# Yalnizca OKUR: bare repoya git log calistirir, hicbir sey degistirmez.
+# The latest commits on a deployment's branch.
+# READ ONLY: runs git log against the bare repository, changes nothing.
 use strict;
 use warnings;
 our (%text, %in);

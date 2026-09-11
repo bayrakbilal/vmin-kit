@@ -1,6 +1,6 @@
-# Modul silinirken Webmin bunu calistirir (delete_module -> module_uninstall).
-# Kanca yolunu miniserv'in listesinden cikariyoruz: olmayan bir modulun
-# adresi orada durmasin.
+# Webmin runs this when the module is deleted (delete_module ->
+# module_uninstall). The hook path is removed from miniserv's list so no URL of
+# a module that no longer exists is left behind.
 use strict;
 use warnings;
 

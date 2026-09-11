@@ -1,8 +1,9 @@
 #!/usr/bin/perl
-# Deployment ekleme / duzenleme.
+# Add or edit a deployment.
 #
-# Formun kendisi kutuphanede (print_deploy_form): "Repoyu kontrol et"
-# basildiginda ayni formu save_deploy.cgi de ciziyor. Sebebi orada anlatildi.
+# The form itself lives in the library (print_deploy_form) because
+# save_deploy.cgi draws the same form when "Check repository" is pressed - see
+# the note there.
 use strict;
 use warnings;
 our (%text, %in, %config, $module_name);

@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# Son deploy kaydini gosterir.
+# Shows the last deployment's log.
 use strict;
 use warnings;
 our (%text, %in);
@@ -18,13 +18,12 @@ $dep || &error($text{'edit_egone'});
 &ui_print_header(&virtual_server::domain_in($d), $text{'log_title'},
 		 "", undef, 0, 0);
 
-# Kayit dosyasi HAM cikti: ne tarih basligi ne durum satiri iceriyor.
-# Ikisi de deployment kaydinda duruyor ve asagida oradan basiliyor - ayni
-# bilgiyi dosyaya da yazsaydik bicimlendirmesi HTML'e karisirdi (make_date'i
-# tema EZIYOR ve <span ...> donduruyor; log sayfasinda o etiket duz metin
-# olarak gorunuyordu).
+# The log file is RAW output: no date header, no status line. Both live in the
+# deployment record and are printed below from there. Writing them into the
+# file as well would mix formatting into it - the theme OVERRIDES make_date and
+# returns a <span ...>, which showed up as plain text on this page.
 #
-# Duzen calisan sayfayla ayni: once cikti, sonra sonuc satiri.
+# Same layout as the running page: output first, result line after.
 my $log = &deploy_log_read($d, $dep);
 if (!defined($log) || $log !~ /\S/) {
 	print "<p><i>$text{'deploy_nolog'}</i></p>\n";
