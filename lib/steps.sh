@@ -533,50 +533,45 @@ step_ssl(){
   fi
 }
 
-# ensure_site_cert <anahtar> [tam-ad] -> gecerli bir ACME sertifikasi var mi
+# ensure_site_cert <key> [fqdn] -> does this address have a valid ACME cert?
 #
-# Tam ad verilmezse <anahtar>.<ana-domain> varsayiliyor. Hostname sanal
-# sunucusu ana domainin alt alani olmak zorunda olmadigi icin oraya tam ad
-# geciliyor.
+# Without an fqdn, <key>.<main-domain> is assumed; the hostname virtual server
+# need not be a subdomain of the main domain, so it passes one.
 #
-# Alt sunucu olusturulduktan HEMEN SONRA cagriliyor, ana domainde step_ssl'in
-# yaptiginin aynisi: sertifika varsa dokunmuyor, yoksa bir kez istiyor.
+# Called right after a sub-server is created - the same shape as step_ssl for
+# the main domain. Virtualmin only requests a certificate while CREATING the
+# domain: if DNS has not propagated yet or the Let's Encrypt quota is spent it
+# says "keeping self-signed certificate" and nobody ever asks again. Retrying
+# here means re-running ./install.sh is enough once the obstacle clears.
 #
-# NEDEN GEREKLI: Virtualmin sertifikayi yalnizca domaini OLUSTURURKEN istiyor.
-# O an DNS henuz yayilmamissa ya da Lets Encrypt kotasi doluysa "keeping
-# self-signed certificate" deyip geciyor ve bir daha kimse istemiyor. Burada
-# her kosuda tekrar denendigi icin engel kalktiginda ./install.sh'i yeniden
-# calistirmak yetiyor.
+# Only a domain WITHOUT a certificate is requested: asking every run would
+# burn the quota (5 per 7 days for the same name set).
 #
-# YALNIZCA SERTIFIKASI OLMAYAN icin istek yapiliyor: her kosuda istemek ayni
-# ad kumesi icin 7 gunde 5 sertifika olan kotayi bos yere tuketirdi.
-#
-# Sonuc VMINKIT_SITE_CERT'e yaziliyor; portu kapatacak adimlar oraya bakiyor.
-# Sertifika BU CAGRIDA yeni alindiysa VMINKIT_CERT_NEW=1 oluyor - hostname
-# adimi buna bakip sertifikayi servislere dagitiyor.
+# The verdict goes into VMINKIT_SITE_CERT for the port-closing steps, and
+# VMINKIT_CERT_NEW marks a certificate obtained in THIS run.
 ensure_site_cert(){
   local key="$1" site="${2:-$1.${MAIN_DOMAIN}}"
   VMINKIT_CERT_NEW=0
   if domain_has_acme_cert "$site"; then
     VMINKIT_SITE_CERT["$key"]=1
-    ok "Sertifika yerinde: $site"
+    ok "Certificate in place: $site"
     return 0
   fi
-  log "Sertifika isteniyor (ACME): $site"
+  log "Requesting a certificate (ACME): $site"
   if virtualmin generate-letsencrypt-cert --domain "$site" --default-hosts --renew; then
     VMINKIT_SITE_CERT["$key"]=1
     VMINKIT_CERT_NEW=1
-    ok "Sertifika alindi: $site"
+    ok "Certificate obtained: $site"
     return 0
   fi
   VMINKIT_SITE_CERT["$key"]=0
-  warn "Sertifika alinamadi: $site (self-signed kaldi)"
+  warn "Could not obtain a certificate: $site (still self-signed)"
   return 1
 }
 
-# site_cert_ok <anahtar> [tam-ad] -> o adrese sertifikali erisim mumkun mu
-# Tablo hic doldurulmadiysa (adim atlanmis ya da eski kurulum) dosya
-# sisteminden bakiyoruz: kararin kaynagi her zaman gercek durum olsun.
+# site_cert_ok <key> [fqdn] -> can this address be reached with a valid cert?
+# When the table was never filled (step skipped, or an older install) the
+# filesystem is consulted: the decision always rests on the real state.
 site_cert_ok(){
   local key="$1" site="${2:-$1.${MAIN_DOMAIN}}"
   if [ -n "${VMINKIT_SITE_CERT[$key]:-}" ]; then
@@ -586,9 +581,9 @@ site_cert_ok(){
   domain_has_acme_cert "$site"
 }
 
-# Portainer loglarindan en son setup_token'i okur (yoksa bos doner).
-# $1 verilirse yalnizca o andan sonraki loglara bakar - eski, tuketilmis bir
-# token'i yeniymis gibi okumamak icin gerekli.
+# Reads the latest setup_token from Portainer's logs (empty when there is none).
+# With $1 it only looks at logs after that moment, so an old consumed token is
+# never mistaken for a fresh one.
 portainer_setup_token(){
   local since="${1:-}"
   if [ -n "$since" ]; then docker logs --since "$since" portainer 2>&1
@@ -596,12 +591,10 @@ portainer_setup_token(){
     | grep -oE 'setup_token=[0-9a-f]+' | tail -1 | cut -d= -f2
 }
 
-# Portainer'da yonetici hesabi olusturulmus mu?
-# Portainer'in kendi kaynagina gore /api/users/admin/check:
-#   204 -> yonetici hesabi VAR
-#   404 -> hesap YOK, kurulum bekliyor
-# Baska bir cevap (servis henuz ayakta degil, yol degismis) "kurulmamis"
-# sayilir; en kotu ihtimalle gereksiz bir yeniden baslatma olur.
+# Has a Portainer admin account been created?
+# /api/users/admin/check returns 204 when an admin EXISTS and 404 when the
+# setup is still pending. Anything else (service not up yet, path changed) is
+# treated as "not set up"; the worst case is one unnecessary restart.
 portainer_configured(){
   local port="${PORTAINER_PORT:-9000}" code
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 \
@@ -609,7 +602,7 @@ portainer_configured(){
   [ "$code" = "204" ]
 }
 
-# Portainer'i yeniden baslatip TAZE setup_token dondurur.
+# Restarts Portainer and returns a FRESH setup_token.
 portainer_restart_for_token(){
   local since tok="" i
   since="$(date -u -d '-5 seconds' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -622,119 +615,112 @@ portainer_restart_for_token(){
   printf '%s' "$tok"
 }
 
-# Kurulumun EN SON adimi: token'i burada uretiyoruz ki kac adim eklenirse
-# eklensin ekranda gorunen token taze olsun (omru birkac dakika).
+# The LAST step of the install: the token lives only a few minutes, so it is
+# produced here no matter how many steps are added before it.
 step_portainer_token(){
   command -v docker >/dev/null 2>&1 || return 0
   docker ps -a --format '{{.Names}}' 2>/dev/null | grep -x portainer >/dev/null || return 0
   local site="${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}"
 
-  # Yonetici hesabi zaten varsa SESSIZ cikiyoruz. Bu adimin tek isi yapilacak
-  # bir is kaldiginda haber vermek; "zaten kurulmus" bilgisi ozette
-  # (Bilesenler) ve kurulum kaydinda zaten var, kapanista tekrar etmesi
-  # gereksiz gurultu.
+  # Silent when an admin account already exists: this step only speaks when
+  # there is something left to do.
   portainer_configured && return 0
 
   say ""
-  log "Portainer icin taze setup_token aliniyor (yeniden baslatiliyor)..."
+  log "Getting a fresh Portainer setup_token (restarting the container)..."
   local tok; tok="$(portainer_restart_for_token || true)"
   say ""
   if [ -n "$tok" ]; then
-    ok "Portainer kurulumunu SIMDI tamamlayin - token birkac dakika gecerli:"
-    say "    Adres       : https://${site}/"
+    ok "Finish the Portainer setup NOW - the token is valid for a few minutes:"
+    say "    Address     : https://${site}/"
     say "    setup_token : $tok"
     say ""
-    log "Sureyi kacirirsaniz: sudo ./configure-docker.sh"
+    log "If you miss the window: sudo ./configure-docker.sh"
   else
-    warn "setup_token okunamadi. Deneyin: sudo ./configure-docker.sh"
+    warn "Could not read a setup_token. Try: sudo ./configure-docker.sh"
   fi
 }
 
-# ensure_proxy_site <onek> <hedef-url> <aciklama> [proxy-host]
-# <onek>.<ana-domain> alt sunucusunu olusturur ve / yolunu hedefe vekiller.
+# ensure_proxy_site <prefix> <target-url> <description> [proxy-host]
+# Creates the <prefix>.<main-domain> sub-server and proxies / to the target.
 #
-# Yonetim araclarini disariya port acmadan yayinlamanin kalibi budur: arayuz
-# 127.0.0.1'de dinler, disariya Apache uzerinden ve o alt alanin KENDI
-# sertifikasiyla cikar. docker./webmin./usermin. ucu de bu kalibi kullaniyor.
+# This is the pattern for publishing a management UI without opening a port:
+# the interface listens on 127.0.0.1 and is reached through Apache under that
+# sub-domain's OWN certificate. docker./webmin./usermin. all use it.
 #
-# Ozellikler bilerek en az: --dir (web sitesi icin sart), --web (vhost),
-# --ssl (https), --dns (alt alanin A kaydi; bind_sub=yes oldugu icin ayri zone
-# acilmaz, kayit ana domainin zone'una girer - olmadan alt alan hic
-# cozumlenmez), --parent (alt sunucu; ayri Unix kullanicisi acilmaz).
-# --break-ssl-cert ile ana domainin sertifikasina baglanmak yerine kendi
-# sertifikasini alir.
+# Features are kept minimal: --dir (required for a website), --web (vhost),
+# --ssl, --dns (the sub-domain's A record - with bind_sub=yes it goes into the
+# parent zone rather than creating a new one; without it the name does not
+# resolve at all), --parent (a sub-server, so no separate unix user) and
+# --break-ssl-cert so it gets its own certificate instead of sharing the main
+# domain's.
 #
 ensure_proxy_site(){
   local prefix="$1" url="$2" desc="$3" phost="${4:-}"
   local site="${prefix}.${MAIN_DOMAIN}"
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; $site atlaniyor."; return 1; }
+  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping $site."; return 1; }
 
   if virtualmin list-domains --name-only 2>/dev/null | grep -xF "$site" >/dev/null; then
-    ok "Alt sunucu zaten var: $site"
+    ok "Sub-server already exists: $site"
   else
-    log "Alt sunucu olusturuluyor: $site (ana domain: $MAIN_DOMAIN)"
+    log "Creating sub-server: $site (parent: $MAIN_DOMAIN)"
     if ! virtualmin create-domain \
            --domain "$site" \
            --parent "$MAIN_DOMAIN" \
            --desc   "$desc" \
            --dir --web --ssl --dns --break-ssl-cert; then
-      err "$site olusturulamadi."
+      err "Could not create $site."
       return 1
     fi
-    ok "Alt sunucu olusturuldu: $site"
+    ok "Sub-server created: $site"
   fi
 
-  # Vekil zaten tanimli mi? (vhost dosyasinda hedefi ariyoruz)
+  # Is the proxy already defined? (look for the target in the vhost)
   local vhost="/etc/apache2/sites-available/${site}.conf"
   if [ -f "$vhost" ] && grep -qF "$url" "$vhost"; then
-    ok "Vekil zaten tanimli: / -> $url"
+    ok "Proxy already defined: / -> $url"
   else
-    log "Vekil ayarlaniyor: / -> $url  (websocket destegiyle)"
-    # Zaten bir vekil varsa (ornegin eski http hedefi) URL'yi guncelliyoruz,
-    # yoksa yenisini kuruyoruz.
+    log "Setting up the proxy: / -> $url  (with websocket support)"
+    # Update an existing proxy (an old http target, say), otherwise create one.
     if virtualmin modify-proxy --domain "$site" --path / --url "$url" >/dev/null 2>&1; then
-      ok "Vekil hedefi guncellendi."
+      ok "Proxy target updated."
     elif virtualmin create-proxy --domain "$site" --path / --url "$url" --websockets; then
-      ok "Vekil eklendi."
+      ok "Proxy added."
     else
-      err "Vekil eklenemedi. Elle: virtualmin create-proxy --domain $site --path / --url $url --websockets"
+      err "Could not add the proxy. Manually: virtualmin create-proxy --domain $site --path / --url $url --websockets"
       return 1
     fi
   fi
 
-  # 4. parametre verilirse "Forward original HTTP hostname when proxying"
-  # aciliyor (ProxyPreserveHost On; panelde Server Configuration -> Website
-  # Options, CLI'da modify-web --proxy-host - ikisi de save_domain_proxy_host
-  # cagiriyor). Webmin ve Usermin bu olmadan vekilin arkasinda duzgun
-  # calismiyor: kendilerine gelen Host basligi 127.0.0.1:<port> oluyor ve
-  # urettikleri adresler ile oturum kontrolleri buna gore sasiyor.
-  # Portainer'in buna ihtiyaci yok, docker sitesi bu parametreyi almiyor.
+  # The 4th argument turns on ProxyPreserveHost. Webmin and Usermin need it
+  # behind a proxy: without it the Host header they see is 127.0.0.1:<port>,
+  # so the URLs they generate and their session checks are all wrong.
+  # Portainer does not need it, so the docker site passes no 4th argument.
   if [ -n "$phost" ]; then
     if [ -f "$vhost" ] && grep -qi 'ProxyPreserveHost[[:space:]]*On' "$vhost"; then
-      ok "Host basligi zaten iletiliyor."
+      ok "Host header is already forwarded."
     else
       if virtualmin modify-web --domain "$site" --proxy-host >/dev/null 2>&1; then
-        ok "Host basligi vekile iletiliyor (ProxyPreserveHost On)."
+        ok "Host header forwarded to the proxy (ProxyPreserveHost On)."
       else
-        warn "ProxyPreserveHost acilamadi; $site uzerinden giris reddedilebilir."
+        warn "Could not enable ProxyPreserveHost; logins through $site may be refused."
       fi
     fi
   fi
 
-  # Sertifika kontrolu sitenin kendi adiminda, olusturmanin hemen ardinda -
-  # ana domainde step_ssl ne yapiyorsa burada da o. Sonuc tabloya yaziliyor.
-  # Sertifika alinamamasi bu adimi BASARISIZ SAYMIYOR: site ve vekil
-  # calisiyor, eksik olan yalnizca guvenilir sertifika. Sonucu port kapatan
-  # adim degerlendiriyor.
+  # Certificate check belongs to the site's own step, right after creation -
+  # the same shape as step_ssl for the main domain. A missing certificate does
+  # NOT fail this step: the site and the proxy work, only the trusted
+  # certificate is missing, and the port-closing step decides what that means.
   ensure_site_cert "$prefix" || true
 
   return 0
 }
 
-# proxy_site_works <onek> -> vekil gercekten cevap veriyor mu
-# DNS'e BAGLI DEGIL: --resolve ile dogrudan yerel Apache'ye, dogru Host ve SNI
-# ile gidiyoruz. Harici DNS modunda alt alan adi daha yayilmamis olabilir ama
-# vekilin calistigini yine de dogrulayabilmemiz gerekiyor.
+# proxy_site_works <prefix> -> does the proxy actually answer?
+# Independent of DNS: --resolve goes straight to the local Apache with the
+# right Host and SNI, because with external DNS the sub-domain may not have
+# propagated yet while the proxy itself is fine.
 proxy_site_works(){
   local site="$1.${MAIN_DOMAIN}" code
   code="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 10 \
