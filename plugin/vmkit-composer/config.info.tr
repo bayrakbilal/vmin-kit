@@ -1,3 +1,3 @@
-scan_depth=Ana dizin altında composer.json kaç seviye derinlikte aransın,0,5
+scan_depth=Web dizini altında composer.json kaç seviye derinlikte aransın,0,5
 flags=Composer komutlarına eklenecek seçenekler,2,nodev-Geliştirme paketlerini atla,optimize-Otoyükleyiciyi iyileştir
 timeout=Komut kaç saniye sonra iptal edilsin,0,6

@@ -1,3 +1,3 @@
-scan_depth=How deep to look for composer.json under the home directory,0,5
+scan_depth=How deep to look for composer.json under the web directory,0,5
 flags=Extra options for Composer commands,2,nodev-Skip development packages,optimize-Optimize the autoloader
 timeout=Give up on a command after this many seconds,0,6

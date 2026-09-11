@@ -3,11 +3,11 @@ feat_label=Cloudflare DNS sync
 feat_label2=Cloudflare DNS sync
 feat_losing=The Cloudflare API token and sync settings will be deleted
 feat_disname=Cloudflare DNS sync
-feat_edepdns=Cloudflare sync cannot be enabled unless DNS is
-feat_module=VminKit - Cloudflare DNS (manage this domain sync)
+feat_edepdns=Cloudflare sync needs the DNS feature to be enabled for this domain
+feat_module=VminKit - Cloudflare DNS (manage this domain's sync)
 links_link=Cloudflare DNS
 setup_start=Enabling Cloudflare DNS sync ..
-setup_done_token=.. done - now add this domain API token
+setup_done_token=.. done - now add this domain's API token
 delete_start=Removing Cloudflare settings ..
 
 index=VminKit - Cloudflare DNS

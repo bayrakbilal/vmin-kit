@@ -103,6 +103,7 @@ repository installs the same way.
 | `NS1_PREFIX` / `NS2_PREFIX` | The zone's nameserver pair | `ns1` / `ns2` |
 | `DOCKER_PREFIX` `WEBMIN_PREFIX` `USERMIN_PREFIX` `WEBMAIL_PREFIX` | Sub-domain names of the interfaces | `docker` `webmin` `usermin` `webmail` |
 | `PORTAINER_IMAGE` / `PORTAINER_PORT` | The Portainer container | `ce:lts` / `9000` |
+| `PORTAINER_BIND_LOCAL` | Binds the Portainer port to `127.0.0.1` (reached through the reverse proxy) | `yes` |
 
 Setting a plugin flag to 0 does **not remove an installed plugin**, it only
 skips installing it. To remove one: `sudo ./update-plugins.sh --remove`.

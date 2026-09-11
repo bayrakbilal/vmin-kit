@@ -100,6 +100,7 @@ kurulur.
 | `NS1_PREFIX` / `NS2_PREFIX` | Zone'un nameserver çifti | `ns1` / `ns2` |
 | `DOCKER_PREFIX` `WEBMIN_PREFIX` `USERMIN_PREFIX` `WEBMAIL_PREFIX` | Arayüzlerin alt alan adları | `docker` `webmin` `usermin` `webmail` |
 | `PORTAINER_IMAGE` / `PORTAINER_PORT` | Portainer konteyneri | `ce:lts` / `9000` |
+| `PORTAINER_BIND_LOCAL` | Portainer portunu `127.0.0.1`'e bağlar (erişim ters vekil üzerinden) | `yes` |
 
 Eklenti bayrağını 0 yapmak **kurulu olanı sökmez**, yalnızca kurmaz. Kaldırmak
 için: `sudo ./update-plugins.sh --remove`.
