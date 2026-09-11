@@ -572,6 +572,30 @@ PERL
   fi
   ok "Hostname sanal sunucusu olusturuldu: $host"
 
+  # NIYETIMIZ VIRTUALMIN'IN CONFIG'INE DE YAZILIYOR.
+  #
+  # check_virtualmin_default_hostname_ssl (panelde "Re-Check Configuration")
+  # hostname domaini VAR ama default_domain_ssl KAPALI ise onu siliyor:
+  #
+  #   if ($config{'default_domain_ssl'}) { ... } else { $remove_default_host_domain->(0) }
+  #
+  # Fonksiyon bu anahtari yalnizca sertifika alabildiginde 1 yapiyor, yani
+  # sertifikasiz kurulumda 0 kaliyor ve az once olusturdugumuz sunucu ilk
+  # yeniden denetlemede silinirdi.
+  #
+  # Deger 2 = "evet, ve yapilandirilabilir olsun": panel listelerinde de
+  # gorunuyor (list_visible_domains yalnizca 2'de gizlemiyor), boylece SSL'i
+  # panelden de yonetebiliyorsun. 1 de silinmeyi engellerdi ama gizli kalirdi.
+  # Zaten bir deger varsa DOKUNULMUYOR - kullanicinin secimi bizden onceliklidir.
+  local vcfg="/etc/webmin/virtual-server/config"
+  if [ -f "$vcfg" ]; then
+    case "$(awk -F= '/^default_domain_ssl=/{print $2; exit}' "$vcfg")" in
+      1|2) ;;
+      *) set_kv "$vcfg" default_domain_ssl 2
+         ok "  Hostname domaini Virtualmin ayarlarinda etkinlestirildi." ;;
+    esac
+  fi
+
   # Sertifika alinabildiyse fonksiyon servislere dagitimi da yapti.
   if domain_has_acme_cert "$host"; then
     VMINKIT_SITE_CERT[hostname]=1
