@@ -254,6 +254,77 @@ ok "$HOOK_OK eklenti kancasi Virtualmin tarafindan cagriliyor"
 echo
 
 # ---------------------------------------------------------------------------
+# 8) MINISERV'IN 'unauth' LISTESI
+#
+# vmkit-deploy, webhook adresini miniserv'in kimlik istemeyen yollar listesine
+# ekliyor. O anahtarin varsayilani miniserv.conf'ta DURMUYOR, miniserv'in
+# kodundaki %vital tablosunda duruyor ve yalnizca dosyada anahtar hic yokken
+# uygulaniyor. Dolayisiyla anahtari yazan taraf varsayilanin tamamini yeniden
+# uretmek zorunda; uretmezse varsayilan sessizce kayboluyor.
+#
+# Bunun bedeli somut: listenin ilk kalemi '^/unauthenticated/' ve o kayboldugu
+# anda Webmin'in GIRIS EKRANI kendi CSS/JS dosyalarini alamiyor. Giris yapilmis
+# oturumda gorunmuyor, cunku o durumda liste hic okunmuyor - yani fark
+# edilmesi zor bir bozulma.
+#
+# Eklenti bu listeyi her calistiginda kaynaktan okuyup birlestiriyor, ama
+# aradaki bir Webmin yukseltmesi varsayilana yeni bir kalem eklerse dosyadaki
+# kopya eksik kalir. Kontrol edilen sozlesme bu: kaynaktaki her kalem dosyadaki
+# listede de var mi?
+#
+# Surumler arasinda gercekten degisiyor: 1.990'dan 2.111'e kadar ayni kalmis,
+# 2.202'de sonuna '^/service-worker.js$' eklenmis.
+# ---------------------------------------------------------------------------
+log "miniserv unauth listesi dogrulaniyor..."
+MSCONF="${WEBMIN_CONFIG:-/etc/webmin}/miniserv.conf"
+UNAUTH_CUR="$(sed -n 's/^unauth=//p' "$MSCONF" 2>/dev/null | head -1)"
+if [ -z "$UNAUTH_CUR" ]; then
+  # Anahtar dosyada yok: miniserv kendi varsayilanini kullaniyor, dogrulanacak
+  # bir sapma da yok.
+  ok "unauth anahtari dosyada yok (miniserv varsayilani gecerli)"
+else
+  # Kaynaktaki dize cift tirnak icinde yazilmis; '\$' ve '\\' kacislari Perl
+  # tarafindan cozuluyor, burada da biz cozuyoruz. Regexte '\$' ile '$' ayni
+  # sey degil, eslestirme bu yuzden kacislar cozulmeden yapilamaz.
+  UNAUTH_RAW="$(grep -hoE '"unauth", "[^"]*"' \
+                  "$WEBMIN_ROOT/miniserv-lib.pl" "$WEBMIN_ROOT/miniserv.pl" \
+                  2>/dev/null | head -1)"
+  if [ -z "$UNAUTH_RAW" ]; then
+    warn "miniserv kaynaginda unauth varsayilani bulunamadi; karsilastirilamadi"
+    MISSING=$((MISSING + 1))
+  else
+    UNAUTH_DEF="${UNAUTH_RAW#\"unauth\", \"}"
+    UNAUTH_DEF="${UNAUTH_DEF%\"}"
+    UNAUTH_DEF="$(printf '%s' "$UNAUTH_DEF" | sed 's/\\\$/$/g; s/\\\\/\\/g')"
+    UNAUTH_OK=0
+    declare -A UNAUTH_SEEN=()
+    # Dosya adi genislemesi KAPALI: kalemler '[A-Za-z0-9\-/_]' gibi ifadeler
+    # iceriyor ve kelime bolunmesinden sonra kabuk bunlari dosya kalibi
+    # sayabilir.
+    set -f
+    for d in $UNAUTH_DEF; do
+      # Varsayilan listede '^/robots.txt$' iki kez geciyor (Webmin 1.990'dan
+      # beri). Tekrari bir kez sayiyoruz.
+      [ -n "${UNAUTH_SEEN[$d]:-}" ] && continue
+      UNAUTH_SEEN["$d"]=1
+      # Glob yerine birebir karsilastirma: 'case' kalibinda ayni ifadeler
+      # karakter sinifi olarak yorumlanirdi.
+      hit=0
+      for c in $UNAUTH_CUR; do [ "$c" = "$d" ] && hit=1; done
+      if [ "$hit" = 1 ]; then
+        UNAUTH_OK=$((UNAUTH_OK + 1))
+      else
+        err "unauth listesinde eksik varsayilan: $d"
+        MISSING=$((MISSING + 1))
+      fi
+    done
+    set +f
+    ok "$UNAUTH_OK unauth varsayilani yerinde"
+  fi
+fi
+echo
+
+# ---------------------------------------------------------------------------
 if [ "$MISSING" -eq 0 ]; then
   ok "Her sey yerinde. Virtualmin surumu: $(cat "$VS_DIR/module.info" 2>/dev/null | sed -n 's/^version=//p')"
   exit 0
