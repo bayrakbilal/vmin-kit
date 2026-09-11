@@ -502,6 +502,113 @@ step_host_dns(){
   fi
 }
 
+# Hostname sanal sunucusu.
+#
+# NEDEN BIZ YAPIYORUZ: Virtualmin kurucusu bunu yalnizca SERTIFIKA ALABILDIGI
+# durumda birakiyor. Kaynakta acikca yaziyor (Virtualmin::Config::Plugin::SSL):
+#
+#   my ($ok, $error) = virtual_server::setup_virtualmin_default_hostname_ssl();
+#   if ($ok) { ... } else { virtual_server::delete_virtualmin_default_hostname_ssl(); }
+#
+# Yani DNS henuz yayilmamissa olusturdugunu geri siliyor. Kurucunun bunu
+# degistiren bir anahtari yok; --no-hostname-ssl adimi tumden atliyor.
+#
+# Oysa bu sanal sunucu sertifikadan bagimsiz olarak gerekli:
+#   - IP'ye gelen isteklerin dustugu VARSAYILAN site o (set_default_website).
+#     Olmadiginda Apache alfabetik ilk vhost'u kullaniyor; DNS'siz kurulumda
+#     IP'ye gidince Portainer sitesi aciliyordu.
+#   - Webmin/Usermin/Postfix/Dovecot sertifikalarinin kaynagi o.
+#
+# Virtualmin'in KENDI fonksiyonu cagriliyor, duz bir create-domain degil:
+# fonksiyon 'defaulthostdomain' isaretini koyuyor, varsayilan siteyi ayarliyor
+# ve default_domain_ssl anahtarini yonetiyor. Elle olusturulan bir domain
+# listede gorunur ama Virtualmin onu hostname domaini olarak tanimaz.
+#
+# Fonksiyonun CLI karsiligi yok (kutuda arandi: yalnizca
+# virtual-server-lib-funcs.pl icinde geciyor), o yuzden Webmin'in kendi
+# ortaminda calistiriliyor - onsoz Virtualmin'in kendi CLI betiklerinden.
+step_host_domain(){
+  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; hostname sanal sunucusu atlaniyor."; return 1; }
+  local host="$HOSTNAME_FQDN" vsdir="/usr/share/webmin/virtual-server"
+
+  if virtualmin list-domains --name-only 2>/dev/null | grep -xF "$host" >/dev/null; then
+    ok "Hostname sanal sunucusu zaten var: $host"
+    # Fonksiyon bu noktada ise yaramaz: domain varken 'check_defhost_clash'
+    # ile reddediyor. Sertifika normal yoldan isteniyor.
+    ensure_site_cert hostname "$host" || true
+    # Dagitim YALNIZCA sertifika yeni alindiysa. Virtualmin yenilemede
+    # sertifikayi kendiliginden tazeliyor ama sadece o domainin sertifikasinin
+    # bir kopyasini TUTAN servislere (get_all_domain_service_ssl_certs icerik
+    # karsilastiriyor). Ilk kopyayi biri koymazsa o liste hep bos kalir.
+    [ "${VMINKIT_CERT_NEW:-0}" = "1" ] && host_cert_to_services "$host"
+    site_cert_ok hostname "$host"
+    return
+  fi
+
+  if [ ! -f "$vsdir/virtual-server-lib.pl" ]; then
+    err "Virtualmin modulu bulunamadi: $vsdir"
+    return 1
+  fi
+  log "Hostname sanal sunucusu olusturuluyor: $host"
+  WEBMIN_CONFIG=/etc/webmin WEBMIN_VAR=/var/webmin perl - "$vsdir" <<'PERL'
+package virtual_server;
+my $dir = shift(@ARGV);
+$main::no_acl_check++;
+chdir($dir);
+$0 = "$dir/vmkit-host-domain.pl";
+require './virtual-server-lib.pl';
+&set_all_text_print();
+my ($ok, $msg) = &setup_virtualmin_default_hostname_ssl();
+$msg =~ s/<[^>]*>//g;
+print "vmkit: hostname domain -> ", ($ok ? "ok" : "fail"), " : $msg\n";
+PERL
+
+  # Sonuc DONUS KODUNDAN okunmuyor: fonksiyon sertifika basarisizligi ile
+  # erken cikislari (clash, FQDN degil, yetki) ayni kodla donduruyor. Gercek
+  # durum sisteme sorularak ogreniliyor.
+  if ! virtualmin list-domains --name-only 2>/dev/null | grep -xF "$host" >/dev/null; then
+    err "Hostname sanal sunucusu olusturulamadi: $host"
+    return 1
+  fi
+  ok "Hostname sanal sunucusu olusturuldu: $host"
+
+  # Sertifika alinabildiyse fonksiyon servislere dagitimi da yapti.
+  if domain_has_acme_cert "$host"; then
+    VMINKIT_SITE_CERT[hostname]=1
+    ok "Sertifika alindi: $host"
+    return 0
+  fi
+  VMINKIT_SITE_CERT[hostname]=0
+  warn "Sertifika alinamadi: $host (self-signed kaldi)"
+  return 1
+}
+
+# host_cert_to_services <hostname>
+# Hostname sertifikasini servislerin genel varsayilani yapar.
+#
+# Servisler vhost gibi calismiyor: Postfix, Dovecot, miniserv hangi adla
+# gelinirse gelinsin tek bir varsayilan sertifika sunuyor ve o sertifika
+# dosyanin KOPYASI (/etc/webmin/<host>.cert gibi), baglanti degil.
+#
+# Servisler tek tek cagriliyor: install-service-cert gecersiz bir servis
+# adinda tum cagriyi reddediyor, gecerli liste ise sistemden geliyor
+# (list_service_ssl_cert_types). Desteklenmeyeni sessizce atlamak boyle
+# mumkun.
+host_cert_to_services(){
+  local host="$1" svc
+  local -a done_svc=()
+  for svc in webmin usermin postfix dovecot proftpd; do
+    virtualmin install-service-cert --domain "$host" --add-global --service "$svc" \
+      && done_svc+=("$svc")
+  done
+  if [ ${#done_svc[@]} -gt 0 ]; then
+    ok "Sertifika servislere dagitildi: ${done_svc[*]}"
+    return 0
+  fi
+  warn "Sertifika hicbir servise dagitilamadi."
+  return 1
+}
+
 step_ssl(){
   command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; SSL atlaniyor."; return 1; }
   # create-domain, otomatik ACME acikken sertifikayi zaten aliyor. Tekrar istemek
@@ -520,7 +627,11 @@ step_ssl(){
   fi
 }
 
-# ensure_site_cert <onek> -> alt alanin gecerli bir ACME sertifikasi var mi
+# ensure_site_cert <anahtar> [tam-ad] -> gecerli bir ACME sertifikasi var mi
+#
+# Tam ad verilmezse <anahtar>.<ana-domain> varsayiliyor. Hostname sanal
+# sunucusu ana domainin alt alani olmak zorunda olmadigi icin oraya tam ad
+# geciliyor.
 #
 # Alt sunucu olusturulduktan HEMEN SONRA cagriliyor, ana domainde step_ssl'in
 # yaptiginin aynisi: sertifika varsa dokunmuyor, yoksa bir kez istiyor.
@@ -535,34 +646,38 @@ step_ssl(){
 # ad kumesi icin 7 gunde 5 sertifika olan kotayi bos yere tuketirdi.
 #
 # Sonuc VMINKIT_SITE_CERT'e yaziliyor; portu kapatacak adimlar oraya bakiyor.
+# Sertifika BU CAGRIDA yeni alindiysa VMINKIT_CERT_NEW=1 oluyor - hostname
+# adimi buna bakip sertifikayi servislere dagitiyor.
 ensure_site_cert(){
-  local prefix="$1" site="$1.${MAIN_DOMAIN}"
+  local key="$1" site="${2:-$1.${MAIN_DOMAIN}}"
+  VMINKIT_CERT_NEW=0
   if domain_has_acme_cert "$site"; then
-    VMINKIT_SITE_CERT["$prefix"]=1
+    VMINKIT_SITE_CERT["$key"]=1
     ok "Sertifika yerinde: $site"
     return 0
   fi
   log "Sertifika isteniyor (ACME): $site"
   if virtualmin generate-letsencrypt-cert --domain "$site" --default-hosts --renew; then
-    VMINKIT_SITE_CERT["$prefix"]=1
+    VMINKIT_SITE_CERT["$key"]=1
+    VMINKIT_CERT_NEW=1
     ok "Sertifika alindi: $site"
     return 0
   fi
-  VMINKIT_SITE_CERT["$prefix"]=0
+  VMINKIT_SITE_CERT["$key"]=0
   warn "Sertifika alinamadi: $site (self-signed kaldi)"
   return 1
 }
 
-# site_cert_ok <onek> -> o alt alana sertifikali erisim mumkun mu
+# site_cert_ok <anahtar> [tam-ad] -> o adrese sertifikali erisim mumkun mu
 # Tablo hic doldurulmadiysa (adim atlanmis ya da eski kurulum) dosya
 # sisteminden bakiyoruz: kararin kaynagi her zaman gercek durum olsun.
 site_cert_ok(){
-  local prefix="$1"
-  if [ -n "${VMINKIT_SITE_CERT[$prefix]:-}" ]; then
-    [ "${VMINKIT_SITE_CERT[$prefix]}" = "1" ]
+  local key="$1" site="${2:-$1.${MAIN_DOMAIN}}"
+  if [ -n "${VMINKIT_SITE_CERT[$key]:-}" ]; then
+    [ "${VMINKIT_SITE_CERT[$key]}" = "1" ]
     return
   fi
-  domain_has_acme_cert "$1.${MAIN_DOMAIN}"
+  domain_has_acme_cert "$site"
 }
 
 # Portainer loglarindan en son setup_token'i okur (yoksa bos doner).

@@ -288,6 +288,10 @@ set +e
 say ""
 run_step step_hostname
 run_step step_virtualmin
+# Hostname sanal sunucusu, Virtualmin kurulumunun hemen ardinda: kurucu da tam
+# bu noktada olusturuyor (henuz hicbir domain yokken), ayni yerde olmasi
+# basarili kurulumlardaki yapiyla birebir ayni sonucu veriyor.
+run_step step_host_domain
 if is_truthy "$POSTGRES"; then run_step step_postgres; fi
 if is_truthy "$COMPOSER"; then run_step step_composer; fi
 run_step step_dns_template

@@ -110,6 +110,7 @@ Dosyanın sonunda kaçış kapıları var (`SKIP_DNS_CHECK`, `ALLOW_ANY_OS`,
 |------|----------|
 | `hostname` | Hostname'i `s.<domain>` yapar |
 | `virtualmin` | Resmi installer ile Virtualmin kurar |
+| `host-domain` | Hostname sanal sunucusu (sunucunun varsayılan sitesi ve servis sertifikalarının kaynağı); sertifika alınamasa da oluşturulur |
 | `postgres` / `composer` | PostgreSQL ve Composer paketleri *(isteğe bağlı)* |
 | `dns-template` | Yeni domainler için DNS varsayılanları |
 | `panel-redirects` | `admin.<domain>` ve `webmail.<domain>` kısayollarını kapatır |
@@ -294,15 +295,13 @@ yeniden başlatır.
 sudo ./install.sh                    # kurulum (tekrar çalıştırmak zararsız)
 sudo ./update-plugins.sh             # eklentileri güncelle (git pull sonrası)
 sudo ./update-plugins.sh --remove    # eklentileri kaldır
-sudo ./renew-ssl.sh                  # hostname sertifikasını al/yenile
 sudo ./configure-docker.sh           # Portainer kurulum ekranını yeni token'la aç
 ./build-plugins.sh [modül]           # eklentileri .wbm.gz olarak paketle (dist/)
 ```
 
-**`renew-ssl.sh` ne zaman gerekir:** kurulum sırasında domain henüz
-çözümlemiyorsa Virtualmin sertifika alamaz ve self-signed ile devam eder. DNS
-oturduktan sonra bu betiği çalıştırın. Ana domain için ayrıca bir şey gerekmez —
-`install.sh` tekrar çalıştırıldığında sertifikayı zaten ister.
+**DNS sonradan oturduysa:** ayrı bir betik yok, `sudo ./install.sh` yeter.
+Hostname dahil bütün adresler için sertifikası olmayanlar tekrar istenir,
+alındığında yönetim portları kapatılır.
 
 **`update-plugins.sh` ne yapar:** eklenti dosyalarını doğrudan Webmin'in modül
 dizinine kopyalar. Derleme yoktur, sayfayı yenilemeniz yeterlidir. Geliştirme
@@ -343,6 +342,5 @@ lib/steps.sh         # kurulum adımları
 plugin/              # Webmin eklentilerinin kaynağı
 build-plugins.sh     # plugin/ -> dist/<modül>.wbm.gz
 update-plugins.sh    # eklentileri sunucuya kopyala (geliştirme)
-renew-ssl.sh         # hostname sertifikası
 configure-docker.sh  # Portainer kurulum ekranı
 ```
