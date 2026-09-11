@@ -900,12 +900,12 @@ print &ui_table_row($text{'edit_actions'},
 	      "<tt>".&html_escape(&deploy_target_dir($d, $dep))."</tt>").
 	"</font>");
 
-# Kanca adresi AYNI TABLODA. Ayri bir forma alinca sayfanin dibine dusuyordu;
-# oysa deployment'in bir alani ve digerleriyle birlikte durmasi gerekiyor.
-# Yenileme dugmesi de kendi alaninin yaninda - ayni formda, ayri adli submit.
+# The hook URL lives in the SAME table. In a form of its own it ended up at the
+# bottom of the page, when it is a field of the deployment and belongs with the
+# others. Its regenerate button sits beside it - same form, separate submit.
 #
-# Adres salt okunur bir kutuda: uzun ve kopyalanmasi gereken bir deger, duz
-# yazi olarak metinlerin arasinda durunca hem secmesi zor hem de kayboluyordu.
+# The URL is in a read-only box: it is long and meant to be copied, and as
+# plain text among the other text it was both hard to select and easy to miss.
 print &ui_table_row($text{'edit_hook'},
 	&ui_textbox("hookurl", &hook_url($dep) || '', 60, 0, undef,
 		    "readonly onClick='this.select()'")." ".
@@ -917,32 +917,32 @@ print &ui_table_row($text{'edit_hook'},
 
 print &ui_table_end();
 
-# Sayfanin altinda YALNIZCA kaydet ve sil: alanlara ait eylemler kendi
-# satirlarinda duruyor.
-# Dugme dizisi: [ ad, etiket, sonrasina eklenecek, devre disi, ek nitelik ]
-# Kaydet, repo dogrulanana kadar devre disi - dal secilmeden kayit anlamsiz.
+# Only save and delete at the bottom: field-level actions stay on their rows.
+# Button array: [ name, label, append, disabled, extra attribute ]
+# Save is disabled until the repository is verified - saving without a branch
+# means nothing.
 my @buttons = ( [ undef, $new ? $text{'create'} : $text{'save'},
 		  undef, $branches ? 0 : 1 ] );
 push(@buttons, [ "delete", $text{'delete'} ]) if (!$new);
 print &ui_form_end(\@buttons);
 }
 
-# ---- web kancasi --------------------------------------------------------
-# Plesk'teki ile ayni model: adresin icindeki UUID PAROLADIR. Adresi bilen
-# tetikler, bilmeyen tetikleyemez.
+# ---- the webhook ---------------------------------------------------------
+# The same model Plesk uses: the UUID in the URL IS the credential. Whoever
+# knows the URL can trigger it, whoever does not, cannot.
 #
-# Bilerek YAPMADIKLARIMIZ ve nedenleri:
-#   - Imza dogrulama (GitHub'in X-Hub-Signature-256'si) yok. Eklersek kanca
-#     GitHub'a OZEL olurdu; Gitea, GitLab ya da elle 'curl' calismazdi.
-#     UUID her yerde calisir.
-#   - Gelen govde HIC OKUNMAZ. Hangi repo, hangi dal, hangi klasor zaten
-#     kayitli; payload'da bize yeni bir sey yok.
+# Deliberately NOT done, and why:
+#   - No signature verification (GitHub's X-Hub-Signature-256). It would tie
+#     the hook to GitHub and break Gitea, GitLab and a plain 'curl'. The UUID
+#     works everywhere.
+#   - The request body is NEVER READ. Repository, branch and target are already
+#     stored; the payload tells us nothing new.
 #
-# Bedeli: adres bir parola oldugu icin sunucunun erisim gunluklerine duser ve
-# paylasmak onu paylasmak demektir. Sizdiginda formdan yeniden uretilir,
-# eskisi aninda gecersiz olur. Plesk'te de durum aynidir.
+# The cost: since the URL is a credential it appears in the server's access
+# logs, and sharing the URL is sharing the credential. If it leaks, regenerate
+# it from the form and the old one dies immediately. Plesk is no different.
 
-# new_uuid() -> 128 bitlik rastgele kimlik (32 onaltilik karakter)
+# new_uuid() -> a 128-bit random id (32 hex characters)
 sub new_uuid
 {
 my $h;
@@ -952,15 +952,15 @@ if (open($h, "<", "/dev/urandom")) {
 	close($h);
 	return unpack("H*", $b) if ($n == 16);
 	}
-# /dev/urandom her Linux'ta var; buraya dusmemiz beklenmiyor ama sessizce
-# bos bir kimlik uretmektense zayif da olsa bir sey uretelim.
+# /dev/urandom exists on every Linux, so this should never be reached - but a
+# weak id beats silently producing an empty one.
 return sprintf("%08x%08x%08x%08x", time(), $$, int(rand(0xffffffff)),
 	       int(rand(0xffffffff)));
 }
 
-# find_by_uuid(uuid) -> (&domain, &deploy) ya da bos
-# Butun domainlerdeki deployment'lar taranir: kanca kimlik dogrulamasi
-# yapmadan calistigi icin hangi domain oldugunu yalnizca UUID soyluyor.
+# find_by_uuid(uuid) -> (&domain, &deploy), or empty
+# Every domain's deployments are scanned: the hook runs without authentication,
+# so the UUID is the only thing that says which domain this is.
 sub find_by_uuid
 {
 my ($uuid) = @_;
@@ -974,10 +974,10 @@ foreach my $dep (&list_deploys()) {
 return ( );
 }
 
-# hook_url(&deploy) -> tam adres
-# Konak adini TAHMIN ETMIYORUZ: sayfayi hangi adresten actiysan kancanin
-# adresi de odur. Panele vekil uzerinden girildiginde ProxyPreserveHost
-# sayesinde bu zaten dis adres (webmin.<domain>) oluyor.
+# hook_url(&deploy) -> the full URL
+# The host name is never GUESSED: whatever address the page was opened from is
+# the hook's address too. Behind the proxy, ProxyPreserveHost already makes
+# that the external name (webmin.<domain>).
 sub hook_url
 {
 my ($dep) = @_;
@@ -987,11 +987,10 @@ return undef if (!$host);
 return "https://$host/$module_name/hook.cgi?uuid=$dep->{'uuid'}";
 }
 
-# ---- miniserv: kimlik dogrulamasi istemeyen yol -------------------------
-# Kanca adresine giris yapmadan erisilebilmesi gerekiyor. Webmin'in kendi
-# ayari bunu sagliyor; ayarin ADINI TAHMIN ETMIYORUZ, miniserv.pl'in hangi
-# anahtari okudugunu kaynaktan buluyoruz. Webmin surumleri arasinda
-# degisirse burasi kendiliginden dogru olani secer.
+# ---- miniserv: the path that needs no login ------------------------------
+# The hook URL has to be reachable without signing in, which is a Webmin
+# setting. Its NAME is never guessed: the installed miniserv source is read to
+# find which key it uses, so a rename between versions is picked up here.
 sub miniserv_source
 {
 my $src = "";
@@ -1002,51 +1001,50 @@ foreach my $f ("miniserv-lib.pl", "miniserv.pl") {
 return $src;
 }
 
-# unauth_key() -> kancanin yazilacagi miniserv anahtari
+# unauth_key() -> the miniserv key the hook path is written to
 #
-# 'unauth' DEGIL, 'unauthcgi'. Ikisi ayni mekanizma ama farkli anlam tasiyor:
+# 'unauthcgi', NOT 'unauth'. They share a mechanism but mean different things:
 #
 #   foreach my $u (@unauth)    { $unauth = 4 if ($simple =~ /$u/); }
 #   foreach my $u (@unauthcgi) { $unauth = 3 if ($simple =~ /$u/); }
 #
-# ve calistirma kapisi:
+# and the execution gate:
 #
 #   if (&get_type($full) eq "internal/cgi" && $validated != 4) { ... CGI ... }
 #
-# Yani 'unauth' listesindeki bir .cgi CALISTIRILMIYOR, kaynak kodu dosya
-# olarak gonderiliyor. Olculdu: oturumsuz bir istek '200 internal/cgi' ve
-# hook.cgi'nin Perl kaynagini donduruyordu, kanca hic tetiklenmiyordu. Giris
-# yapilmis tarayicidan denenince calisiyor gorunuyor, cunku o durumda liste
-# hic okunmuyor - yanilticiligi buradan geliyordu.
+# So a .cgi listed in 'unauth' is NOT EXECUTED - its source is sent as a file.
+# Measured: a session-less request returned '200 internal/cgi' and the Perl
+# source of hook.cgi, and the hook never fired. From a logged-in browser it
+# looked like it worked, because then the list is never consulted at all.
 #
-# 'unauthcgi' $validated=3 verip CGI'yi calistiriyor ve ortama
-# ANONYMOUS_USER=1 koyuyor; bizim istedigimiz bu.
+# 'unauthcgi' gives $validated=3, executes the CGI and sets ANONYMOUS_USER=1,
+# which is what we want.
 #
-# Anahtar kurulu kaynakta yoksa undef donuyor: yazacak dogru yer olmadan
-# yazmaktansa kancayi kaydetmemek dogru. 'unauth'a dusmek kaynak kodu
-# servis ettirirdi.
+# Returns undef when the key is absent from the installed source: not
+# registering the hook is better than writing to the wrong place, and falling
+# back to 'unauth' would serve the source code.
 sub unauth_key
 {
 my $src = &miniserv_source();
 return $src =~ /["']unauthcgi["']/ ? "unauthcgi" : undef;
 }
 
-# unauth_default(anahtar) -> miniserv'in KODUNDA gomulu varsayilan liste
+# unauth_default(key) -> the default list compiled into miniserv
 #
-# BU FONKSIYON OLMADAN EKLENTI WEBMIN'I BOZUYORDU. Varsayilan listeler
-# miniserv.conf'ta DURMUYOR, miniserv'in %vital tablosunda duruyor ve yalnizca
-# dosyada o anahtar hic yokken devreye giriyor:
+# WITHOUT THIS FUNCTION THE PLUGIN BROKE WEBMIN. The default lists are not in
+# miniserv.conf but in miniserv's %vital table, and they apply only while the
+# key is absent from the file:
 #
 #   foreach my $v (keys %vital) { if (!$config{$v}) { $config{$v} = $vital{$v} } }
 #
-# Dolayisiyla "dosyadaki degere ekle" mantigi, dosyada deger olmadigi icin
-# listeyi bizim tek yolumuzla DEGISTIRIYOR. 'unauthcgi'nin varsayilani parola
-# kurtarma sayfalari; onlari silmek de kabul edilemez.
+# So "append to the value in the file" REPLACED the list with our single path,
+# because the file had no value. For 'unauthcgi' that default is Webmin's
+# password-recovery pages, which must not be deleted either.
 #
-# Liste ELLE KOPYALANMIYOR: Webmin surumu degistiginde sapmasin diye kurulu
-# kaynaktan okunuyor. Kaynaktaki dize cift tirnak icinde, yani '\$' gibi
-# kacislar Perl tarafindan cozulecek sekilde yazilmis; burada onlari biz
-# cozuyoruz - regexte '\$' ile '$' ayni sey degil.
+# The list is NEVER COPIED BY HAND: it is read from the installed source so it
+# cannot drift when Webmin changes. The string there is double-quoted, so
+# escapes like '\$' are resolved by Perl and are resolved here too - in a regex
+# '\$' and '$' are not the same thing.
 sub unauth_default
 {
 my ($key) = @_;
@@ -1058,10 +1056,10 @@ $def =~ s/\\([\$\@\\"])/$1/g;
 return $def;
 }
 
-# wanted_unauth_list(anahtar, mevcut) -> listenin olmasi gereken hali
-# Varsayilan + dosyada zaten duranlar + bizim yolumuz, sirasi korunarak ve
-# tekrarsiz. Dosyada duranlari elemiyoruz: baska bir seyin ekledigi yol varsa
-# onu silmek bize dusmez.
+# wanted_unauth_list(key, current) -> what the list should be
+# The default, plus whatever is already in the file, plus our path, in order
+# and without duplicates. Entries already in the file are kept: if something
+# else added a path, removing it is not ours to do.
 sub wanted_unauth_list
 {
 my ($key, $cur) = @_;
@@ -1076,9 +1074,8 @@ foreach my $p (split(/\s+/, &unauth_default($key)),
 return join(" ", @want);
 }
 
-# Listedeki kalemler REGEX olarak degerlendiriliyor ($simple =~ /$u/), duz
-# metin olarak degil. Capasiz birakilirsa yol, adresin herhangi bir yerinde
-# eslesirdi.
+# List entries are evaluated as REGEXES ($simple =~ /$u/), not as literals.
+# Unanchored, the path would match anywhere in a URL.
 sub hook_path
 {
 return "^/$module_name/hook\\.cgi\$";
@@ -1089,7 +1086,7 @@ sub miniserv_conf
 return "$ENV{'WEBMIN_CONFIG'}/miniserv.conf";
 }
 
-# hook_path_registered() -> yol listede mi
+# hook_path_registered() -> is the path in the list?
 sub hook_path_registered
 {
 my $conf = &miniserv_conf();
@@ -1104,9 +1101,9 @@ my $p = &hook_path();
 return (grep { $_ eq $p } split(/\s+/, $cur)) ? 1 : 0;
 }
 
-# ensure_hook_path() -> (degisti mi, hata)
-# Yolu listeye ekler ve miniserv'i yeniden yukler. Idempotent: zaten varsa
-# hicbir sey yapmaz, dolayisiyla her kurulumda cagrilabilir.
+# ensure_hook_path() -> (changed?, error)
+# Adds the path to the list and reloads miniserv. Idempotent: does nothing when
+# it is already right, so it can be called on every install.
 sub ensure_hook_path
 {
 my $conf = &miniserv_conf();
@@ -1117,9 +1114,9 @@ my %mc;
 &read_file($conf, \%mc);
 my $cur = $mc{$key};
 
-# Varsayilan okunamadiysa DOKUNMUYORUZ: eksik bir liste yazmak Webmin'in
-# kendi sayfalarini bozar. Dosyada zaten bir deger varsa ona eklemek guvenli,
-# cunku o durumda ezilen bir varsayilan yok.
+# If the default cannot be read, nothing is written: an incomplete list would
+# break Webmin's own pages. Appending to an existing value is safe, because
+# then there is no default being overwritten.
 my $def = &unauth_default($key);
 if ($def eq '' && ($cur || '') eq '') {
 	return (0, &text('hook_econf', $conf));
@@ -1128,25 +1125,25 @@ if ($def eq '' && ($cur || '') eq '') {
 my $want = $def eq '' ? join(" ", grep { $_ ne '' }
 				  (split(/\s+/, $cur || ''), &hook_path()))
 		      : &wanted_unauth_list($key, $cur);
-# Icerige gore karsilastiriliyor, "yolumuz listede mi" diye degil: eski
-# surumun bozdugu kurulumlarda yolumuz listedeydi ama varsayilanlar
-# eksikti, o hal boyle onariliyor.
+# Compared by content, not by "is our path there": on installs an older version
+# broke, our path was present but the defaults were missing, and this is what
+# repairs them.
 return (0, undef) if (($cur || '') eq $want);
 return (0, &text('hook_econf', $conf)) if (!-w $conf);
 $mc{$key} = $want;
 &lock_file($conf);
 &write_file($conf, \%mc);
 &unlock_file($conf);
-# Ayar yalnizca miniserv yeniden yuklenince gecerli oluyor. Webmin'in kendi
-# fonksiyonu bunu calisan istegi oldurmeden yapiyor (ayni seyi Webmin
-# Configuration sayfalari da kullaniyor).
+# The setting only takes effect once miniserv reloads. Webmin's own function
+# does that without killing the request in flight - the same call its
+# Configuration pages use.
 if (defined(&restart_miniserv)) {
 	eval { &restart_miniserv(1); };
 	}
 return (1, undef);
 }
 
-# remove_hook_path() - modul kaldirilirken listeden cikar.
+# remove_hook_path() - removes the path from the list when the module is removed.
 sub remove_hook_path
 {
 my $conf = &miniserv_conf();
@@ -1158,9 +1155,8 @@ my %mc;
 my $p = &hook_path();
 my @keep = grep { $_ ne '' && $_ ne $p } split(/\s+/, $mc{$key} || '');
 return 0 if (join(" ", @keep) eq ($mc{$key} || ''));
-# Geriye yalnizca varsayilan kaldiysa anahtari tumden siliyoruz: miniserv o
-# zaman kendi gomulu listesini kullanir ve miniserv.conf'ta bizden kalma bir
-# kopya durmaz.
+# If only the default remains, the key is deleted entirely: miniserv then uses
+# its built-in list and no copy of ours is left in miniserv.conf.
 if (join(" ", @keep) eq &unauth_default($key)) {
 	delete($mc{$key});
 	}
