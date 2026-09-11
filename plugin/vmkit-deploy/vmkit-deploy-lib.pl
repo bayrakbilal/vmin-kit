@@ -997,13 +997,68 @@ return "https://$host/$module_name/hook.cgi?uuid=$dep->{'uuid'}";
 # ayari bunu sagliyor; ayarin ADINI TAHMIN ETMIYORUZ, miniserv.pl'in hangi
 # anahtari okudugunu kaynaktan buluyoruz. Webmin surumleri arasinda
 # degisirse burasi kendiliginden dogru olani secer.
+sub miniserv_source
+{
+my $src = "";
+foreach my $f ("miniserv-lib.pl", "miniserv.pl") {
+	my $p = "$root_directory/$f";
+	$src .= &read_file_contents($p) if (-r $p);
+	}
+return $src;
+}
+
 sub unauth_key
 {
-my $mp = "$root_directory/miniserv.pl";
-my $src = -r $mp ? &read_file_contents($mp) : undef;
+my $src = &miniserv_source();
 return "unauthenticated"
 	if ($src && $src =~ /config\{["']unauthenticated["']\}/);
 return "unauth";
+}
+
+# unauth_default() -> miniserv'in KODUNDA gomulu varsayilan liste
+#
+# BU FONKSIYON OLMADAN EKLENTI WEBMIN'I BOZUYORDU. Varsayilan liste
+# miniserv.conf'ta DURMUYOR, miniserv'in kendi %vital tablosunda duruyor ve
+# yalnizca dosyada o anahtar hic yokken devreye giriyor:
+#
+#   foreach my $v (keys %vital) { if (!$config{$v}) { $config{$v} = $vital{$v} } }
+#
+# Dolayisiyla "dosyadaki degere ekle" mantigi, dosyada deger olmadigi icin
+# listeyi bizim tek yolumuzla DEGISTIRIYORDU. Varsayilanin ilk kalemi
+# '^/unauthenticated/' oldugu icin Webmin'in giris ekrani kendi CSS/JS
+# dosyalarini artik alamiyor, tarayici .css yerine HTML aliyordu. Giris
+# yapilmis oturumlarda gorunmuyor, cunku o durumda liste hic okunmuyor.
+#
+# Liste ELLE KOPYALANMIYOR: Webmin surumu degistiginde tekrar sapmasin diye
+# kurulu kaynaktan okunuyor. Kaynaktaki dize cift tirnak icinde, yani '\$'
+# gibi kacislar Perl tarafindan cozulecek sekilde yazilmis; burada onlari biz
+# cozuyoruz - regexte '\$' ile '$' ayni sey degil.
+sub unauth_default
+{
+my $src = &miniserv_source();
+return "" if (!$src);
+return "" if ($src !~ /["']unauth["']\s*,\s*"((?:[^"\\]|\\.)*)"/);
+my $def = $1;
+$def =~ s/\\([\$\@\\"])/$1/g;
+return $def;
+}
+
+# wanted_unauth_list() -> listenin olmasi gereken hali
+# Varsayilan + dosyada zaten duranlar + bizim yolumuz, sirasi korunarak ve
+# tekrarsiz. Dosyada duranlari elemiyoruz: baska bir seyin ekledigi yol varsa
+# onu silmek bize dusmez.
+sub wanted_unauth_list
+{
+my ($cur) = @_;
+my @want;
+my %seen;
+foreach my $p (split(/\s+/, &unauth_default()),
+	       split(/\s+/, $cur || ''),
+	       &hook_path()) {
+	next if ($p eq '' || $seen{$p}++);
+	push(@want, $p);
+	}
+return join(" ", @want);
 }
 
 sub hook_path
@@ -1035,14 +1090,30 @@ return (grep { $_ eq $p } split(/\s+/, $cur)) ? 1 : 0;
 # hicbir sey yapmaz, dolayisiyla her kurulumda cagrilabilir.
 sub ensure_hook_path
 {
-return (0, undef) if (&hook_path_registered());
 my $conf = &miniserv_conf();
-return (0, &text('hook_econf', $conf)) if (!-w $conf);
+return (0, undef) if (!-r $conf);
 my $key = &unauth_key();
 my %mc;
 &read_file($conf, \%mc);
-$mc{$key} = join(" ", grep { $_ ne '' }
-			(split(/\s+/, $mc{$key} || ''), &hook_path()));
+my $cur = $mc{$key};
+
+# Varsayilan okunamadiysa DOKUNMUYORUZ: eksik bir liste yazmak giris ekranini
+# bozar. Dosyada zaten bir deger varsa ona eklemek guvenli, cunku o durumda
+# ezilen bir varsayilan yok.
+my $def = &unauth_default();
+if ($def eq '' && ($cur || '') eq '') {
+	return (0, &text('hook_econf', $conf));
+	}
+
+my $want = $def eq '' ? join(" ", grep { $_ ne '' }
+				  (split(/\s+/, $cur || ''), &hook_path()))
+		      : &wanted_unauth_list($cur);
+# Icerige gore karsilastiriliyor, "yolumuz listede mi" diye degil: eski
+# surumun bozdugu kurulumlarda yolumuz listedeydi ama varsayilanlar
+# eksikti, o hal boyle onariliyor.
+return (0, undef) if (($cur || '') eq $want);
+return (0, &text('hook_econf', $conf)) if (!-w $conf);
+$mc{$key} = $want;
 &lock_file($conf);
 &write_file($conf, \%mc);
 &unlock_file($conf);
@@ -1066,7 +1137,15 @@ my %mc;
 my $p = &hook_path();
 my @keep = grep { $_ ne '' && $_ ne $p } split(/\s+/, $mc{$key} || '');
 return 0 if (join(" ", @keep) eq ($mc{$key} || ''));
-$mc{$key} = join(" ", @keep);
+# Geriye yalnizca varsayilan kaldiysa anahtari tumden siliyoruz: miniserv o
+# zaman kendi gomulu listesini kullanir ve miniserv.conf'ta bizden kalma bir
+# kopya durmaz.
+if (join(" ", @keep) eq &unauth_default()) {
+	delete($mc{$key});
+	}
+else {
+	$mc{$key} = join(" ", @keep);
+	}
 &lock_file($conf);
 &write_file($conf, \%mc);
 &unlock_file($conf);
