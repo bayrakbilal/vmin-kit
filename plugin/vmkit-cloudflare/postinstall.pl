@@ -1,22 +1,23 @@
-# Webmin modul kurulunca bunu bir kez calistirir:
+# Webmin runs this once when the module is installed:
 # install_module() -> foreign_require(postinstall.pl) -> module_install().
 #
-# Otomatik senkron birimlerini burada kuruyoruz. Boylece modul ister
-# install-plugins.sh ile ister .wbm.gz olarak standart yoldan kurulsun,
-# servis her iki durumda da olusur ve baslar.
+# The automatic sync units are installed here, so the service is created and
+# started whether the module arrives through install-plugins.sh or as a
+# .wbm.gz by the standard route.
 use strict;
 use warnings;
 
-# './' YOK: bu dosya calistiginda calisma dizini Webmin'in kendi modulunun
-# dizini olabiliyor. foreign_require modul dizinini @INC'e ekliyor, o yuzden
-# kutuphaneyi adiyla istiyoruz.
+# NO './': when this file runs the working directory may belong to another
+# module. foreign_require puts the module directory on @INC, so the library is
+# required by name.
 require 'vmkit-cloudflare-lib.pl';
 
 sub module_install
 {
 my ($done, $err) = &ensure_sync_units();
-# Kurulum ekranini hatayla kesmiyoruz: modul servis olmadan da calisir,
-# yalnizca senkron elle tetiklenir. Durum modulun kendi sayfasinda gorunur.
+# An error does not abort the installation screen: the module works without
+# the service, the sync just has to be triggered by hand. The state is visible
+# on the module's own page.
 print STDERR "vmkit-cloudflare: $err\n" if ($err);
 return undef;
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/perl
-# Karsilastirma tablosundaki islem dugmeleri.
-# Her islem TEK BIR Cloudflare kaydi uzerinde calisir ve kaydin kimligiyle
-# gelir; ad/tip gibi tahmin edilebilir alanlarla degil.
+# The action buttons in the comparison table.
+# Every action works on ONE Cloudflare record and arrives with that record's
+# id, not with guessable fields such as name and type.
 use strict;
 use warnings;
 our (%text, %in);
@@ -21,15 +21,13 @@ my ($r, $err) = &cf_find_record($d, $in{'id'});
 my $act = $in{'act'};
 $act =~ /^(proxy|import|adopt|delete)$/ || &error($text{'act_eunknown'});
 
-# ---- ONAY ----
-# Karsilastirma tablosundan buraya BAGLANTIYLA geliniyor (kucuk cerceveli
-# dugme gorunumunu tema yalnizca baglantilara veriyor). Baglanti GET demek ve
-# onbellek ya da tarayicinin onceden getirmesi onu tetikleyebilir; bu yuzden
-# baglantinin kendisi HICBIR SEY DEGISTIRMIYOR, yalnizca bu sayfayi aciyor.
-# Kural silme kadar sahiplenme ve iceri aktarma icin de gecerli.
+# ---- CONFIRMATION ----
+# Nothing here acts straight away: the button on the comparison table only
+# opens this page, and the operation runs on the second, confirmed post. The
+# rule covers adopting and importing as much as deleting.
 #
-# Proxy bunun disinda: o bir bulut simgesine basmakla oluyor, zaten POST ve
-# tek tikla geri alinabiliyor.
+# Proxying is the exception: it is a click on a cloud icon, already a POST and
+# undone with one more click.
 if ($act ne 'proxy' && !$in{'confirm'}) {
 	&ui_print_header(&virtual_server::domain_in($d),
 			 $text{'conf_title'}, "", undef, 0, 0);
@@ -44,11 +42,11 @@ if ($act ne 'proxy' && !$in{'confirm'}) {
 	print &ui_hidden("id", $in{'id'});
 	print &ui_hidden("act", $act);
 	print &ui_hidden("confirm", 1);
-	# Onay dugmesinin rengi ve ikonu, temanin dil anahtarinda aradigi
-	# kelimeden geliyor (get_button_style -> string_contains):
-	#   delete_ok        -> kirmizi + carpi
-	#   keys_import_ok   -> yesil + iceri aktarma
-	#   adopt_update_ok  -> mavi + yenileme
+	# The confirm button's colour and icon come from the word the theme
+	# finds in the language key (get_button_style -> string_contains):
+	#   delete_ok        -> red + cross
+	#   keys_import_ok   -> green + import
+	#   adopt_update_ok  -> blue + refresh
 	my %okkey = ( 'delete' => 'delete_ok',
 		      'import' => 'keys_import_ok',
 		      'adopt'  => 'adopt_update_ok' );
@@ -59,10 +57,10 @@ if ($act ne 'proxy' && !$in{'confirm'}) {
 
 my $done;
 
-# Proxy'li ve BIZIM OLMAYAN kayitlara dokunulmaz: tipik ornek Cloudflare
-# tuneli - icerigi (xxx.cfargotunnel.com) yerel zone'da anlamsizdir ve
-# silinmesi calisan bir kurulumu bozar. Proxy durumunu degistirmek ise
-# yalnizca bizim kayitlarimizda serbest.
+# Proxied records that are NOT OURS are never touched: the typical case is a
+# Cloudflare tunnel, whose content (xxx.cfargotunnel.com) is meaningless in the
+# local zone and whose deletion breaks a working setup. Changing the proxy
+# state is allowed on our own records only.
 if ($r->{'proxied'} && $act ne 'proxy') {
 	&error($text{'act_eproxied'});
 	}

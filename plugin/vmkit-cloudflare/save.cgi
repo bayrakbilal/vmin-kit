@@ -1,6 +1,7 @@
 #!/usr/bin/perl
-# Bir domainin Cloudflare ayarlarini kaydet.
-# Yalnizca ayar yazar; senkronu tetiklemez (onu sync_progressive.cgi ya da servis yapar).
+# Saves a domain's Cloudflare settings.
+# It only writes settings; it does not trigger a sync - sync_progressive.cgi or
+# the service does that.
 use strict;
 use warnings;
 our (%text, %in);
@@ -16,14 +17,14 @@ $d->{'vmkit-cloudflare'} || &error(&text('index_eoff', $d->{'dom'}));
 
 my $cf = &get_cf($d);
 
-# ---- token'i sil ----
-# Onay dugmesinin dil anahtari 'delete_ok'. Temanin get_button_style'i
-# etiketi %text icinde arayip anahtari buluyor ve anahtar adinin ICINDE
-# kelime ariyor; 'delete' geciyorsa kirmizi + carpi ikonu. Ayni anahtar
-# adlari deploy eklentisinde de kullaniliyor.
+# ---- delete the token ----
+# The confirm button's language key is 'delete_ok'. The theme's
+# get_button_style looks the label up in %text to find the key and searches
+# THE KEY NAME for a word; containing 'delete' gives red + a cross icon. The
+# deploy plugin uses the same key names.
 #
-# Islem geri alinamiyor: token bir daha gosterilmiyor, yenisini Cloudflare'den
-# uretmek gerekiyor. Once onay, sonra silme.
+# The action cannot be undone: the token is never shown again and a new one has
+# to be generated at Cloudflare. Confirmation first, deletion second.
 if ($in{'delete'} && !$in{'confirm'}) {
 	&ui_print_header(&virtual_server::domain_in($d), $text{'delete_title'},
 			 "", undef, 0, 0);
@@ -48,8 +49,8 @@ if ($in{'delete'}) {
 	exit;
 	}
 
-# Token bos birakilirsa mevcut deger korunur - maskeli gosterdigimiz icin
-# her kaydedista yeniden yazilmasini istemiyoruz.
+# An empty token field keeps the current value: it is displayed masked, so it
+# should not have to be retyped on every save.
 if ($in{'token'} =~ /\S/) {
 	$in{'token'} =~ /^[A-Za-z0-9_\-]{20,}$/ || &error($text{'save_etoken'});
 	$cf->{'token'} = $in{'token'};

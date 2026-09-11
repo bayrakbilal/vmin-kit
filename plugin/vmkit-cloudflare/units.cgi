@@ -1,7 +1,7 @@
 #!/usr/bin/perl
-# Otomatik senkron birimlerini yeniden kur ve baslat.
-# Dosyalar zorla yeniden yazilir (force): bozulmus ya da elle degistirilmis
-# bir birim dosyasi da bu dugmeyle duzelsin.
+# Reinstalls and starts the automatic sync units.
+# The files are rewritten unconditionally (force), so a unit file that is
+# corrupt or was edited by hand is repaired by this button too.
 use strict;
 use warnings;
 our (%text, %in);
@@ -10,8 +10,8 @@ require './vmkit-cloudflare-lib.pl';
 &ReadParse();
 &error_setup($text{'svc_err'});
 
-# Sistem servisi: yalnizca sunucu yoneticisi. Domain sahibinin kendi
-# sayfasindan sistem birimlerini yeniden baslatmasini istemiyoruz.
+# A system service: the server administrator only. A domain owner must not be
+# able to restart system units from their own page.
 &virtual_server::master_admin() || &error($text{'svc_eaccess'});
 
 my ($done, $err) = &ensure_sync_units(1);

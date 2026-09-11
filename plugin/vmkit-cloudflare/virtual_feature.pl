@@ -1,12 +1,12 @@
-# vmkit-cloudflare - Virtualmin feature sozlesmesi.
+# vmkit-cloudflare - the Virtualmin feature contract.
 #
-# vmkit-deploy ile SIMETRIK: domain basina bir ozellik. Her domainin kendi
-# Cloudflare API token'i vardir, cunku token hesap/zone bazlidir ve domainler
-# farkli Cloudflare hesaplarinda olabilir. Global token yoktur.
+# SYMMETRIC with vmkit-deploy: one feature per domain. Each domain has its own
+# Cloudflare API token, because a token is account/zone scoped and domains may
+# live in different Cloudflare accounts. There is no global token.
 #
-# Ozelligin bir domainde acilmasi: kayit dosyasini olusturur ve otomatik
-# senkron servisinin ayakta oldugundan emin olur. Senkronun kendisi token
-# girildikten sonra baslar.
+# Enabling the feature on a domain creates its record file and makes sure the
+# automatic sync service is up. The syncing itself starts once a token is
+# entered.
 use strict;
 use warnings;
 our (%text, %config);
@@ -44,8 +44,8 @@ return undef;
 }
 
 # feature_suitable(&parentdom, &aliasdom, &subdom)
-# Alias domainlerin kendi zone'u yok; alt sunucularin kayitlari ust zone'a
-# yaziliyor. Bu yuzden yalnizca ust duzey sunucular icin anlamli.
+# Alias domains have no zone of their own, and a sub-server's records go into
+# the parent zone. So this is only meaningful for top-level servers.
 sub feature_suitable
 {
 my ($parentdom, $aliasdom, $subdom) = @_;
@@ -53,7 +53,7 @@ return $aliasdom || $parentdom ? 0 : 1;
 }
 
 # feature_depends(&domain)
-# Senkronlayacak bir zone gerektigi icin DNS ozelligi sart.
+# Syncing needs a zone, so the DNS feature is required.
 sub feature_depends
 {
 my ($d) = @_;
@@ -61,17 +61,18 @@ return $d->{'dns'} ? undef : $text{'feat_edepdns'};
 }
 
 # feature_setup(&domain)
-# Kayit dosyasini varsayilanlarla olusturur; token panelden girilir. Token
-# girilene kadar domain senkrona hic girmez (sync_domains).
+# Creates the record file with the defaults; the token is entered from the
+# panel. Until it is, the domain takes no part in syncing (sync_domains).
 sub feature_setup
 {
 my ($d) = @_;
 &$virtual_server::first_print($text{'setup_start'});
-# Varsayilan, modul ayarlarindan gelir (Features and Plugins -> Configure).
+# The default comes from the module configuration (Features and Plugins ->
+# Configure).
 &save_cf($d, { 'proxy'   => $config{'default_proxy'} ? 1 : 0,
 	       'enabled' => 1 });
-# Ilk domain acilirken izleme servisinin ayakta oldugundan emin ol: modul
-# elle kopyalanmis, yani postinstall.pl hic calismamis olabilir.
+# Make sure the watch service is up on the first domain: the module may have
+# been copied by hand, in which case postinstall.pl never ran.
 &ensure_sync_units();
 &$virtual_server::second_print($text{'setup_done_token'});
 }
@@ -81,7 +82,7 @@ sub feature_modify
 }
 
 # feature_delete(&domain)
-# Ozellik kaldirilinca token dahil tum ayarlari sil.
+# Removing the feature deletes every setting, the token included.
 sub feature_delete
 {
 my ($d) = @_;
@@ -104,7 +105,7 @@ return undef;
 }
 
 # feature_links(&domain)
-# Domainin menusune ikon ekler.
+# Adds an icon to the domain's menu.
 sub feature_links
 {
 my ($d) = @_;
@@ -116,7 +117,7 @@ return ( { 'mod'   => $module_name,
 }
 
 # feature_webmin(&main-domain, &all-domains)
-# Domain sahibi kendi domaininin Cloudflare ayarlarini yonetebilsin.
+# Lets a domain owner manage their own domain's Cloudflare settings.
 sub feature_webmin
 {
 my ($d, $alldoms) = @_;
@@ -131,19 +132,20 @@ return ( [ $module_name, $text{'feat_module'} ] );
 }
 
 # ---------------------------------------------------------------------------
-# YEDEK / GERI YUKLEME
+# BACKUP AND RESTORE
 #
-# Tasinan: token, proxy tercihi ve otomatik senkron anahtari.
+# What travels: the token, the proxy preference and the automatic sync switch.
 #
-# TOKEN HAM DOSYADAN OKUNUYOR (get_cf degil): diskte zaten okunaksiz bicimde
-# duruyor ve oyle kalsin istiyoruz. get_cf ile okusaydik yedege duz metin
-# yazardik - okunaksizlastirmanin ana sebeplerinden biri tam da yedekti.
+# THE TOKEN IS READ FROM THE RAW FILE (not through get_cf): on disk it is
+# already obfuscated and it should stay that way. Reading it with get_cf would
+# write plain text into the backup - and backups are one of the main reasons
+# for obfuscating it.
 #
-# Tasinmayanlar:
-#   zone_id      Cloudflare'in zone kimligi. Yoksa cf_zone_id kendisi bulup
-#                yaziyor; eski bir id (domain baska hesaba tasinmissa) sessiz
-#                ve kafa karistirici hatalara yol acardi.
-#   last_status  Baska bir sunucudaki eski bir calismanin sonucu; yaniltici.
+# What does not travel:
+#   zone_id      Cloudflare's zone id. Without it cf_zone_id looks it up and
+#                stores it; a stale id (a domain moved to another account)
+#                would cause silent, confusing errors.
+#   last_status  the result of an old run on another server; misleading.
 #   last_time
 # ---------------------------------------------------------------------------
 
@@ -153,7 +155,7 @@ sub feature_backup_name
 return $text{'backup_name'};
 }
 
-# feature_backup(&domain, dosya, &opts, homeformat?, differential?, as-owner,
+# feature_backup(&domain, file, &opts, homeformat?, differential?, as-owner,
 #                &all-opts, &destinations)
 sub feature_backup
 {
@@ -176,8 +178,8 @@ if ($err) {
 	return 0;
 	}
 
-# Domain sahibi kendi yedegini aliyorsa arsivi paketleyen o; dosyayi
-# okuyabilmeli. Root aliyorsa 0600 root'ta kalsin.
+# When the domain owner takes their own backup they are the one packing the
+# archive and must be able to read the file. For root it stays 0600 root.
 if ($asd) {
 	&set_ownership_permissions($d->{'uid'}, $d->{'gid'}, 0600, $file);
 	}
@@ -190,7 +192,7 @@ else {
 return 1;
 }
 
-# feature_restore(&domain, dosya, &opts, &all-opts)
+# feature_restore(&domain, file, &opts, &all-opts)
 sub feature_restore
 {
 my ($d, $file) = @_;
@@ -202,10 +204,10 @@ if (!&read_file($file, \%in)) {
 	return 0;
 	}
 
-# save_cf KULLANILMIYOR: o, token'i sifreleyerek yaziyor; elimizdeki deger
-# yedekten geldigi icin zaten o bicimde. Ikinci kez sifrelemek onu bozardi.
-# Mevcut kaydin uzerine yaziyoruz - zone_id ve son calisma bilgisi bilerek
-# dusuyor, ikisi de kendiliginden yeniden olusuyor.
+# save_cf is NOT used: it writes the token encoded, and the value from the
+# backup is already in that form - encoding it twice would corrupt it. The
+# existing record is overwritten, deliberately dropping zone_id and the last
+# run information; both are recreated by themselves.
 my $file2 = &domain_file($d);
 my $dir = &domains_dir();
 -d $dir || &make_dir($dir, 0700, 1);

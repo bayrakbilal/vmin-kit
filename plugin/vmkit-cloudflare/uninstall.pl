@@ -1,5 +1,6 @@
-# Modul silinirken Webmin bunu calistirir (delete_module -> module_uninstall).
-# Arkada calisan systemd birimleri kalmasin: birimleri durdurup kaldiriyoruz.
+# Webmin runs this when the module is deleted (delete_module ->
+# module_uninstall). The systemd units are stopped and removed so nothing is
+# left running in the background.
 use strict;
 use warnings;
 

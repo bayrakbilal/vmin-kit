@@ -1,7 +1,7 @@
 #!/usr/bin/perl
-# Bir domainin OTOMATIK senkronunu tek tikla ac/kapat.
-# Liste ekranindaki dugme buraya gelir; ayar sayfasina girmeye gerek kalmasin.
-# Token'a dokunulmaz - kapatmak yalnizca otomatik gonderimi durdurur.
+# Turns a domain's AUTOMATIC sync on or off in one click.
+# The button on the list page posts here, so the settings page is not needed.
+# The token is untouched - switching off only stops the automatic pushing.
 use strict;
 use warnings;
 our (%text, %in);
@@ -21,7 +21,7 @@ $cf->{'enabled'} = $cf->{'enabled'} ? 0 : 1;
 
 &webmin_log($cf->{'enabled'} ? "enable" : "disable", "cloudflare", $d->{'dom'});
 
-# Nereden gelindiyse oraya don: liste ya da domainin kendi sayfasi.
+# Back to wherever this came from: the list, or the domain's own page.
 my $msg = &text($cf->{'enabled'} ? 'toggle_on' : 'toggle_off', $d->{'dom'});
 if (($in{'back'} || '') eq 'dom') {
 	&redirect("index.cgi?dom=$d->{'id'}&msg=".&urlize($msg));
