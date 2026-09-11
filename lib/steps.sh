@@ -1336,7 +1336,7 @@ step_report(){
   say "Adresler"
   say "  Site       : https://${MAIN_DOMAIN}"
   if [ "$(awk -F= '/^bind=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null)" = "127.0.0.1" ]; then
-    say "  Panel      : https://${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}/  (10000 disariya kapali)"
+    say "  Panel      : https://${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}/"
   else
     say "  Panel      : https://${HOSTNAME_FQDN}:10000"
   fi
