@@ -33,51 +33,13 @@ declare -A VMINKIT_SITE_CERT=()
 # bilesik komutu 0 dondurdugu icin $? o noktada adimin degil if'in sonucudur.
 # '|| rc=$?' dogrudan komutun kodunu aliyor.
 #
-# Ekranda yalnizca bizim satirlarimiz oldugu icin, bir adim basarisiz olunca
-# SEBEBI de gostermek gerekiyor - yoksa "basarisiz" yazip susan bir ekran
-# kullaniciyi log dosyasini acmaya mahkum eder.
-#
-# Adimin ciktisini ayri bir dosyaya toplamiyoruz: log dosyasinin adim
-# oncesindeki BOYUTUNU olcup sonrasini okuyoruz. Boylece o adima ait kisim
-# tam olarak elimizde oluyor, gecici dosya da gerekmiyor.
+# Ekrana hata AYRINTISI basilmiyor. Bir sure adimin son log satirlarini
+# gosteriyorduk; gereksiz cikti. Komutlarin ciktisi zaten kurulum kaydinda,
+# ekranin isi durumu gostermek.
 run_step(){
-  local fn="$1" rc=0 start=0
-  if [ -n "${VMINKIT_LOGFILE:-}" ] && [ -f "$VMINKIT_LOGFILE" ]; then
-    start="$(wc -c < "$VMINKIT_LOGFILE")"
-  fi
+  local fn="$1" rc=0
   "$fn" || rc=$?
-  if [ "$rc" -ne 0 ]; then
-    VMINKIT_FAILED+=("${fn#step_}")
-    if [ -n "${VMINKIT_LOGFILE:-}" ] && [ -f "$VMINKIT_LOGFILE" ]; then
-      local tailtxt
-      # Kendi satirlarimiz ('[*] [+] [!] [x]' ile baslayanlar) tail'den
-      # cikariliyor: onlar zaten ekranda duruyor. Filtrelenmediginde adimin
-      # yazdirdigi hata mesaji, hemen altindaki ozette bir kez daha
-      # goruntuleniyordu - Ubuntu 22.04 kurulumunda goruldu.
-      #
-      # '|| true' SART: grep -v her satiri elerse 1 doner, 'pipefail' altinda
-      # atamayi basarisiz yapar ve 'set -e' betigi tam da hata bildirirken
-      # oldururdu.
-      tailtxt="$(tail -c "+$((start + 1))" "$VMINKIT_LOGFILE" |
-                 grep -v '^[[:space:]]*$' |
-                 grep -Ev '^\[[*+!x]\] ' | tail -12 || true)"
-      # Blogun TAMAMI yalnizca EKRANA gidiyor (fd 3), loga degil. Bu satirlar
-      # zaten log dosyasindan okunuyor; tekrar yazmak ayni metni ikilerdi.
-      # Onceden baslik ve alt satir 'say' ile (yani loga da), aradaki icerik
-      # ise yalnizca ekrana gidiyordu; sonuc logda ici bos bir cerceveydi ve
-      # "hata mesaji kaybolmus" gibi duruyordu. Olculdu.
-      #
-      # Girinti her satira ayri veriliyor: tek 'printf "    %s\n"' cok satirli
-      # bir degiskende yalnizca ILK satiri girintiler, gerisi sola yapisir.
-      if [ -n "$tailtxt" ]; then
-        printf '    ---- %s: son satirlar ----\n' "${fn#step_}" >&3
-        printf '%s\n' "$tailtxt" | while IFS= read -r l; do
-          printf '    %s\n' "$l" >&3
-        done
-        printf '    ---- tamami: %s ----\n' "$VMINKIT_LOGFILE" >&3
-      fi
-    fi
-  fi
+  [ "$rc" -eq 0 ] || VMINKIT_FAILED+=("${fn#step_}")
   return "$rc"
 }
 
@@ -587,8 +549,7 @@ ensure_site_cert(){
     return 0
   fi
   VMINKIT_SITE_CERT["$prefix"]=0
-  warn "Sertifika alinamadi: $site - self-signed kaliyor."
-  warn "  Engel kalkinca ./install.sh tekrar calistirilinca yeniden denenir."
+  warn "Sertifika alinamadi: $site (self-signed kaldi)"
   return 1
 }
 
@@ -959,8 +920,7 @@ step_docker_site(){
     portainer_set_publish "127.0.0.1:${port}:9000"
     return
   fi
-  warn "${prefix}.${MAIN_DOMAIN} self-signed sertifikada; Portainer ${port} disariya acik birakiliyor."
-  warn "  Sertifika alindiktan sonra ./install.sh tekrar calistirin, port kapanir."
+  warn "Portainer ${port} acik birakildi: ${prefix}.${MAIN_DOMAIN} sertifikasiz."
   portainer_set_publish "${port}:9000"
   return 1   # sertifika eksik: adim basarisiz sayiliyor, ozette gorunsun
 }
@@ -1082,9 +1042,7 @@ lock_panel_port(){
   # acik kalan port bilinen ve raporda yazan bir durum, kapali port ise
   # kullaniciyi kendi sunucusunun disinda birakiyor.
   if ! site_cert_ok "$prefix"; then
-    warn "$name kilitlenmedi: ${prefix}.${MAIN_DOMAIN} self-signed sertifikada."
-    warn "  Tarayici bu adrese guvenmeyecegi icin port acik birakildi."
-    warn "  Sertifika alindiktan sonra ./install.sh tekrar calistirin."
+    warn "$name portu acik birakildi: ${prefix}.${MAIN_DOMAIN} sertifikasiz."
     return 0
   fi
 
@@ -1366,25 +1324,9 @@ step_report(){
     say "Bilesenler   : $joined"
   fi
 
-  # Sertifikasiz kalan adresler ayrica yaziliyor: bunlarin yuzunden yonetim
-  # portlari acik birakiliyor, yani ozetin alt tarafindaki port listesi de
-  # buna gore okunmali. Yorum degil, sonuc bildirimi.
-  local -a nocert=()
-  local p
-  for p in "${!VMINKIT_SITE_CERT[@]}"; do
-    [ "${VMINKIT_SITE_CERT[$p]}" = "0" ] && nocert+=("${p}.${MAIN_DOMAIN}")
-  done
-  if [ ${#nocert[@]} -gt 0 ]; then
-    say ""
-    say "SERTIFIKASIZ ADRESLER: ${nocert[*]}"
-    say "  Self-signed sertifikada kaldilar; yonetim portlari acik birakildi."
-    say "  Engel kalkinca ./install.sh tekrar calistirin."
-  fi
-
   if [ ${#VMINKIT_FAILED[@]} -gt 0 ]; then
     say ""
-    say "BASARISIZ ADIMLAR: ${VMINKIT_FAILED[*]}"
-    say "  Sebepleri yukarida ve kurulum kaydinda. Duzeltip tekrar calistirin."
+    warn "Tamamlanamayan adimlar: ${VMINKIT_FAILED[*]}"
   fi
 
   say ""

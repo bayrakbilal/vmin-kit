@@ -326,8 +326,7 @@ if is_truthy "$DOCKER"; then step_portainer_token; fi
 # Kapanis yalnizca "bitti mi" ve "ayrintili cikti nerede" sorularina cevap.
 say ""
 if [ ${#VMINKIT_FAILED[@]} -gt 0 ]; then
-  warn "Tamamlandi, ancak su adimlar basarisiz oldu: ${VMINKIT_FAILED[*]}"
-  warn "Duzeltip ./install.sh'i tekrar calistirin; tamamlanmis adimlar atlanir."
+  warn "Tamamlandi. Tamamlanamayan adimlar: ${VMINKIT_FAILED[*]}"
 else
   ok "Tamamlandi."
 fi
