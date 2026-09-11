@@ -920,6 +920,11 @@ step_webmail(){
       ok "Roundcube kurulum sihirbazi zaten yok."
     fi
   fi
+
+  # Sertifika eksikse adim basarisiz sayiliyor: Roundcube kurulu ama kimse
+  # guvenmeyen bir adresten posta okumaz.
+  [ "${VMINKIT_SITE_CERT[${WEBMAIL_PREFIX:-webmail}]:-1}" = "0" ] && return 1
+  return 0
 }
 
 # docker.<domain> alt sunucusu + Portainer'a proxy.
@@ -952,11 +957,12 @@ step_docker_site(){
 
   if site_cert_ok "$prefix"; then
     portainer_set_publish "127.0.0.1:${port}:9000"
-  else
-    warn "${prefix}.${MAIN_DOMAIN} self-signed sertifikada; Portainer ${port} disariya acik birakiliyor."
-    warn "  Sertifika alindiktan sonra ./install.sh tekrar calistirin, port kapanir."
-    portainer_set_publish "${port}:9000"
+    return
   fi
+  warn "${prefix}.${MAIN_DOMAIN} self-signed sertifikada; Portainer ${port} disariya acik birakiliyor."
+  warn "  Sertifika alindiktan sonra ./install.sh tekrar calistirin, port kapanir."
+  portainer_set_publish "${port}:9000"
+  return 1   # sertifika eksik: adim basarisiz sayiliyor, ozette gorunsun
 }
 
 # Webmin/Usermin, istegin Referer basligindaki adresi kendi gordugu
@@ -1029,6 +1035,16 @@ step_panel_sites(){
   else
     log "Usermin kurulu degil; usermin.<domain> atlaniyor."
   fi
+
+  # Sertifika alinamadiysa adim BASARISIZ sayiliyor. Site ve vekil calisiyor
+  # ama istenen sonuc - tarayicinin guvendigi bir panel adresi - olusmadi ve
+  # bu yuzden yonetim portu da acik kaldi. Ozetteki "BASARISIZ ADIMLAR"
+  # satirinda gorunmesi gereken tam olarak bu.
+  local p rc=0
+  for p in "${WEBMIN_PREFIX:-webmin}" "${USERMIN_PREFIX:-usermin}"; do
+    [ "${VMINKIT_SITE_CERT[$p]:-1}" = "0" ] && rc=1
+  done
+  return "$rc"
 }
 
 # Yonetim portlarini yalnizca 127.0.0.1'e baglar.
@@ -1348,6 +1364,21 @@ step_report(){
       if [ -z "$joined" ]; then joined="$c"; else joined="$joined | $c"; fi
     done
     say "Bilesenler   : $joined"
+  fi
+
+  # Sertifikasiz kalan adresler ayrica yaziliyor: bunlarin yuzunden yonetim
+  # portlari acik birakiliyor, yani ozetin alt tarafindaki port listesi de
+  # buna gore okunmali. Yorum degil, sonuc bildirimi.
+  local -a nocert=()
+  local p
+  for p in "${!VMINKIT_SITE_CERT[@]}"; do
+    [ "${VMINKIT_SITE_CERT[$p]}" = "0" ] && nocert+=("${p}.${MAIN_DOMAIN}")
+  done
+  if [ ${#nocert[@]} -gt 0 ]; then
+    say ""
+    say "SERTIFIKASIZ ADRESLER: ${nocert[*]}"
+    say "  Self-signed sertifikada kaldilar; yonetim portlari acik birakildi."
+    say "  Engel kalkinca ./install.sh tekrar calistirin."
   fi
 
   if [ ${#VMINKIT_FAILED[@]} -gt 0 ]; then
