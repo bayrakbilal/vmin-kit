@@ -269,7 +269,7 @@ fi
 # ---- onay ----
 # Ozet her zaman gosterilir ve onay her zaman istenir: yanlis bir ayar
 # gorursen iptal edip config.env'i duzeltir, yeniden calistirirsin.
-if ! ask_yn "Bu ayarlarla devam edeyim mi?" E; then
+if ! ask_yn "Bu ayarlarla devam edeyim mi?" Y; then
   warn "Iptal edildi. Ayarlar burada: $ROOT_DIR/config.env"
   exit 0
 fi
