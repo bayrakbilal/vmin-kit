@@ -1,13 +1,13 @@
-# Not: config.env artık depoda izleniyor — varsayılan ayarlar orada durur,
-# ana domain orada tutulmaz. Sunucuya özel bir değer gerekirse ortam
-# değişkeni olarak verilir (ör. SERVER_IP=... ./install.sh).
+# Note: config.env IS tracked - it holds the default settings, and the main
+# domain is deliberately not kept there. A server-specific value is passed as
+# an environment variable instead (e.g. SERVER_IP=... ./install.sh).
 *.log
 
 # install output (vmin-kit-install-*.log is already covered by *.log)
 
-# yerel çalışma dosyaları (ekran görüntüleri vb.)
+# local working files (screenshots and the like)
 *.png
 *.jpg
 
-# build-plugins.sh çıktısı: paketler kaynaktan üretilir, depoda tutulmaz
+# build-plugins.sh output: packages are built from source, not kept in the repo
 dist/
