@@ -1,6 +1,6 @@
 #!/usr/bin/perl
-# Bir projedeki kurulu composer paketleri ve guncellenebilir olanlar.
-# Yalnizca OKUR: 'composer show' calistirir, hicbir sey kurmaz.
+# The composer packages installed in a project, and which can be updated.
+# READ ONLY: runs 'composer show', installs nothing.
 use strict;
 use warnings;
 our (%text, %in);
@@ -13,8 +13,8 @@ $d || &error($text{'index_edom'});
 &can_edit_domain($d) || &error($text{'index_eaccess'});
 $d->{'vmkit-composer'} || &error(&text('index_eoff', $d->{'dom'}));
 
-# Baglantidan gelen dizine guvenmiyoruz: taramada bulunan projelerden biri
-# olmak zorunda.
+# A directory arriving from a link is not trusted: it has to be one of the
+# projects the scan found.
 my $p = &valid_project($d, $in{'dir'});
 $p || &error($text{'run_edir'});
 
@@ -30,8 +30,8 @@ elsif (!@$pkgs) {
 	print "<p><i>$text{'pkg_none'}</i></p>\n";
 	}
 else {
-	# Guncellenebilirler uste: listenin uzunlugu ne olursa olsun is
-	# gerektirenler ilk bakista gorunsun.
+	# Updatable ones first: however long the list, what needs attention is
+	# visible at a glance.
 	my @sorted = sort {
 		($a->{'latest-status'} eq 'up-to-date' ? 1 : 0) <=>
 		($b->{'latest-status'} eq 'up-to-date' ? 1 : 0) ||

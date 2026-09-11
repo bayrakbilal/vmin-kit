@@ -1,28 +1,28 @@
 #!/usr/bin/perl
-# Bir projede composer komutunu calistirir ve ciktisini AKITARAK gosterir.
+# Runs a composer command in a project and STREAMS its output.
 #
 # ---------------------------------------------------------------------------
-# DOSYA ADI ONEMLI: adi "_progressive.cgi" ile bitmek ZORUNDA.
+# THE FILE NAME MATTERS: it MUST end in "_progressive.cgi".
 #
-# Tema (authentic) bir istegi akitarak mi yoksa bitmesini bekleyip tek seferde
-# mi basacagina JS tarafinda karar veriyor: unbuffered_header_processor_allow()
-# icinde yuzlerce satirlik SABIT bir yol listesi var (virtual-server/
-# enable_dkim.cgi, package-updates/update.cgi ...). Listede olmayan her sey
-# normal pjax'a giriyor, pjax da ancak yanit tamamlaninca ekrana basiyor.
+# The Authentic theme decides in JavaScript whether to stream a request or to
+# wait and print it in one go: unbuffered_header_processor_allow() holds a
+# hard-coded list of paths hundreds of lines long (virtual-server/
+# enable_dkim.cgi, package-updates/update.cgi ...). Anything not on it goes
+# through ordinary pjax, which only paints once the response is complete.
 #
-# Listenin sonundaki iki satir ucuncu partiler icin birakilmis genel kapi:
+# The last two lines of that list are the general door left open for third
+# parties:
 #     n.indexOf("_progressive.cgi") > -1 || n.indexOf("_saving.cgi") > -1
 #
-# Tamponsuz baslik da sart (ui_print_unbuffered_header, $| = 1) ve tema ilk
-# parcada icerikte bir <pre> gormek istiyor - o yuzden basliktan hemen sonra
-# <pre> aciliyor.
+# An unbuffered header is required too (ui_print_unbuffered_header, $| = 1),
+# and the theme wants to see a <pre> in the first chunk of content - hence the
+# <pre> opening right after the header.
 # ---------------------------------------------------------------------------
 #
-# ONAY SAYFASI YOK. Vardi ve KALDIRILDI: konmasinin sebebi dugmelerin GET
-# baglantisi olmasiydi - bir onbellek ya da tarayicinin onceden getirmesi
-# komutu tetikleyebilirdi. Artik listedeki dort dugme de POST formu, yani
-# komut ancak bilerek tiklayinca calisiyor. Git tarafinda cekme ve dagitim da
-# onay istemiyor; ayni kural.
+# NO CONFIRMATION PAGE. All four buttons in the list are POST forms, so a
+# command only runs on a deliberate click; a cache or a prefetch cannot
+# trigger it. Pull and deploy on the git side ask for no confirmation either -
+# same rule.
 use strict;
 use warnings;
 our (%text, %in);
@@ -35,25 +35,25 @@ $d || &error($text{'index_edom'});
 &can_edit_domain($d) || &error($text{'index_eaccess'});
 $d->{'vmkit-composer'} || &error(&text('index_eoff', $d->{'dom'}));
 
-# Baglantidan gelen dizine guvenmiyoruz: taramada bulunan projelerden biri
-# olmak zorunda. Aksi halde ev dizini disinda komut calistirilabilirdi.
+# A directory arriving from a link is not trusted: it has to be one of the
+# projects the scan found, or a command could be run outside the home.
 my $p = &valid_project($d, $in{'dir'});
 $p || &error($text{'run_edir'});
 
-# Alan adi 'act', 'action' DEGIL: form icindeki name="action" formun kendi
-# .action ozelligini golgeliyor ve tema akitma kararini oradan veriyor
-# (bkz. index.cgi'deki uzun not).
+# The field is 'act', NOT 'action': a field named "action" shadows the form's
+# own .action property, which is where the theme takes its streaming decision
+# from (see the long note in index.cgi).
 my $act = $in{'act'};
 $act =~ /^(install|update|dump-autoload)$/ || &error($text{'err_action'});
 
-# Duzen Virtualmin'in kendi "is yapan" sayfalarindan: ustte hicbir sey yok,
-# cikti hemen basliyor, sonuc en sonda. Sonucun ustte olmasi zaten mumkun
-# degil - is bitmeden bilinmiyor.
+# The layout follows Virtualmin's own "doing work" pages: nothing above,
+# output starts immediately, result at the end - it is not known until the
+# work finishes.
 &ui_print_unbuffered_header(&virtual_server::domain_in($d),
 			    &text('run_title', $act, $p->{'dir'}),
 			    "", undef, 0, 0);
 
-# <pre> icinde YALNIZCA komutun ham ciktisi: terminalde ne gorunuyorsa o.
+# The <pre> holds ONLY the command's raw output: what a terminal would show.
 print "<pre style='white-space:pre-wrap; margin-bottom:16px'>";
 my ($ok, $out) = &run_composer($d, $p, $act, sub {
 	print &html_escape($_[0]), "\n";

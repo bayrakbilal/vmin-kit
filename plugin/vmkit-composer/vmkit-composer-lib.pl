@@ -1,11 +1,11 @@
-# vmkit-composer yardimci fonksiyonlari.
+# vmkit-composer helper functions.
 #
-# Kayit tutmuyoruz: projeler her seferinde diskten bulunur. Deploy'dan farki
-# bu - orada kullanicinin tanimladigi bir yapilandirma var, burada yok.
+# Nothing is stored: projects are found on disk every time. That is the
+# difference from vmkit-deploy, where the user defines a configuration.
 #
-# ONEMLI: composer, klasorun KENDI PHP surumuyle calistirilir. Virtualmin
-# klasor basina PHP surumu tutabiliyor; yanlis surumle kurulan bagimliliklar
-# sessizce bozuk olurdu.
+# IMPORTANT: composer is run with the directory's OWN PHP version. Virtualmin
+# can hold a PHP version per directory, and dependencies installed with the
+# wrong one would be silently broken.
 
 use strict;
 use warnings;
@@ -23,20 +23,20 @@ my ($d) = @_;
 return &virtual_server::can_edit_domain($d);
 }
 
-# composer_command() -> composer yolu (yoksa undef)
+# composer_command() -> path to composer, or undef
 sub composer_command
 {
 return &has_command("composer");
 }
 
-# php_for_dir(&domain, mutlak-dizin) -> (surum, php-binary)
-# Klasore en ozel eslesen Virtualmin PHP tanimini bulur.
+# php_for_dir(&domain, absolute-dir) -> (version, php-binary)
+# Finds the most specific Virtualmin PHP setting matching the directory.
 sub php_for_dir
 {
 my ($d, $dir) = @_;
 my @pd = eval { &virtual_server::list_domain_php_directories($d) };
-# Website yoksa fonksiyon hash degil metin donduruyor - o durumda sistem
-# varsayilani kullanilir.
+# With no website the function returns text instead of hashes - the system
+# default is used then.
 return (undef, undef) if ($@ || !@pd || !ref($pd[0]));
 my $best;
 foreach my $p (@pd) {
@@ -44,25 +44,22 @@ foreach my $p (@pd) {
 	$best = $p if (!$best || length($p->{'dir'}) > length($best->{'dir'}));
 	}
 return (undef, undef) if (!$best || !$best->{'version'});
-# cgimode 2 = "-cgi ile biten komutlari ele" yani KOMUT SATIRI PHP'si.
-# Varsayilan 0 degil: o mod aday listesinde once php<ver>-cgi'yi deniyor ve
-# composer CGI SAPI ile calisinca "should be invoked via the CLI version"
-# uyarisi verip hicbir sey yapmiyor.
+# cgimode 2 = "skip commands ending in -cgi", that is, the COMMAND LINE PHP.
+# Not the default 0: that mode tries php<ver>-cgi first, and composer under the
+# CGI SAPI warns "should be invoked via the CLI version" and does nothing.
 my $cmd = &virtual_server::php_command_for_version($best->{'version'}, 2);
 return ($best->{'version'}, $cmd);
 }
 
-# list_projects(&domain) -> [ { dir, rel, ver, php } ]
-# Ana dizin altinda composer.json arar; vendor, node_modules ve .git atlanir.
-# web_root(&domain) -> taranacak en ust dizin (mutlak yol)
+# web_root(&domain) -> topmost directory to scan (absolute path)
 #
-# Ev dizinine degil, WEB dizinine bakiyoruz: ev dizininde panelin kendi
-# klasorleri, e-posta, gunlukler ve alt sunucularin dizinleri duruyor.
+# The WEB directory, not the home directory: the home holds the panel's own
+# folders, mail, logs and the directories of sub-servers.
 #
-# Belge kokunun kendisini degil ILK PARCASINI aliyoruz: Virtualmin'in
-# "Website documents sub-directory" ayari public_html/public gibi bir alt
-# klasoru gosterebiliyor (Laravel ve benzerleri boyle kuruluyor) ve o durumda
-# composer.json bir ust dizinde, public_html'in kendisinde olur.
+# Its FIRST COMPONENT, not the document root itself: Virtualmin's "Website
+# documents sub-directory" setting can point at something like
+# public_html/public (how Laravel and friends are installed), and then
+# composer.json sits one level up, in public_html itself.
 sub web_root
 {
 my ($d) = @_;
@@ -77,6 +74,9 @@ if ($abs && $abs =~ /^\Q$home\E\/(.+)$/) {
 return "$home/$rel";
 }
 
+# list_projects(&domain) -> [ { dir, rel, ver, php } ]
+# Looks for composer.json below the web root; vendor, node_modules and .git
+# are skipped.
 sub list_projects
 {
 my ($d) = @_;
@@ -107,9 +107,9 @@ foreach my $l (split(/\r?\n/, $out)) {
 return sort { $a->{'rel'} cmp $b->{'rel'} } @rv;
 }
 
-# valid_project(&domain, mutlak-dizin) -> proje hash'i ya da undef
-# Baglantidan gelen dizini asla dogrudan kullanmiyoruz: taramada bulunan
-# projelerden biri olmak zorunda.
+# valid_project(&domain, absolute-dir) -> the project hash, or undef
+# A directory coming from a link is never used directly: it has to be one of
+# the projects the scan found.
 sub valid_project
 {
 my ($d, $dir) = @_;
@@ -117,17 +117,16 @@ my ($p) = grep { $_->{'dir'} eq $dir } &list_projects($d);
 return $p;
 }
 
-# run_composer(&domain, &project, action) -> (basarili?, cikti)
-# run_streaming(komut, saniye, geri-cagirma) -> (cikti, zaman-asimi?, basarili?)
+# run_streaming(command, seconds, callback) -> (output, timed-out?, success?)
 #
-# Cocugu bir boruda okuyup HER SATIRI once geri cagirmaya veriyor, sonra
-# biriktiriyor: sayfa is ilerledikce dolabiliyor. backquote_with_timeout
-# bunu yapamiyor cunku ancak komut bitince donuyor.
+# Reads the child through a pipe and hands EVERY LINE to the callback before
+# accumulating it, so the page can fill as the work proceeds.
+# backquote_with_timeout cannot do this: it only returns once the command ends.
 #
-# Zaman asimi alarm ile: <$fh> engelleyici, alarm okumayi bolup eval'den
-# atliyor. TERM gonderilmezse zaman asimindan sonra da calisan bir komut
-# kalirdi. (vmkit-deploy'da ayni fonksiyonun ikizi var - Webmin modulleri
-# birbirinin kutuphanesine baglanmasin diye bilerek kopyalandi.)
+# The timeout uses alarm: <$fh> blocks, and the alarm interrupts the read and
+# jumps out of the eval. Without the TERM the command would keep running after
+# the timeout. (vmkit-deploy has a twin of this function - deliberately copied
+# so Webmin modules do not depend on each other's libraries.)
 sub run_streaming
 {
 my ($cmd, $secs, $cb) = @_;
@@ -156,36 +155,36 @@ return ($out, 0, $? == 0 ? 1 : 0);
 }
 
 # ---------------------------------------------------------------------------
-# EK BAYRAKLAR
+# EXTRA FLAGS
 #
-# Modul ayarlarinda ONAY KUTUSU olarak seciliyor (config.info tip 2, "many of
-# many"; secilenler virgulle ayrilmis saklaniyor). Serbest metin kutusu
-# DEGIL: boylece yazim hatasi ve kabuk kacisi derdi yok, hangi secenegin var
-# oldugu da ekranda duruyor.
+# Chosen as CHECKBOXES in the module configuration (config.info type 2, "many
+# of many"; the selection is stored comma-separated). NOT a free text box: no
+# typos, no shell quoting, and the available options stay visible on screen.
 #
-# Anahtarlarda TIRE YOK ('nodev', 'no-dev' degil): config.info satiri
-# virgulle bolunuyor ve deger/etiket ayirici ilk '-' oluyor
-# (/^(\S*)\-(.*)$/), tireli bir deger yanlis bolunurdu.
+# The keys carry NO HYPHEN ('nodev', not 'no-dev'): a config.info line is split
+# on commas and the first '-' separates value from label (/^(\S*)\-(.*)$/), so
+# a hyphenated value would be split in the wrong place.
 #
-# TUZAK: ayni is icin komuta gore bayrak ADI degisiyor. Composer'in kendi
-# belgesinden (doc/03-cli.md) dogrulandi:
+# TRAP: the same job has a different FLAG NAME per command. Verified against
+# Composer's own documentation (doc/03-cli.md):
 #   install / update -> --optimize-autoloader
 #   dump-autoload    -> --optimize
-# Bu yuzden esleme komut basina.
+# hence a mapping per command.
 #
-# IKI SECENEK VAR, IKISI DE VARSAYILAN ACIK. Composer'in kendi belgesinin
-# uretim icin onerdigi komut bu: 'composer install --no-dev
-# --optimize-autoloader'. --optimize-autoloader icin belge aynen soyle diyor:
-# "recommended especially for production, but can take a bit of time to run so
-# it is currently not done by default".
+# TWO OPTIONS, BOTH ON BY DEFAULT. This is the command Composer's own
+# documentation recommends for production: 'composer install --no-dev
+# --optimize-autoloader'. Of --optimize-autoloader it says: "recommended
+# especially for production, but can take a bit of time to run so it is
+# currently not done by default".
 #
-# Bilerek EKLENMEYENLER (secenek olarak bile yok, cunku varsayilan uretim
-# akisini sessizce bozarlar):
-#   --classmap-authoritative  "Autoload classes from the classmap only" -
-#     PSR-4 yedegi tamamen kapanir, calisma aninda sinif ureten her sey
-#     (Doctrine proxy'leri, bazi framework onbellekleri) kirilir.
-#   --no-scripts  Laravel'in paket kesfi, Symfony'nin onbellek temizligi gibi
-#     isler post-install betiklerinde; atlanirsa dagitim sessizce yarim kalir.
+# DELIBERATELY ABSENT (not even offered, because they silently break the
+# default production flow):
+#   --classmap-authoritative  "Autoload classes from the classmap only" - the
+#     PSR-4 fallback is disabled entirely and anything generating classes at
+#     runtime (Doctrine proxies, some framework caches) breaks.
+#   --no-scripts  Laravel's package discovery, Symfony's cache clearing and
+#     similar work live in post-install scripts; skipping them leaves a
+#     deployment silently half-finished.
 sub composer_flag_map
 {
 return (
@@ -198,14 +197,14 @@ return (
   );
 }
 
-# composer_flags(eylem) -> o eylem icin eklenecek bayraklar
+# composer_flags(action) -> the flags to add for that action
 sub composer_flags
 {
 my ($action) = @_;
 my %map = &composer_flag_map();
 my @rv;
-# Bilinmeyen anahtar sessizce atlanir: ayar dosyasi elle duzenlenmis ya da
-# eski bir surumden kalmis olabilir.
+# An unknown key is skipped silently: the config file may have been edited by
+# hand or left over from an older version.
 foreach my $k (split(/,/, $config{'flags'} || '')) {
 	$k =~ s/^\s+|\s+$//g;
 	next if (!$k || !$map{$k});
@@ -214,19 +213,19 @@ foreach my $k (split(/,/, $config{'flags'} || '')) {
 return @rv;
 }
 
-# Komut zaman asimi. Ayarda yoksa 900: modul yukseltilirken var olan config
-# dosyasina yeni anahtarlar EKLENMIYOR (update-plugins.sh yalnizca dosya
-# yoksa kopyaliyor), o yuzden her okuma kendi varsayilanini tasimali.
+# Command timeout, 900 when unset: upgrading the module does NOT add new keys
+# to an existing config file (update-plugins.sh only copies it when absent), so
+# every read has to carry its own default.
 sub composer_timeout
 {
 my $t = $config{'timeout'};
 return $t && $t =~ /^\d+$/ && $t > 0 ? $t : 900;
 }
 
-# run_composer(&domain, &proje, eylem, [&geri-cagirma]) -> (basarili?, cikti)
+# run_composer(&domain, &project, action, [&callback]) -> (success?, output)
 #
-# Geri cagirma verilirse cikti satir satir ona gonderilir ve sayfa is
-# ilerledikce dolar; verilmezse eskisi gibi toplu doner.
+# With a callback the output is sent to it line by line and the page fills as
+# the work proceeds; without one it is returned in one piece.
 sub run_composer
 {
 my ($d, $p, $action, $cb) = @_;
@@ -254,20 +253,19 @@ else {
 	($out, $timed) = &backquote_with_timeout("$cmd 2>&1", $secs);
 	$ok = !$timed && !$? ? 1 : 0;
 	}
-# Zaman asiminda ciktinin UZERINE yazmiyoruz: o ana kadar akan satirlar
-# ekranda duruyor, donen ciktida da dursun. Not sona ekleniyor.
+# On a timeout the output is not REPLACED: the lines streamed so far are on
+# screen and belong in the returned output too. The note is appended.
 $out .= "\n".$text{'err_timeout'}."\n" if ($timed);
 return ($ok, $out);
 }
 
-# composer_packages(&domain, &proje) -> (\@paket, hata)
-# 'composer show --latest --format=json' kurulu paketleri, her birinin surumunu
-# ve varsa daha yeni surumunu tek seferde veriyor; ayrica 'outdated'
-# calistirmaya gerek kalmiyor.
+# composer_packages(&domain, &project) -> (\@packages, error)
+# 'composer show --latest --format=json' gives the installed packages, their
+# versions and any newer version in one call, so 'outdated' is not needed.
 #
-# vendor/ yoksa composer hata verir - o hatayi oldugu gibi gosteriyoruz, cunku
-# kullaniciya "once install calistir" demenin en dogru yolu composer'in kendi
-# mesaji. --latest agdan surum sorgusu yaptigi icin zaman asimi genis.
+# Without vendor/ composer errors out - that error is shown as it is, because
+# composer's own message is the best way to say "run install first". The
+# timeout is generous since --latest queries versions over the network.
 sub composer_packages
 {
 my ($d, $p) = @_;

@@ -1,6 +1,6 @@
-# vmkit-composer - Virtualmin feature sozlesmesi.
-# vmkit-deploy ile ayni kalip: domain basina ozellik, domain menusunde ikon,
-# domain sahibi kendi domainini yonetir.
+# vmkit-composer - the Virtualmin feature contract.
+# Same pattern as vmkit-deploy: a per-domain feature, an icon in the domain's
+# menu, and the domain owner manages their own domain.
 use strict;
 use warnings;
 our (%text, %config);
@@ -30,7 +30,7 @@ return $text{'feat_disname'};
 }
 
 # feature_check()
-# composer kurulu degilse ozellik hic acilamasin.
+# Without composer installed the feature cannot be enabled at all.
 sub feature_check
 {
 return &composer_command() ? undef : $text{'feat_echeck'};
@@ -43,7 +43,7 @@ return $aliasdom ? 0 : 1;
 }
 
 # feature_setup(&domain)
-# Saklanacak bir yapilandirma yok: projeler her acilista diskten bulunuyor.
+# No configuration to store: projects are found on disk on every visit.
 sub feature_setup
 {
 my ($d) = @_;
@@ -56,7 +56,7 @@ sub feature_modify
 }
 
 # feature_delete(&domain)
-# Silinecek bir sey yok; vendor klasorlerine kesinlikle dokunmuyoruz.
+# Nothing to delete; vendor directories are never touched.
 sub feature_delete
 {
 my ($d) = @_;

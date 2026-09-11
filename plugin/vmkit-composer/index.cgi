@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# Domainin composer projeleri.
+# A domain's composer projects.
 use strict;
 use warnings;
 our (%text, %in, $module_name);
@@ -50,34 +50,34 @@ my @projects = &list_projects($d);
 if (@projects) {
 	my @table;
 	foreach my $p (@projects) {
-		# Eylemler ui_submit ile, yani birer kucuk form. Iki sebep:
+		# The actions are ui_submit, that is, small forms. Two reasons:
 		#
-		# 1) GUVENLIK. Bir baglanti GET demek; onbellek ya da tarayicinin
-		#    onceden getirmesi komutu tiklamadan tetikleyebilir. POST
-		#    dugmesi ancak bilerek basilinca calisir - onay sayfasina bu
-		#    yuzden gerek kalmadi ve kaldirildi.
-		# 2) GORUNUM. Renk ve ikon kurali (get_button_style) yalnizca
-		#    ui_submit yolunda calisiyor; ui_link_button gercek bir
-		#    <button> uretiyor ama renksiz, ikonsuz ve daha kucuk
-		#    kaliyor. Ayni satirdaki dugmeler ayni bilesenden olmali,
-		#    yoksa boylari tutmuyor - packages.cgi bu yuzden yalnizca
-		#    okudugu halde POST ile cagriliyor.
+		# 1) SAFETY. A link means GET, and a cache or a browser prefetch
+		#    could trigger the command without a click. A POST button
+		#    only runs when it is pressed deliberately - which is why no
+		#    confirmation page is needed.
+		# 2) APPEARANCE. The colour and icon rule (get_button_style)
+		#    only applies on the ui_submit path; ui_link_button emits a
+		#    real <button> but without colour or icon and smaller.
+		#    Buttons on one row must come from the same component or
+		#    their sizes do not match - which is why packages.cgi is
+		#    called by POST even though it only reads.
 		#
-		# Renkler dil anahtarinin ADINDAN geliyor:
-		#   act_install -> yesil + paket ikonu
-		#   act_update  -> mavi + yenileme ikonu
-		#   act_dump    -> uygun bir kural yok, duz kaliyor
+		# The colours come from the language key's NAME:
+		#   act_install -> green + package icon
+		#   act_update  -> blue + refresh icon
+		#   act_dump    -> no matching rule, stays plain
 		#
-		# ALAN ADI 'action' OLAMAZ - bir gun tekrar denenmesin diye:
-		# HTMLFormElement [LegacyOverrideBuiltIns] ile tanimli, yani form
-		# icindeki bir alanin name'i formun KENDI ozelligini goleliyor.
-		# name="action" olunca form.action artik adres degil o <input>
-		# oluyor. Tema akitip akitmayacagina tam da oradan bakiyor
+		# THE FIELD MAY NOT BE CALLED 'action'. HTMLFormElement is
+		# declared [LegacyOverrideBuiltIns], so a field's name shadows
+		# the form's OWN property: with name="action", form.action is
+		# that <input> rather than the URL. The theme decides whether to
+		# stream from exactly there
 		#     e.target.action && unbuffered_header_processor_allow(...)
-		# ve bir DOM elemani gelince kural tutmayip pjax'a dusuyordu:
-		# cikti akmiyor, sayfa sonda tek seferde geliyordu. Olculdu.
-		# Ayni tuzak 'target' icin de gecerli (tema e.target.target
-		# okuyor); 'id' ve 'name' bugun okunmuyor ama ayni sinif.
+		# and a DOM element fails the rule, dropping back to pjax: no
+		# streaming, the page arrives in one lump at the end. The same
+		# trap applies to 'target' (the theme reads e.target.target);
+		# 'id' and 'name' are not read today but are the same class.
 		my $btn = sub {
 			my ($cgi, $action, $label) = @_;
 			return &ui_form_start($cgi, "post", undef,
