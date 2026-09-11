@@ -1,21 +1,21 @@
-# vmkit-cloudflare yardimci fonksiyonlari.
+# vmkit-cloudflare helper functions.
 #
-# Tasarim: yerel BIND zone'u MODEL, Cloudflare YAYIN kopyasidir. Virtualmin
-# kayitlari (www, MX, SPF, DKIM, alt domain A kayitlari) zaten dogru uretip
-# guncelliyor; biz o zone'u Cloudflare'e basiyoruz. SOA ve NS gonderilmez,
-# onlarin sahibi Cloudflare'dir.
+# Design: the local BIND zone is the MODEL, Cloudflare is the PUBLISHED copy.
+# Virtualmin already generates and maintains the records correctly (www, MX,
+# SPF, DKIM, A records of sub-domains); we push that zone to Cloudflare. SOA
+# and NS are not sent - Cloudflare owns those.
 #
-# Tetikleme: zone dosyalarini izleyen bir arka plan servisi. Her degisiklikte
-# SOA serial'i artiyor (feature-dns.pl icindeki post_records_change), dolayisiyla
-# zone dosyasi degistiyse gercekten bir sey degismistir. Virtualmin'in DNS kod
-# yolunda plugin kancasi YOK, o yuzden dosya izleme en saglam yontem.
-# Servisi (systemd .path + .timer + .service) bu modulun kendisi kuruyor ve
-# denetliyor - bkz. dosyanin sonundaki "otomatik senkron servisi" bolumu.
+# Trigger: a background service watching the zone files. Every change bumps the
+# SOA serial (post_records_change in feature-dns.pl), so a changed zone file
+# really does mean something changed. Virtualmin's DNS code path has NO plugin
+# hook, which makes watching files the most reliable method. The service
+# (systemd .path + .timer + .service) is installed and checked by this module
+# itself - see the "automatic sync service" section at the end of this file.
 #
-# Ayarlar DOMAIN BASINA tutulur. Global token yoktur: her domain baska bir
-# Cloudflare hesabinda olabilir, token da hesap/zone bazlidir.
+# Settings are kept PER DOMAIN. There is no global token: each domain may live
+# in a different Cloudflare account, and a token is account/zone scoped.
 #   /etc/webmin/vmkit-cloudflare/domains/<domain-id>
-# Dosyalar token icerdigi icin 0600.
+# The files are 0600 because they contain a token.
 
 use strict;
 use warnings;
@@ -40,39 +40,41 @@ return &domains_dir()."/$d->{'id'}";
 }
 
 # ---------------------------------------------------------------------------
-# TOKEN'IN DISKTE SAKLANMASI
+# STORING THE TOKEN ON DISK
 #
-# BU BIR GUVENLIK KATMANI DEGIL, OKUNAKSIZLASTIRMADIR. Anahtar asagida,
-# eklentinin kaynak kodunda duruyor; kodu okuyan herkes cozer. Bilerek boyle:
-# token zaten o domainin sahibine ait, ondan gizlemeye calismiyoruz.
+# THIS IS NOT A SECURITY LAYER, IT IS OBFUSCATION. The key sits below in the
+# plugin's source, so anyone reading the code can undo it. That is deliberate:
+# the token belongs to the domain's owner anyway, we are not hiding it from
+# them.
 #
-# Amac, token'in DUZ METIN olarak durdugu yerleri azaltmak:
-#   - Virtualmin'in domain yedegi (yedek dosyasi elden ele gezebiliyor)
-#   - /etc yedekleri
-#   - etckeeper: /etc bir git deposu, yani her degisiklik GECMISE de yaziliyor
-#   - hata ayiklarken kopyalanan dosya iceriKleri
-# Eline yedek gecen biri anlamsiz bir hex dizisi gorur; bizim icin yeterli.
+# The aim is to reduce the places the token sits in PLAIN TEXT:
+#   - Virtualmin's domain backup (a backup file can change hands)
+#   - /etc backups
+#   - etckeeper: /etc is a git repository, so every change is written to
+#     HISTORY as well
+#   - file contents pasted around while debugging
+# Whoever ends up with a backup sees a meaningless hex string, which is enough.
 #
-# Bicim:  v1:<hex>   ->  hex = 8 bayt tuz + tuzla uretilen anahtar akisiyla
-#                        XOR'lanmis token
-# Onek YOKSA deger duz metindir (eski kayitlar) ve oldugu gibi donuyor; bir
-# sonraki save_cf'te kendiliginden sifreli bicime geciyor.
+# Format:  v1:<hex>   ->  hex = 8 byte salt + the token XORed with a key stream
+#                         derived from that salt
+# WITHOUT the prefix the value is plain text (older records); it is returned as
+# it is and moves to the encoded form by itself on the next save_cf.
 #
-# Base64 yerine hex: MIME::Base64'u Webmin bile 'eval "use ..."' ile istege
-# bagli yukluyor, oysa unpack("H*") hicbir sey gerektirmiyor. Token kisa,
-# boyutun iki katina cikmasi onemsiz.
+# Hex rather than base64: even Webmin loads MIME::Base64 optionally with
+# 'eval "use ..."', while unpack("H*") needs nothing. The token is short, so
+# doubling its size does not matter.
 # ---------------------------------------------------------------------------
 
-# Sabit anahtar. Degistirilirse ESKI KAYITLAR COZULEMEZ - degistirme.
+# Fixed key. Changing it makes EXISTING RECORDS UNREADABLE - do not change it.
 sub obf_secret
 {
 return 'vmkit-cloudflare/v1/8c1f4a6b2e9d70335af8c264d1b0e97a';
 }
 
-# Digest::SHA cekirdek Perl'in parcasi ama Webmin'in kendisi kullanmiyor, yani
-# "kesin vardir" diyemiyoruz. Yoksa Digest::MD5'e, o da yoksa hicbir seye
-# dusmuyoruz: token eskisi gibi duz metin yazilir ve modul calismaya devam
-# eder. Sessizce bozulmaktansa sessizce eski davranisa donmek yeglenir.
+# Digest::SHA is part of core Perl but Webmin itself does not use it, so its
+# presence cannot be assumed. Without it we fall back to Digest::MD5, and
+# without that to nothing at all: the token is written in plain text as before
+# and the module keeps working. Falling back quietly beats breaking quietly.
 my $obf_digest;
 sub obf_digest_kind
 {
@@ -91,7 +93,7 @@ return $k eq 'sha' ? Digest::SHA::sha256($data) :
        $k eq 'md5' ? Digest::MD5::md5($data) : undef;
 }
 
-# Tuzdan istenen uzunlukta anahtar akisi: hash(anahtar + tuz + sayac) bloklari.
+# A key stream of the requested length: hash(key + salt + counter) blocks.
 sub obf_stream
 {
 my ($salt, $len) = @_;
@@ -108,7 +110,8 @@ sub obf_encrypt
 my ($plain) = @_;
 return $plain if (!defined($plain) || $plain eq '');
 return $plain if (!&obf_digest_kind());
-# Tuz her kayitta yeni: ayni token iki domainde ayni hex'i uretmesin.
+# A fresh salt per record, so one token does not produce the same hex on two
+# domains.
 my $salt = '';
 if (open(my $RND, "<", "/dev/urandom")) {
 	binmode($RND);
@@ -127,8 +130,8 @@ sub obf_decrypt
 {
 my ($v) = @_;
 return $v if (!defined($v) || $v !~ /^v1:([0-9a-f]+)$/);
-# Onekli ama cozecek modul yok: bos don. Yanlis bir dizeyi token diye
-# kullanip Cloudflare'e gondermekten iyidir.
+# Prefixed but no module to decode it: return empty. Better than sending a
+# wrong string to Cloudflare as if it were the token.
 return "" if (!&obf_digest_kind());
 my $raw = pack("H*", $1);
 return "" if (length($raw) <= 8);
@@ -137,18 +140,18 @@ my $ct   = substr($raw, 8);
 return $ct ^ &obf_stream($salt, length($ct));
 }
 
-# get_cf(&domain) -> ayar hash'i (yoksa varsayilanlar)
+# get_cf(&domain) -> the settings hash, or the defaults
 sub get_cf
 {
 my ($d) = @_;
 my %cf;
 &read_file(&domain_file($d), \%cf);
-# Disk sifreli, bellek duz: cagiran taraf token'i her zaman kullanilabilir
-# halde goruyor. Eski (oneksiz) kayitlar oldugu gibi geri geliyor.
+# Encoded on disk, plain in memory: the caller always sees a usable token.
+# Older (unprefixed) records come back as they are.
 $cf{'token'} = &obf_decrypt($cf{'token'}) if (defined($cf{'token'}));
 $cf{'proxy'} = 0 if (!defined($cf{'proxy'}));
-# Otomatik senkron varsayilan ACIK. Anahtar yoksa (eski kayitlar) da acik
-# sayiliyor - davranis degismesin diye.
+# Automatic sync is ON by default, and a missing key (older records) counts as
+# on so the behaviour does not change under them.
 $cf{'enabled'} = 1 if (!defined($cf{'enabled'}));
 return \%cf;
 }
@@ -160,15 +163,15 @@ my ($d, $cf) = @_;
 my $dir = &domains_dir();
 -d $dir || &make_dir($dir, 0700, 1);
 my $file = &domain_file($d);
-# KOPYA uzerinde calisiyoruz: cagiranin elindeki hash'i sifreli degerle
-# kirletirsek, ayni istekte token'i tekrar kullanan kod bozulur (ornegin
-# cf_zone_id once kaydedip sonra API'ye gidiyor).
+# Work on a COPY: polluting the caller's hash with the encoded value would
+# break code that uses the token again in the same request (cf_zone_id, for
+# instance, saves first and then calls the API).
 my %out = %$cf;
 $out{'token'} = &obf_encrypt($out{'token'}) if (defined($out{'token'}));
 &lock_file($file);
 &write_file($file, \%out);
 &unlock_file($file);
-# Token bir sirdir.
+# The token is a secret.
 chmod(0600, $file);
 }
 
@@ -183,14 +186,14 @@ unlink($file);
 }
 
 # can_edit_domain(&domain)
-# Virtualmin'in yetki kontrolu: root hepsini, domain sahibi kendisininkini.
+# Virtualmin's own check: root may edit every domain, an owner only their own.
 sub can_edit_domain
 {
 my ($d) = @_;
 return &virtual_server::can_edit_domain($d);
 }
 
-# Token'in ekranda gosterilecek maskeli hali.
+# The masked form of the token, for display.
 sub masked_token
 {
 my ($t) = @_;
@@ -199,18 +202,18 @@ return length($t) <= 8 ? ('*' x length($t))
 		       : substr($t, 0, 4).('*' x 8).substr($t, -4);
 }
 
-# Domainin ekranda gosterilecek durumu. API'ye SORMAZ: son senkron turunun
-# biraktigi sonucu okur, boylece sayfa acmak Cloudflare'e istek uretmez.
+# The domain's status for display. It does NOT call the API: it reads what the
+# last sync left behind, so opening a page makes no request to Cloudflare.
 sub zone_status
 {
 my ($d) = @_;
 my $cf = &get_cf($d);
 return $text{'status_notoken'} if (!$cf->{'token'});
 
-# Diskte KOD duruyor ('ok' / 'partial'), cevrilmis metin degil: dil
-# degistiginde eski kayitlar eski dilde gorunuyordu. Ceviri burada, gosterim
-# aninda yapiliyor. Taninmayan bir deger (eski surumden kalan cumleler)
-# "bilinmiyor" sayiliyor ve ilk senkronda kendiliginden duzeliyor.
+# Disk holds a CODE ('ok' / 'partial'), not translated text: when the language
+# changed, older records still showed the old one. The translation happens here,
+# at display time. An unrecognised value (a sentence left by an older version)
+# counts as "unknown" and fixes itself on the first sync.
 my $st = $cf->{'last_status'} || '';
 return $text{'status_ok'}      if ($st eq 'ok');
 return $text{'status_partial'} if ($st eq 'partial');
@@ -218,9 +221,8 @@ return $text{'status_unknown'};
 }
 
 # ---- Cloudflare API ------------------------------------------------------
-# Token komut satirina ASLA konmaz: argv /proc uzerinden butun kullanicilara
-# gorunur. Webmin'in kendi HTTP istemcisini kullanip token'i baslikta
-# gonderiyoruz.
+# The token NEVER goes on a command line: argv is visible to every user through
+# /proc. Webmin's own HTTP client is used and the token travels in a header.
 sub cf_api_get
 {
 my ($d, $path) = @_;
@@ -241,8 +243,8 @@ if (!$json->{'success'}) {
 return ($json, undef);
 }
 
-# cf_zone_id(&domain) -> (zone-id, hata)
-# Bulunan kimlik domainin kaydina yazilir, her seferinde aranmaz.
+# cf_zone_id(&domain) -> (zone-id, error)
+# The id found is stored in the domain's record rather than looked up again.
 sub cf_zone_id
 {
 my ($d) = @_;
@@ -257,8 +259,8 @@ $cf->{'zone_id'} = $z->{'id'};
 return ($z->{'id'}, undef);
 }
 
-# cf_records(&domain) -> (\@kayitlar, hata)
-# Sayfalama takip edilir; 100'den fazla kayit olan zone'lar eksik gelmesin.
+# cf_records(&domain) -> (\@records, error)
+# Pagination is followed so zones with more than 100 records arrive complete.
 sub cf_records
 {
 my ($d) = @_;
@@ -278,17 +280,17 @@ while(1) {
 return (\@rv, undef);
 }
 
-# ---- kayit eslestirme ----------------------------------------------------
-# Cloudflare'e gonderdigimiz tipler. SOA ve NS bilerek yok: onlarin sahibi
-# Cloudflare, biz yerel zone'daki degerleri gondermeyiz.
+# ---- record matching -----------------------------------------------------
+# The types we send to Cloudflare. SOA and NS are deliberately absent:
+# Cloudflare owns those and the local zone's values are not pushed.
 sub synced_types
 {
 return ( "A", "AAAA", "CNAME", "MX", "TXT", "SRV", "CAA" );
 }
 
-# Kendi olusturdugumuz kayitlari boyle isaretliyoruz. Etiketsiz hicbir kayda
-# dokunmuyoruz - Cloudflare tunelleri, Email Routing MX'leri ve elle eklenen
-# her sey bu sayede guvende.
+# How records we created are marked. Nothing without the tag is ever touched,
+# which keeps Cloudflare tunnels, Email Routing MX records and anything added
+# by hand safe.
 sub cf_tag
 {
 return "vmkit";
@@ -300,21 +302,20 @@ my ($r) = @_;
 return ($r->{'comment'} || '') eq &cf_tag() ? 1 : 0;
 }
 
-# local_records(&domain) -> [ { name, type, value, ttl } ]
-# Yerel BIND zone'undan, gonderdigimiz tiplerle sinirli.
-# Cloudflare'e GONDERILMEYEN adlar. Zone'da kaliyorlar, yalnizca yayinlanan
-# kopyaya girmiyorlar.
+# Names NOT sent to Cloudflare. They stay in the zone, they just do not go into
+# the published copy.
 #
-# ns1/ns2: yerel zone her zaman "NS yonetimi bizde" modeline gore uretiliyor,
-# bu yuzden kendi nameserver ciftimizin A kayitlarini tasiyor. Delegasyon
-# Cloudflare'deyse o kayitlarin yayinlanan kopyada isi yok.
+# ns1/ns2: the local zone is always generated on the "we manage NS" model, so
+# it carries A records for our own nameserver pair. When delegation lives at
+# Cloudflare those records have no business in the published copy.
 sub skip_name
 {
 my ($label) = @_;
 return $label =~ /^ns\d*$/ ? 1 : 0;
 }
 
-# Kaydin domaine gore etiketi: ns1.ornek.com -> ns1, ornek.com -> @
+# The record's label relative to the domain: ns1.example.com -> ns1,
+# example.com -> @
 sub record_label
 {
 my ($d, $name) = @_;
@@ -326,19 +327,16 @@ return $1 if ($lc =~ /^(.*)\.\Q$dom\E$/);
 return $lc;
 }
 
-# Varsayilan proxy tercihi ACIK olsa bile proxy'lenmemesi gereken adlar.
-# Cloudflare proxy'si yalnizca HTTP/HTTPS tasiyor; posta ve otomatik
-# yapilandirma adlari proxy'lenirse SMTP/IMAP baglantisi ve istemci kesfi
-# kirilir. Kullanici bir kaydi elle proxy'ye alirsa ona dokunmuyoruz - bu
-# liste yalnizca BIZ yeni kayit olustururken uygulaniyor.
-# Proxy'lenmemesi gereken kayit adlari. Cloudflare'in proxy'si yalnizca HTTP
-# icin; posta ve otomatik yapilandirma adlari proxy'lenirse istemciler dogru
-# sunucuya ulasamaz.
+# Names that must not be proxied even when the proxy preference is ON.
+# Cloudflare's proxy only carries HTTP/HTTPS; proxying mail and autoconfig
+# names breaks SMTP/IMAP connections and client discovery. A record the user
+# proxies by hand is left alone - this list only applies while WE create a
+# record.
 #
-# Liste ayardan geliyor ama varsayilan KODDA: modul yukseltilirken var olan
-# config dosyasina yeni anahtarlar eklenmiyor (update-plugins.sh yalnizca
-# dosya yoksa kopyaliyor), yani ayar bos gelebilir ve o zaman eski davranis
-# aynen surmeli.
+# The list comes from the configuration but the default lives IN CODE:
+# upgrading the module does not add new keys to an existing config file
+# (update-plugins.sh only copies it when absent), so the setting can arrive
+# empty and the old behaviour has to continue unchanged.
 sub never_proxy_names
 {
 my $v = $config{'never_proxy'};
@@ -358,17 +356,19 @@ foreach my $n (&never_proxy_names()) {
 return 0;
 }
 
+# local_records(&domain) -> [ { name, type, value, ttl } ]
+# From the local BIND zone, limited to the types we send.
 sub local_records
 {
 my ($d) = @_;
 my %ok = map { $_, 1 } &synced_types();
 my @rv;
 foreach my $r (&virtual_server::get_domain_dns_records($d)) {
-	# Webmin'in bind8 cozumleyicisi bazi TXT kayitlarini ANLAMLARINA gore
-	# etiketliyor: SPF ve DMARC diye ayri tip donuyor. Zone dosyasinda ikisi
-	# de TXT ve Cloudflare'de de TXT olmalari gerekiyor - Cloudflare'de SPF
-	# ya da DMARC diye bir kayit tipi yok. Cevirmezsek bu iki kayit hic
-	# senkronlanmiyor (tip listesinde olmadiklari icin sessizce eleniyorlar).
+	# Webmin's bind8 parser labels some TXT records by MEANING and returns
+	# them as separate types, SPF and DMARC. In the zone file both are TXT,
+	# and at Cloudflare they must be TXT too - it has no SPF or DMARC record
+	# type. Without this mapping those two records are never synced: they
+	# fail the type list and are dropped silently.
 	my $type = uc($r->{'type'});
 	$type = "TXT" if ($type eq "SPF" || $type eq "DMARC");
 	next if (!$ok{$type});
@@ -383,34 +383,33 @@ foreach my $r (&virtual_server::get_domain_dns_records($d)) {
 return @rv;
 }
 
-# norm_value(tip, deger) -> karsilastirilabilir bicim
-# BIND ve Cloudflare ayni kaydi farkli yaziyor: BIND sonda nokta koyuyor,
-# TXT degerlerini tirnak icinde tutuyor; Cloudflare ikisini de yapmiyor.
+# norm_value(type, value) -> a comparable form
+# BIND and Cloudflare write the same record differently: BIND adds a trailing
+# dot and keeps TXT values in quotes, Cloudflare does neither.
 #
-# TXT ve tirnaklar: Cloudflare'e GONDERIRKEN de tirnaksiz gonderiyoruz.
-# Dokumantasyon "tirnaksiz kaydedilirse Cloudflare kendisi ekler" diyor;
-# tirnakli gonderip Cloudflare bunu fark etmezse ""deger"" gibi cift
-# tirnaklanmis bozuk bir kayit olusurdu. Tirnaksiz gondermek o riski
-# tamamen ortadan kaldiriyor.
+# TXT and quotes: values are sent to Cloudflare unquoted as well. The
+# documentation says Cloudflare adds the quotes itself when a value is stored
+# without them; sending quoted values risks a doubly quoted ""value"" if
+# Cloudflare does not notice.
 #
-# BIND 255 karakterden uzun TXT degerlerini parcalara bolup her parcayi
-# tirnaklar ("aaa" "bbb"). Asagidaki ilk ikame parcalari birlestiriyor;
-# olmasa DKIM anahtarlari yarim gonderilirdi.
+# BIND splits TXT values longer than 255 characters into quoted chunks
+# ("aaa" "bbb"). The first substitution below rejoins them - without it DKIM
+# keys would be sent truncated.
 sub norm_value
 {
 my ($type, $v) = @_;
 $v = '' if (!defined($v));
 $v =~ s/^\s+//; $v =~ s/\s+$//;
 if ($type eq 'TXT') {
-	# BIND uzun TXT'leri parcalara bolup tirnaklar - birlestir.
+	# Rejoin the quoted chunks BIND splits long TXT values into.
 	$v =~ s/"\s+"//g;
 	$v =~ s/^"//; $v =~ s/"$//;
 	return $v;
 	}
 if ($type eq 'CAA') {
-	# Webmin'in bind8 ayristirmasi CAA degerinin tirnaklarini soyuyor,
-	# Cloudflare ise tirnakli donduruyor. Esitlemezsek kayit her senkronda
-	# "farkli" gorunup yeniden yazilirdi.
+	# Webmin's bind8 parser strips the quotes from a CAA value while
+	# Cloudflare returns them. Without levelling this the record would look
+	# "different" on every sync and be rewritten.
 	$v =~ s/"//g;
 	$v =~ s/\s+/ /g;
 	return lc($v);
@@ -419,16 +418,16 @@ $v =~ s/\.$//;
 return lc($v);
 }
 
-# cf_value(&cf-kaydi) -> karsilastirilabilir deger
-# MX'te oncelik ayri alanda geliyor, BIND'de degerin parcasi.
+# cf_value(&cf-record) -> a comparable value
+# For MX the priority arrives in its own field; in BIND it is part of the value.
 sub cf_value
 {
 my ($r) = @_;
 my $t = uc($r->{'type'});
 my $dt = $r->{'data'};
 return &norm_value($t, $r->{'priority'}." ".$r->{'content'}) if ($t eq 'MX');
-# SRV ve CAA'da parcalar 'data' icinde; 'content' tek basina eksik ya da
-# farkli bicimde geliyor. Varsa data'dan kuruyoruz.
+# For SRV and CAA the parts live in 'data'; 'content' alone is incomplete or
+# formatted differently, so the value is built from 'data' when it is there.
 if ($t eq 'SRV' && ref($dt) && defined($dt->{'target'})) {
 	return &norm_value($t, join(" ", $dt->{'priority'}, $dt->{'weight'},
 					 $dt->{'port'}, $dt->{'target'}));
@@ -440,22 +439,22 @@ if ($t eq 'CAA' && ref($dt) && defined($dt->{'value'})) {
 return &norm_value($t, $r->{'content'});
 }
 
-# short_value(deger) -> uzunsa kisaltilmis, tamami title'da
-# DKIM anahtarlari gibi cok uzun TXT degerleri tabloyu bozuyor.
+# short_value(value) -> shortened when long, the whole value in the title
+# Very long TXT values such as DKIM keys otherwise break the table.
 sub short_value
 {
 my ($v, $max) = @_;
-# 40 karakter: tablo yedi sutunlu, uzun degerler satirlari sisiriyordu.
-# Tamami zaten title'da - uzerine gelince gorunuyor.
+# 40 characters: the table has seven columns and long values bloated the
+# rows. The full value is in the title, visible on hover.
 $max ||= 40;
 return &html_escape($v) if (length($v) <= $max);
 return "<span title=\"".&quote_escape($v)."\">".
        &html_escape(substr($v, 0, $max))."...</span>";
 }
 
-# cf_api_req(&domain, metot, yol, [govde-hashref]) -> (json, hata)
-# GET disindaki metotlar icin de calisir. Token yine yalnizca baslikta:
-# komut satirina ya da gecici dosyaya hic yazilmiyor.
+# cf_api_req(&domain, method, path, [body-hashref]) -> (json, error)
+# Works for methods other than GET too. The token still travels only in a
+# header: never on a command line or in a temporary file.
 sub cf_api_req
 {
 my ($d, $method, $path, $data) = @_;
@@ -482,8 +481,8 @@ return (undef, ref($h) ? $text{'err_apifail'} : ($h || $text{'err_apifail'}))
 my ($out, $err);
 &complete_http_download($h, \$out, \$err, undef, 0, $host, 443, \@headers,
 			1, 1, 30);
-# Cloudflare hata durumunda da JSON gonderiyor; once govdeyi cozmeyi dene ki
-# "400 Bad Request" yerine gercek sebebi gosterebilelim.
+# Cloudflare returns JSON on errors too, so the body is decoded first and the
+# real reason shown instead of "400 Bad Request".
 my $json = eval { &convert_from_json($out) };
 if (!$@ && ref($json)) {
 	return ($json, undef) if ($json->{'success'});
@@ -493,11 +492,12 @@ if (!$@ && ref($json)) {
 return (undef, $err || $text{'err_badjson'});
 }
 
-# ---- islemler -------------------------------------------------------------
+# ---- operations -----------------------------------------------------------
 
-# cf_to_bind(&cf-kaydi) -> (\@degerler, hata)
-# Cloudflare kaydini BIND'in bekledigi deger dizisine cevirir. Tipe gore
-# farkli: MX'te oncelik ayri alanda, SRV ve CAA parcalari 'data' icinde.
+# cf_to_bind(&cf-record) -> (\@values, error)
+# Converts a Cloudflare record into the value list BIND expects. It differs per
+# type: MX carries the priority in its own field, SRV and CAA keep their parts
+# in 'data'.
 sub cf_to_bind
 {
 my ($r) = @_;
@@ -519,7 +519,7 @@ if ($t eq 'CAA' && defined($dt->{'value'})) {
 return (undef, $text{'err_noconv'});
 }
 
-# cf_find_record(&domain, kayit-id) -> (&kayit, hata)
+# cf_find_record(&domain, record-id) -> (&record, error)
 sub cf_find_record
 {
 my ($d, $id) = @_;
@@ -530,8 +530,8 @@ return (undef, $text{'err_norec'}) if (!$r);
 return ($r, undef);
 }
 
-# cf_tag_record(&domain, &kayit) -> hata
-# Kaydi bizim etiketimize alir; bundan sonra senkron onu yonetir.
+# cf_tag_record(&domain, &record) -> error
+# Takes a record under our tag; from then on the sync manages it.
 sub cf_tag_record
 {
 my ($d, $r) = @_;
@@ -543,8 +543,8 @@ return $err;
 }
 
 # cf_set_proxy(&domain, &cfrecord, 1|0)
-# Tek bir kaydin proxy durumunu degistirir. Yalnizca A, AAAA ve CNAME'de
-# anlamli; digerlerinde Cloudflare alani zaten kabul etmiyor.
+# Changes one record's proxy state. Only meaningful for A, AAAA and CNAME;
+# Cloudflare does not accept the field on other types.
 sub cf_set_proxy
 {
 my ($d, $r, $on) = @_;
@@ -558,7 +558,7 @@ my ($out, $e) = &cf_api_req($d, "PATCH",
 return $e;
 }
 
-# cf_delete_record(&domain, &kayit) -> hata
+# cf_delete_record(&domain, &record) -> error
 sub cf_delete_record
 {
 my ($d, $r) = @_;
@@ -569,10 +569,10 @@ return $err if ($err);
 return $err;
 }
 
-# import_record(&domain, &cf-kaydi) -> hata
-# Kaydi yerel BIND zone'una yazar. CLI yerine Virtualmin'in kendi
-# fonksiyonlarini kullaniyoruz: 'modify-dns --add-record' degeri bosluklardan
-# bolduyor icin icinde bosluk olan TXT kayitlari bozulurdu.
+# import_record(&domain, &cf-record) -> error
+# Writes the record into the local BIND zone. Virtualmin's own functions are
+# used rather than the CLI: 'modify-dns --add-record' splits the value on
+# whitespace, which would corrupt any TXT record containing a space.
 sub import_record
 {
 my ($d, $r) = @_;
@@ -582,7 +582,7 @@ my ($recs, $file) = &virtual_server::get_domain_dns_records_and_file($d);
 return $text{'err_nozonefile'} if (!$file);
 my $name = $r->{'name'};
 $name .= "." if ($name !~ /\.$/);
-# Cloudflare'de ttl=1 "otomatik" demek, BIND'e gecirilecek bir sayi degil.
+# At Cloudflare ttl=1 means "automatic", not a number to pass to BIND.
 my $ttl = ($r->{'ttl'} && $r->{'ttl'} != 1) ? $r->{'ttl'} : undef;
 &virtual_server::create_dns_record($recs, $file,
 	{ 'name'   => $name,
@@ -595,12 +595,12 @@ return $perr if ($perr);
 return undef;
 }
 
-# ---- senkron plani --------------------------------------------------------
-# Karsilastirmanin TEK kaynagi. Hem onizleme sayfasi hem senkron motoru bunu
-# kullanir; ayri ayri siniflandirsalardi tablo bir sey gosterip motor baska
-# sey yapabilirdi.
+# ---- the sync plan ---------------------------------------------------------
+# The SINGLE source of the comparison. Both the preview page and the sync
+# engine use it; classifying separately, the table could show one thing while
+# the engine did another.
 #
-# Her girdi: name, type, lvals, crecs, cvals, op, why
+# Each entry: name, type, lvals, crecs, cvals, op, why
 #   op: create | update | delete | adopt | none | skip
 sub sync_plan
 {
@@ -614,7 +614,7 @@ foreach my $r (&local_records($d)) {
 	}
 foreach my $r (@$cfrecs) {
 	push(@{$cg{lc($r->{'name'})."|".uc($r->{'type'})}}, $r);
-	# Cloudflare bir adda CNAME tutarken ayni ada baska tip kabul etmez.
+	# While a name holds a CNAME, Cloudflare accepts no other type on it.
 	$cfcname{lc($r->{'name'})} = $r if (uc($r->{'type'}) eq 'CNAME');
 	}
 
@@ -633,9 +633,9 @@ foreach my $k (sort keys %allk) {
 	my $e = { 'name' => $n, 'type' => $t, 'lvals' => \@lv,
 		  'crecs' => \@cr, 'cvals' => \@cv, 'lttl' => $lr[0]->{'ttl'},
 		  'ours' => $ours, 'proxied' => $proxied };
-	# Proxy bir 'atla' sebebi DEGIL: kaydi kimin yonettigine sahiplik karar
-	# veriyor. Tuneli koruyan sey de zaten sahiplik ('notours'), proxy degil.
-	# Proxy yalnizca gosterilen ve guncellemede korunan bir nitelik.
+	# Proxying is NOT a reason to skip: ownership decides who manages a
+	# record, and what protects a tunnel is ownership ('notours'), not the
+	# proxy flag. Proxying is only displayed, and preserved on update.
 	if (@lv && !@cr) {
 		if ($t ne 'CNAME' && $cfcname{$n}) {
 			$e->{'op'} = 'skip'; $e->{'why'} = 'cnameclash';
@@ -659,12 +659,12 @@ foreach my $k (sort keys %allk) {
 return (\@plan, undef);
 }
 
-# cf_body(ad, tip, deger, ttl, proxy) -> Cloudflare kayit govdesi
-# MX'te oncelik, SRV ve CAA'da parcalar ayri alanlara gidiyor.
+# cf_body(name, type, value, ttl, proxy) -> a Cloudflare record body
+# MX priority, and the SRV and CAA parts, go into separate fields.
 sub cf_body
 {
 my ($name, $type, $value, $ttl, $proxy) = @_;
-# Cloudflare'de ttl=1 "otomatik" demek; yerelde TTL yoksa onu kullaniyoruz.
+# At Cloudflare ttl=1 means "automatic", used when the local record has none.
 my %r = ( 'type' => $type, 'name' => $name,
 	  'ttl' => ($ttl && $ttl >= 60 ? int($ttl) : 1),
 	  'comment' => &cf_tag() );
@@ -689,16 +689,16 @@ elsif ($type eq 'CAA') {
 else {
 	$r{'content'} = $value;
 	}
-# Proxy yalnizca A, AAAA ve CNAME icin gecerli; digerlerinde alan gonderilmez.
+# Proxying applies to A, AAAA and CNAME only; the field is not sent otherwise.
 if ($type eq 'A' || $type eq 'AAAA' || $type eq 'CNAME') {
 	$r{'proxied'} = $proxy ? \1 : \0;
 	}
 return \%r;
 }
 
-# run_sync(&domain, &geri-cagirma) -> (basarili?, hata)
-# Plandaki islemleri uygular. Her satiri geri cagirmaya verir ki sayfa ne
-# yapildigini tek tek gosterebilsin.
+# run_sync(&domain, &callback) -> (success?, error)
+# Applies the operations in the plan, handing every line to the callback so the
+# page can show what was done one item at a time.
 sub run_sync
 {
 my ($d, $cb) = @_;
@@ -717,7 +717,7 @@ foreach my $e (@$plan) {
 	my $what = $e->{'name'}." ".$e->{'type'};
 
 	if ($op eq 'adopt') {
-		# Deger zaten ayni; yalnizca etiketi koyuyoruz.
+		# The value already matches; only the tag is added.
 		foreach my $r (@{$e->{'crecs'}}) {
 			next if (&cf_is_ours($r));
 			my (undef, $aerr) = &cf_api_req($d, "PATCH",
@@ -742,17 +742,17 @@ foreach my $e (@$plan) {
 		next;
 		}
 
-	# create ve update: yerel degerlerle Cloudflare kayitlarini birebir
-	# eslestiriyoruz. Fazla kayit silinir, eksik olan olusturulur. Hepsini
-	# silip yeniden olusturmak daha basit olurdu ama kaydin kisa sureligine
-	# hic var olmadigi bir aralik dogardi.
+	# create and update: local values are matched one to one against the
+	# Cloudflare records. Surplus records are deleted, missing ones created.
+	# Deleting everything and recreating would be simpler but would leave a
+	# window in which the record does not exist at all.
 	my @lv = @{$e->{'lvals'}};
 	my @cr = @{$e->{'crecs'}};
 	my $max = @lv > @cr ? @lv : @cr;
 	for(my $i = 0; $i < $max; $i++) {
 		if ($i < @lv && $i < @cr) {
-			# Mevcut kaydin proxy durumuna DOKUNMUYORUZ: elle
-			# ayarlanmis bir tercihi bozmayalim.
+			# An existing record's proxy state is NOT touched, so a
+			# preference set by hand is not undone.
 			my $body = &cf_body($e->{'name'}, $e->{'type'}, $lv[$i],
 					    $e->{'lttl'}, $cr[$i]->{'proxied'});
 			if (!$body) { &$cb(&text('sync_ebody', $what)); $ok = 0; next; }
@@ -764,8 +764,8 @@ foreach my $e (@$plan) {
 			$ok = 0 if ($uerr);
 			}
 		elsif ($i < @lv) {
-			# Yeni kayit: varsayilan proxy tercihi burada uygulanir
-			# (posta adlari haric - never_proxy).
+			# A new record: the default proxy preference applies
+			# here, except for mail names (never_proxy).
 			my $px = $cf->{'proxy'} &&
 				 !&never_proxy(&record_label($d, $e->{'name'}))
 					? 1 : 0;
@@ -790,37 +790,31 @@ foreach my $e (@$plan) {
 	}
 
 &$cb($text{'sync_nothing'}) if (!$n);
-# Kod saklaniyor, metin degil - ceviri zone_status'ta yapiliyor.
+# A code is stored, not text - zone_status does the translation.
 $cf->{'last_status'} = $ok ? "ok" : "partial";
 $cf->{'last_time'} = time();
 &save_cf($d, $cf);
 return ($ok, undef);
 }
 
-# zone_mtime(&domain) -> zone dosyasinin son degisiklik zamani (yoksa 0)
-# Senkronu tetikleyen sinyal bu. Her DNS degisikliginde Virtualmin SOA
-# serial'ini artirip dosyayi yeniden yaziyor, dolayisiyla mtime degistiyse
-# gercekten bir sey degismistir.
+# zone_mtime(&domain) -> the zone file's modification time, or 0
+# This is the signal that triggers a sync. On every DNS change Virtualmin bumps
+# the SOA serial and rewrites the file, so a changed mtime really does mean
+# something changed.
 sub zone_mtime
 {
 my ($d) = @_;
 my $file = eval { &virtual_server::get_domain_dns_file($d) };
 return 0 if ($@ || !$file);
-# BIND chroot altinda calisiyorsa gercek yol farkli: Virtualmin dosyayi
-# chroot ICINDEKI adiyla veriyor, biz ise disaridan stat ediyoruz.
+# When BIND runs under a chroot the real path differs: Virtualmin gives the
+# file's name as seen INSIDE the chroot while we stat it from outside. The
+# helper for this is bind8::make_chroot - the same one used to find the
+# watched directory (see zone_watch_dirs).
 #
-# Burada once Virtualmin'in "bind chroot file" diye bir yardimcisi
-# cagriliyordu; OYLE BIR FONKSIYON YOK (doctor.sh ilk calismasinda
-# yakaladi, Virtualmin kaynaginda hicbir yerde gecmiyor). Korumali
-# yazilmisti, o yuzden hata vermiyor ama hicbir zaman calismiyordu:
-# chroot'lu bir kurulumda yanlis yolun mtime'ina bakip senkronu hic
-# tetiklemezdik. Dogru yardimci bind8::make_chroot - izlenen dizini
-# bulurken de onu kullaniyoruz (bkz. zone_watch_dirs).
-#
-# bind8 BURADA yukleniyor: modul basinda yuklu degil, yalnizca
-# zone_watch_dirs icinde isteniyor ve zone_mtime ondan once cagrilabilir.
-# Tamami eval icinde - bu fonksiyon her senkron kontrolunde calisiyor ve
-# hicbir kosulda olmemeli; chroot cozulemezse chroot'suz yol kullanilir.
+# bind8 is loaded HERE: it is not loaded at the top of the module, only
+# requested inside zone_watch_dirs, and zone_mtime can be called before that.
+# All of it sits in an eval because this function runs on every sync check and
+# must never die; if the chroot cannot be resolved the unchrooted path is used.
 eval {
 	local $main::error_must_die = 1;
 	&foreign_require("bind8");
@@ -830,7 +824,7 @@ my @st = stat($file);
 return @st ? $st[9] : 0;
 }
 
-# needs_sync(&domain) -> zone son senkrondan sonra degismis mi
+# needs_sync(&domain) -> has the zone changed since the last sync?
 sub needs_sync
 {
 my ($d) = @_;
@@ -850,12 +844,12 @@ $cf->{'synced_mtime'} = &zone_mtime($d);
 &save_cf($d, $cf);
 }
 
-# sync_domains() -> OTOMATIK senkrona giren domainler: ozelligi acik, token'i
-# olan ve otomatik senkronu kapatilmamis olanlar.
+# sync_domains() -> the domains taking part in AUTOMATIC sync: the feature on,
+# a token present, and automatic sync not switched off.
 #
-# 'enabled' yalnizca otomatik yolu (path/timer -> sync-all.pl) durdurur;
-# paneldeki "Simdi senkronla" dugmesi calismaya devam eder, cunku o acik bir
-# kullanici eylemidir. Token silinmez: kapatip acmak tek tik.
+# 'enabled' only stops the automatic path (path/timer -> sync-all.pl); the
+# panel's "Sync now" button keeps working, because that is an explicit user
+# action. The token is not deleted: switching back on is one click.
 sub sync_domains
 {
 my @rv;
@@ -869,19 +863,21 @@ return @rv;
 }
 
 
-# ---- otomatik senkron servisi -------------------------------------------
-# Birimleri BU MODUL uretir ve yonetir. Eskiden install-plugins.sh
-# olusturuyordu; modul .wbm.gz olarak standart yoldan kurulunca o script hic
-# calismayacagi icin servis de hic kurulmuyordu. Artik tek kaynak burasi ve
-# uc yerden cagriliyor:
-#   postinstall.pl   modul kurulunca (Webmin'in standart kancasi)
-#   feature_setup    ozellik bir domainde acilinca
-#   index.cgi        sayfa her acildiginda - durmussa geri kaldirir
+# ---- the automatic sync service -------------------------------------------
+# THIS MODULE generates and manages the units. They used to be created by
+# install-plugins.sh, which meant that installing the module the standard way
+# (as a .wbm.gz) never installed the service at all. There is one source now,
+# called from three places:
+#   postinstall.pl   when the module is installed (Webmin's standard hook)
+#   feature_setup    when the feature is enabled on a domain
+#   index.cgi        every time the page is opened - it restarts a stopped unit
 #
-# Birimler:
-#   .path     zone dosyasi degistigi anda senkronu tetikler (asil tetikleyici)
-#   .timer    15 dakikada bir - kacan olay ya da basarisiz tur icin guvenlik agi
-#   .service  ikisinin de calistirdigi tek seferlik is
+# The units:
+#   .path     triggers a sync the moment the zone file changes (the real
+#             trigger)
+#   .timer    every 15 minutes - a safety net for a missed event or a failed
+#             run
+#   .service  the one-shot job both of them start
 
 sub sync_service
 {
@@ -893,14 +889,14 @@ sub sync_unit_dir
 return "/etc/systemd/system";
 }
 
-# systemd calisiyor mu? Calismiyorsa hicbir sey kurmaz, panelde de bunu
-# soyleriz - sessizce basarisiz olmaktansa.
+# Is systemd running? If not, nothing is installed and the panel says so,
+# rather than failing silently.
 sub have_systemd
 {
 return &has_command("systemctl") && -d "/run/systemd/system" ? 1 : 0;
 }
 
-# systemctl(args...) -> (basarili mi, cikti)
+# systemctl(args...) -> (success?, output)
 sub systemctl
 {
 my @args = @_;
@@ -909,9 +905,9 @@ my $out = &backquote_command($cmd);
 return ($? ? 0 : 1, $out);
 }
 
-# Izlenecek zone dizini. Tahmin etmiyoruz: olmayan bir dizini izleyen .path
-# birimi basarisiz oluyor. Once BIND'in kendi yapilandirmasina bakiyoruz,
-# bulunamazsa yaygin iki konuma.
+# The zone directory to watch. Nothing is guessed: a .path unit watching a
+# directory that does not exist fails. BIND's own configuration is consulted
+# first, then the two common locations.
 sub zone_watch_dirs
 {
 my @dirs;
@@ -928,9 +924,10 @@ my %seen;
 return grep { -d $_ && !$seen{$_}++ } @dirs;
 }
 
-# sync_unit_files() -> ( dosya adi => olmasi gereken icerik )
-# Kurulum da denetim de ayni metni uretir; "degismis mi" karsilastirmasi bu
-# yuzden guvenilir. Zone dizini bulunamazsa .path uretilmez.
+# sync_unit_files() -> ( file name => the content it should have )
+# Installation and checking generate the same text, which is what makes the
+# "has it changed" comparison reliable. Without a zone directory no .path unit
+# is generated.
 sub sync_unit_files
 {
 my $svc = &sync_service();
@@ -945,10 +942,10 @@ $f{$svc.".service"} =
 "\n".
 "[Service]\n".
 "Type=oneshot\n".
-"# Zone degismediyse script hicbir API cagrisi yapmadan cikar.\n".
+"# When the zone has not changed the script exits without any API call.\n".
 "ExecStart=$exec\n".
-"# Bekleme YOK: DNS-01 dogrulamasinda challenge kaydinin Cloudflare tarafina\n".
-"# saniyeler icinde ulasmasi gerekiyor.\n".
+"# NO delay: in DNS-01 validation the challenge record has to reach\n".
+"# Cloudflare within seconds.\n".
 "Nice=10\n";
 
 $f{$svc.".timer"} =
@@ -956,8 +953,8 @@ $f{$svc.".timer"} =
 "Description=VminKit Cloudflare DNS sync (safety net)\n".
 "\n".
 "[Timer]\n".
-"# Asil tetikleyici .path birimi; zone dosyasi degistigi anda calisiyor.\n".
-"# Bu zamanlayici yalnizca kacan bir olayi ya da basarisiz bir turu yakalar.\n".
+"# The real trigger is the .path unit, which fires the moment the zone\n".
+"# file changes. This timer only catches a missed event or a failed run.\n".
 "OnBootSec=3min\n".
 "OnUnitActiveSec=15min\n".
 "AccuracySec=1min\n".
@@ -982,12 +979,12 @@ if (@wd) {
 return %f;
 }
 
-# sync_units_status() -> durum hash'i
-#   systemd  systemd var mi
-#   nowatch  izlenecek zone dizini yok - anlik tetikleme kurulamaz
-#   path,timer,service  her biri { exists, current, enabled, active }
-#   lastrun, lastresult  servisin son turu
-#   ok       otomatik senkron gercekten ayakta mi
+# sync_units_status() -> a status hash
+#   systemd  is systemd present
+#   nowatch  no zone directory to watch - instant triggering cannot be set up
+#   path,timer,service  each as { exists, current, enabled, active }
+#   lastrun, lastresult  the service's last run
+#   ok       is automatic sync genuinely up
 sub sync_units_status
 {
 my $svc = &sync_service();
@@ -1014,8 +1011,8 @@ foreach my $k ("path", "timer", "service") {
 	$st{$k} = \%u;
 	}
 
-# .service tek seferlik (Type=oneshot): bosta iken 'inactive' gorunmesi
-# normaldir, saglik gostergesi son turun sonucudur.
+# The .service is one-shot (Type=oneshot): showing as 'inactive' while idle is
+# normal, and the health indicator is the last run's result.
 my (undef, $out) = &systemctl("show", "$svc.service",
 			      "-p", "Result", "-p", "ExecMainExitTimestamp");
 foreach my $l (split(/\r?\n/, $out)) {
@@ -1023,34 +1020,34 @@ foreach my $l (split(/\r?\n/, $out)) {
 	$st{'lastrun'} = $1 if ($l =~ /^ExecMainExitTimestamp=(.+)/);
 	}
 
-# Anlik tetikleme asil is: zamanlayici tek basina kalirsa DNS-01 wildcard
-# dogrulamasi icin cok yavas olur. Bu yuzden 'ok' ikisini birden istiyor;
-# yalnizca zamanlayici ayaktaysa panel bunu eksik calisma olarak gosterir.
+# Instant triggering is the real mechanism: the timer alone is far too slow for
+# DNS-01 wildcard validation. So 'ok' requires both, and with only the timer up
+# the panel reports it as running incompletely.
 $st{'ok'} = ($st{'timer'}->{'active'} && !$st{'nowatch'} &&
 	     $st{'path'}->{'active'}) ? 1 : 0;
 return \%st;
 }
 
 
-# sync_units_healthy(&durum) -> dosyalar guncel ve birimler ayakta mi
-# Sayfa acilisinda once buna bakiyoruz; her sey yerindeyse ensure cagrilmiyor,
-# boylece saglikli durumda gereksiz systemctl cagrisi yapilmiyor.
+# sync_units_healthy(&status) -> are the files current and the units up?
+# Checked first when the page opens: if everything is in place ensure is not
+# called, so a healthy system makes no needless systemctl calls.
 sub sync_units_healthy
 {
 my ($st) = @_;
 return 0 if (!$st->{'systemd'});
 return 0 if (!$st->{'timer'}->{'current'} || !$st->{'timer'}->{'active'});
 return 0 if (!$st->{'service'}->{'current'});
-# Izlenecek zone dizini yoksa kurulacak .path birimi de yok - bu durumda
-# tekrar tekrar kurmaya calismanin anlami olmaz, panel zaten uyariyor.
+# With no zone directory to watch there is no .path unit to install, and
+# retrying endlessly would be pointless - the panel already warns.
 return 1 if ($st->{'nowatch'});
 return 0 if (!$st->{'path'}->{'current'} || !$st->{'path'}->{'active'});
 return 1;
 }
-# ensure_sync_units([force]) -> ( yapilanlarin listesi, hata )
-# Eksik ya da eskimis dosyayi yazar, etkin degilse etkinlestirir, durmussa
-# baslatir. Idempotent: her sey yerindeyse hicbir sey yapmaz ve bos liste
-# doner - bu yuzden sayfa her acildiginda cagrilabilir.
+# ensure_sync_units([force]) -> ( list of what was done, error )
+# Writes a missing or outdated file, enables what is not enabled and starts
+# what is stopped. Idempotent: with everything in place it does nothing and
+# returns an empty list, which is why it can be called on every page load.
 sub ensure_sync_units
 {
 my ($force) = @_;
@@ -1060,8 +1057,8 @@ my %want = &sync_unit_files();
 my @done;
 my $reload = 0;
 
-# Zone dizini kaybolduysa eski .path birimini birakma: olmayan bir dizini
-# izleyen birim her aciliste basarisiz olur.
+# If the zone directory is gone, do not leave the old .path unit behind: a
+# unit watching a directory that does not exist fails every time it starts.
 if (!$want{$svc.".path"} && -e &sync_unit_dir()."/$svc.path") {
 	&systemctl("disable", "--now", "$svc.path");
 	unlink(&sync_unit_dir()."/$svc.path");
@@ -1087,15 +1084,15 @@ foreach my $u (sort keys %want) {
 &systemctl("daemon-reload") if ($reload);
 
 foreach my $u (sort keys %want) {
-	next if ($u =~ /\.service$/);	# tek seferlik is: enable/start edilmez
+	next if ($u =~ /\.service$/);	# one-shot job: not enabled or started
 	my ($en) = &systemctl("is-enabled", $u);
 	if (!$en) {
 		&systemctl("enable", $u);
 		push(@done, "enabled $u");
 		}
-	# daemon-reload dosyayi yeniden okutur ama CALISAN birim eski
-	# yapilandirmasiyla devam eder - izlenen dizin degisseydi degisiklik
-	# hic uygulanmazdi. Bu yuzden dosya degistiyse yeniden baslatiyoruz.
+	# daemon-reload re-reads the file but a RUNNING unit carries on with its
+	# old configuration - a changed watch directory would never take effect.
+	# So a changed file means a restart.
 	if (&indexof($u, @changed) >= 0) {
 		&systemctl("restart", $u);
 		push(@done, "restarted $u");
@@ -1110,7 +1107,7 @@ foreach my $u (sort keys %want) {
 return (\@done, undef);
 }
 
-# remove_sync_units() - modul kaldirilirken birimleri de goturur.
+# remove_sync_units() - takes the units with it when the module is removed.
 sub remove_sync_units
 {
 return 0 if (!&have_systemd());
