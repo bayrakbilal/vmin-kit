@@ -1,12 +1,12 @@
-# vmkit-deploy yardimci fonksiyonlari.
+# vmkit-deploy helper functions.
 #
-# Veri modeli: domain basina N adet "deployment". Her deployment bir repo ve
-# bir hedef klasordur; ayni domainde iki repo iki ayri klasorde calisabilir.
+# Data model: N "deployments" per domain. A deployment is a repository plus a
+# target directory, so one domain can run two repositories in two directories.
 #
-# Saklama: her deployment icin bir dosya
+# Storage: one file per deployment,
 #   /etc/webmin/vmkit-deploy/deploys/<domain-id>-<deploy-id>
-# Webmin'in key=value bicimi kullanilir; boylece ekleme/silme atomik ve
-# yedeklemesi de klasoru tarlamak kadar basit olur.
+# in Webmin's key=value format, which makes adding and removing atomic and
+# backing up no harder than reading the directory.
 
 use strict;
 use warnings;
@@ -25,7 +25,7 @@ return "$module_config_directory/deploys";
 }
 
 # list_deploys([&domain])
-# Tum deployment'lari, ya da verilen domaine ait olanlari dondurur.
+# Returns every deployment, or only those belonging to the given domain.
 sub list_deploys
 {
 my ($d) = @_;
@@ -53,7 +53,7 @@ return $dep;
 }
 
 # save_deploy(&domain, &deploy)
-# id bossa yeni bir kimlik uretir.
+# Generates a new id when the id is empty.
 sub save_deploy
 {
 my ($d, $dep) = @_;
@@ -72,8 +72,8 @@ return $dep;
 }
 
 # delete_deploy(&domain, &deploy)
-# Yalnizca tanimi, bare repoyu ve logu siler. HEDEF KLASORE DOKUNMAZ:
-# deploy edilmis site icerigi, yuklemeler ve .env yerinde kalir.
+# Removes only the definition, the bare repository and the log. It NEVER
+# touches the target directory: deployed site content, uploads and .env stay.
 sub delete_deploy
 {
 my ($d, $dep) = @_;
@@ -101,23 +101,23 @@ foreach my $dep (&list_deploys($d)) {
 }
 
 # can_edit_domain(&domain)
-# Virtualmin'in yetki kontrolunu kullanir: master admin, reseller ya da
-# domainin sahibi duzenleyebilir.
+# Uses Virtualmin's own check: master admin, reseller or the domain's owner.
 sub can_edit_domain
 {
 my ($d) = @_;
 return &virtual_server::can_edit_domain($d);
 }
 
-# validate_target(&domain, yol)
-# Hedef domainin BELGE KOKUNUN (public_html) altinda olmali. Ev dizininde
-# panelin kendi klasorleri, e-posta, gunlukler ve alt sunucularin dizinleri
-# duruyor; oraya deploy etmek karisikliktan baska bir sey getirmez ve ana
-# domainin panelinden alt sunucunun icine yazmayi mumkun kilar.
+# validate_target(&domain, path)
+# The target must live under the DOCUMENT ROOT (public_html). The home
+# directory also holds the panel's own folders, mail, logs and the sub-servers'
+# directories; deploying there would be confusing and would let the parent
+# domain's panel write inside a sub-server.
 #
-# Uygulama belge kokunu bir alt klasore tasiyorsa (Laravel gibi) Virtualmin'in
-# kendi ayari kullanilir: Website Options -> Website documents sub-directory =
-# public_html/public. Deploy yine public_html'e yapilir, kok asagi kayar.
+# An application that moves its document root one level down (Laravel and
+# friends) uses Virtualmin's own setting instead: Website Options -> Website
+# documents sub-directory = public_html/public. The deploy still goes to
+# public_html and only the served root moves.
 sub validate_target
 {
 my ($d, $path) = @_;
@@ -134,13 +134,12 @@ return &text('err_target_outside', &deploy_root_rel($d))
 return undef;
 }
 
-# deploy_root(&domain) -> deploy edilebilecek en ust dizin (mutlak yol)
+# deploy_root(&domain) -> the topmost directory that may be deployed to
 #
-# Belge kokunun ILK parcasi. Virtualmin'in "Website documents sub-directory"
-# ayari public_html/public gibi bir alt klasoru gosterebiliyor (Laravel ve
-# benzerleri boyle kuruluyor); o durumda proje koku yine public_html'dir,
-# public yalnizca onun icindeki yayin klasoru. Dolayisiyla belge kokunun
-# kendisini degil, ilk parcasini aliyoruz.
+# The FIRST segment of the document root. Virtualmin's "Website documents
+# sub-directory" can point at something like public_html/public, and in that
+# case the project root is still public_html - public is only the served folder
+# inside it. So the first segment is taken, not the document root itself.
 sub deploy_root
 {
 my ($d) = @_;
@@ -150,12 +149,12 @@ my $abs = &virtual_server::public_html_dir($d);
 my $rel = "public_html";
 if ($abs && $abs =~ /^\Q$home\E\/(.+)$/) {
 	$rel = $1;
-	$rel =~ s/\/.*$//;	# ilk parca
+	$rel =~ s/\/.*$//;	# first segment
 	}
 return "$home/$rel";
 }
 
-# deploy_root_rel(&domain) -> ayni dizinin ev dizinine gore hali
+# deploy_root_rel(&domain) -> the same directory, relative to the home
 sub deploy_root_rel
 {
 my ($d) = @_;
@@ -165,9 +164,9 @@ $rel =~ s/^\Q$d->{'home'}\E\/?//;
 return $rel eq '' ? "public_html" : $rel;
 }
 
-# target_sub(&domain, hedef) -> hedefin koke gore kalan parcasi (form icin)
-# Depoda hedef EV DIZININE gore saklaniyor (public_html/app gibi); formda ise
-# yalnizca kok altindaki kismi gosteriyoruz.
+# target_sub(&domain, target) -> the part of the target below the root (for the
+# form). The target is STORED relative to the home (public_html/app), but the
+# form only shows what is below the root.
 sub target_sub
 {
 my ($d, $target) = @_;
@@ -178,7 +177,7 @@ return $sub if ($sub !~ s/^\Q$rel\E\///);
 return $sub;
 }
 
-# target_full(&domain, alt-yol) -> ev dizinine gore saklanacak hedef
+# target_full(&domain, sub-path) -> the target as stored, relative to the home
 sub target_full
 {
 my ($d, $sub) = @_;
@@ -188,7 +187,7 @@ $sub =~ s/^\/+//; $sub =~ s/\/+$//;
 return $sub eq '' ? $rel : "$rel/$sub";
 }
 
-# deploy_target_dir(&domain, &deploy) -> mutlak yol
+# deploy_target_dir(&domain, &deploy) -> absolute path
 sub deploy_target_dir
 {
 my ($d, $dep) = @_;
@@ -196,8 +195,9 @@ return "$d->{'home'}/$dep->{'target'}";
 }
 
 # validate_repo_url(url)
-# Semadan hemen sonra alfanumerik bekliyoruz: bu, '-' ile baslayip git'e
-# secenek gibi gecen ya da 'ext::<komut>' gibi calistirilabilir URL'leri eler.
+# An alphanumeric is required right after the scheme, which rejects URLs
+# starting with '-' (git would read them as options) and executable forms like
+# 'ext::<command>'.
 sub validate_repo_url
 {
 my ($url) = @_;
@@ -208,17 +208,17 @@ return undef;
 }
 
 # remote_branches(&domain, url)
-# Uzak repoyu 'git ls-remote' ile sorgular - klonlamaz, yalnizca ref listesini
-# alir. Komut DOMAININ KENDI KULLANICISI olarak calisir ki ozel repolarda o
-# kullanicinin SSH anahtari kullanilsin.
-# Doner: (varsayilan-dal, \@dallar, hata)
+# Queries the remote with 'git ls-remote' - no clone, just the ref list. It
+# runs AS THE DOMAIN'S OWN USER so that private repositories use that user's
+# SSH key.
+# Returns: (default-branch, \@branches, error)
 sub remote_branches
 {
 my ($d, $url) = @_;
 my $err = &validate_repo_url($url);
 return (undef, undef, $err) if ($err);
 
-# BatchMode: parola sorulursa beklemek yerine hemen hata versin.
+# BatchMode: fail immediately instead of waiting on a password prompt.
 my $inner = "GIT_TERMINAL_PROMPT=0 ".
 	    "GIT_SSH_COMMAND=".quotemeta(&git_ssh_command($d))." ".
 	    "git ls-remote --symref -- ".quotemeta($url);
@@ -240,21 +240,21 @@ return (undef, undef, $text{'err_nobranches'}) if (!@branches);
 $default ||= $branches[0];
 return ($default, \@branches, undef);
 }
-# ---- domainin SSH anahtari ----------------------------------------------
-# Domain basina TEK anahtar, standart konumda: ~/.ssh/id_ed25519
-# Bu anahtarin acik kismi GitHub/Gitea'da HESABA eklenir (Settings -> SSH
-# keys), tek bir repoya "deploy key" olarak degil. Boylece o hesabin
-# erisebildigi butun ozel repolar bu domain icin calisir.
+# ---- the domain's SSH key ------------------------------------------------
+# ONE key per domain, in the standard place: ~/.ssh/id_ed25519
 #
-# Not: deploy key yolu da mumkun ama GitHub bir deploy anahtarini yalnizca tek
-# bir repoda kabul ediyor; ikinci ozel repo eklendiginde tikanir.
+# Its public half is added to the ACCOUNT on GitHub/Gitea (Settings -> SSH
+# keys), not to a single repository as a "deploy key", so every private
+# repository that account can reach works for this domain. A deploy key would
+# also work, but GitHub accepts one only on a single repository and the second
+# private repository would fail.
 sub domain_key_path
 {
 my ($d) = @_;
 return $d->{'home'}."/.ssh/id_ed25519";
 }
 
-# domain_key_pub(&domain) -> acik anahtar metni (yoksa undef)
+# domain_key_pub(&domain) -> the public key text, or undef
 sub domain_key_pub
 {
 my ($d) = @_;
@@ -265,9 +265,9 @@ $txt =~ s/\s+$//;
 return $txt;
 }
 
-# ensure_domain_key(&domain) -> hata mesaji ya da undef
-# Anahtari domainin kendi kullanicisi olarak uretir; sahiplik ve izinler
-# bastan dogru olsun diye root olarak uretip sonra chown yapmiyoruz.
+# ensure_domain_key(&domain) -> an error message, or undef
+# Generated as the domain's own user, so ownership and permissions are right
+# from the start rather than generated as root and chowned afterwards.
 sub ensure_domain_key
 {
 my ($d) = @_;
@@ -286,32 +286,32 @@ return &domain_key_pub($d) ? undef : ($out || $text{'key_efail'});
 }
 
 # git_ssh_command(&domain)
-# Anahtar standart konumda oldugu icin -i vermeye gerek yok; ssh kendisi
-# buluyor. BatchMode: parola sorulursa beklemek yerine hemen hata versin.
+# No -i needed: the key is in the standard place and ssh finds it itself.
+# BatchMode: fail immediately instead of waiting on a password prompt.
 sub git_ssh_command
 {
 my ($d) = @_;
 return "ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new".
        " -o ConnectTimeout=10";
 }
-# ---- calistirma ---------------------------------------------------------
-# Git verisi web kokunun DISINDA durur:
+# ---- running -------------------------------------------------------------
+# The git data lives OUTSIDE the web root:
 #     ~/.vmkit/repos/<id>.git      (bare)
-#         |  git --work-tree=<hedef> checkout -f <dal>
+#         |  git --work-tree=<target> checkout -f <branch>
 #         v
-#     ~/public_html/...            (yalnizca dosyalar, .git yok)
+#     ~/public_html/...            (files only, no .git)
 #
-# Hedefe dogrudan klonlasaydik public_html/.git olusur ve yanlis bir Apache
-# ayarinda repo gecmisi internete acilirdi. Ayrica '~/.git' adini bilerek
-# kullanmiyoruz: ev dizini git tarafindan calisma kopyasi sanilirdi.
+# Cloning straight into the target would create public_html/.git, and one wrong
+# Apache setting would publish the repository history. '~/.git' is avoided for
+# a different reason: git would treat the home directory as a working copy.
 #
-# CEKME ile DAGITIM ayri iki islem:
-#   pull    uzak repodan bare repoya fetch. Site DEGISMEZ; ne geldigini
-#           Commit'ler sayfasindan gorup sonra dagitmaya karar verirsin.
-#   deploy  bare repodaki dali hedefe yazar ve varsa dagitim sonrasi
-#           komutlari calistirir.
-# Otomatik moddaki deployment (ve webhook) 'both' kullanir: ceker ve dagitir.
-# Manuel modda cekme dagitimi tetiklemez.
+# PULL and DEPLOY are two separate operations:
+#   pull    fetches from the remote into the bare repository. The site does not
+#           change; the Commits page shows what arrived and you decide.
+#   deploy  writes the bare repository's branch into the target and runs the
+#           post-deploy commands, if any.
+# A deployment in automatic mode (and the webhook) uses 'both'. In manual mode
+# a pull never triggers a deploy.
 sub deploy_repo_path
 {
 my ($d, $dep) = @_;
@@ -330,8 +330,8 @@ my ($d, $dep) = @_;
 return &read_file_contents(&deploy_log_path($d, $dep));
 }
 
-# Log dizini. Kanca isi ciktisini kabuktan yonlendirdigi icin dizin ISIN
-# BASLAMASINDAN once var olmali; deploy_run'in kendi kontrolu gec kalirdi.
+# The log directory must exist BEFORE the work starts, because the hook
+# redirects the output from the shell; deploy_run's own check would be too late.
 sub ensure_log_dir
 {
 my $dir = "$module_config_directory/logs";
@@ -339,10 +339,10 @@ my $dir = "$module_config_directory/logs";
 return $dir;
 }
 
-# ---- dagitim sonrasi komutlar -------------------------------------------
-# Komutlar key=value bicimine sigmiyor (coksatirli), o yuzden log gibi ayri
-# bir dosyada duruyorlar. Icerik kullanicinin yazdigi kabuk satirlari;
-# standart bir liste ya da sablon YOK - ne yazarsa o calisir.
+# ---- post-deploy commands ------------------------------------------------
+# They are multi-line and do not fit the key=value format, so like the log they
+# live in their own file. The content is whatever shell lines the user wrote -
+# there is no fixed list or template.
 sub actions_path
 {
 my ($d, $dep) = @_;
@@ -375,10 +375,10 @@ no strict "subs";
 use strict "subs";
 }
 
-# domain_php_bin(&domain, mutlak-dizin) -> (surum, php-binary)
-# Klasore en ozel eslesen Virtualmin PHP tanimini bulur. vmkit-composer ayni
-# mantigi kendi icinde tasiyor: iki modul birbirinden bagimsiz kurulabilsin
-# diye bilerek paylasmiyoruz.
+# domain_php_bin(&domain, absolute-dir) -> (version, php binary)
+# Finds the most specific Virtualmin PHP definition for that directory.
+# vmkit-composer carries the same logic of its own: the two modules are
+# deliberately not shared so either can be installed without the other.
 sub domain_php_bin
 {
 my ($d, $dir) = @_;
@@ -390,18 +390,18 @@ foreach my $p (@pd) {
 	$best = $p if (!$best || length($p->{'dir'}) > length($best->{'dir'}));
 	}
 return (undef, undef) if (!$best || !$best->{'version'});
-# cgimode 2 = komut satiri PHP'si. Varsayilan mod php<ver>-cgi'yi de aday
-# gorup CGI SAPI ile calistirabiliyor; composer o durumda hicbir sey yapmadan
-# "should be invoked via the CLI version" diyor.
+# cgimode 2 = the command-line PHP. The default mode also considers
+# php<ver>-cgi and can run the CGI SAPI, in which case composer refuses with
+# "should be invoked via the CLI version" and does nothing.
 return ($best->{'version'},
 	&virtual_server::php_command_for_version($best->{'version'}, 2));
 }
 
-# ensure_php_path_dir(&domain, dizin) -> PATH'in basina eklenecek dizin
-# Icinde tek bir 'php' baglantisi var: hedef klasorun Virtualmin PHP surumu.
-# Boylece kullanicinin komutlari ('php artisan migrate', 'composer install' -
-# composer'in shebang'i de 'env php') dogru surumle calisir ve kimse
-# /usr/bin/php8.3 gibi tam yol yazmak zorunda kalmaz.
+# ensure_php_path_dir(&domain, dir) -> a directory to prepend to PATH
+# It holds a single 'php' symlink pointing at the target directory's Virtualmin
+# PHP version, so the user's own commands ('php artisan migrate', and composer,
+# whose shebang is 'env php') run with the right version and nobody has to
+# write a full path like /usr/bin/php8.3.
 sub ensure_php_path_dir
 {
 my ($d, $dir) = @_;
@@ -415,7 +415,7 @@ my (undef, $timed) = &backquote_with_timeout("$cmd 2>&1", 20);
 return $timed || $? ? undef : $bindir;
 }
 
-# current_ref(&domain, &deploy) -> bare repodaki dalin ucu (kisa hash)
+# current_ref(&domain, &deploy) -> the branch tip in the bare repo (short hash)
 sub current_ref
 {
 my ($d, $dep) = @_;
@@ -430,7 +430,7 @@ $out =~ s/\s+//g;
 return $out eq '' ? undef : $out;
 }
 
-# pending(&domain, &deploy) -> cekilmis ama dagitilmamis bir sey var mi
+# pending(&domain, &deploy) -> is something pulled but not yet deployed?
 sub pending
 {
 my ($d, $dep) = @_;
@@ -438,9 +438,9 @@ return 0 if (!$dep->{'pulled_ref'});
 return ($dep->{'deployed_ref'} || '') ne $dep->{'pulled_ref'} ? 1 : 0;
 }
 
-# ---- adim uretenler ------------------------------------------------------
-# Her biri kabuk satirlari dondurur; deploy_run hepsini 'set -e' altinda tek
-# bir kullanici oturumunda calistirir.
+# ---- step builders -------------------------------------------------------
+# Each returns shell lines; deploy_run runs them all under 'set -e' in a single
+# session as the domain user.
 
 sub git_env
 {
@@ -449,24 +449,24 @@ return "GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND=".
        quotemeta(&git_ssh_command($d));
 }
 
-# Cekme: ilk seferde bare klon, sonrakilerde fetch.
-# Repo BARE kalmali: core.bare false yapilirsa git deponun kendi dizinini
-# calisma kopyasi sanar ve "refusing to fetch into branch ... checked out at"
-# diyerek fetch'i reddeder. Bare halde --work-tree ile checkout zaten calisiyor.
+# Pull: a bare clone the first time, a fetch afterwards.
+# The repository must stay BARE. With core.bare false git treats the repo's own
+# directory as a working copy and refuses the fetch with "refusing to fetch
+# into branch ... checked out at". Bare plus --work-tree checkout works.
 sub pull_steps
 {
 my ($d, $dep) = @_;
 my $R = quotemeta(&deploy_repo_path($d, $dep));
 my $B = quotemeta($dep->{'branch'});
 my $env = &git_env($d);
-# <pre> icinde YALNIZCA komutlarin kendi ciktisi var: aciklama yankilayan
-# 'echo' satirlari yok. Ekran bir konsol dokumu, anlatilmis bir ozet degil.
+# The <pre> holds ONLY the commands' own output - no narrating 'echo' lines.
+# The screen is a console transcript, not a summary.
 my @steps;
-# OLDREF KLONDAN ONCE okunuyor: 'git clone --bare' zaten butun commit'leri
-# getirdigi icin klondan sonra okunsaydi ilk cekmede bile dolu olurdu ve
-# ardindan gelen fetch hicbir sey getirmeyeceginden log "yeni commit yok"
-# derdi - ilk cekmede yaniltici. Repo yokken komut hata verir, OLDREF bos
-# kalir, mesaj da dogru olur.
+# OLDREF is read BEFORE the clone: 'git clone --bare' already brings every
+# commit, so reading it afterwards would make it non-empty even on the first
+# pull, the following fetch would bring nothing, and the log would claim "no
+# new commits". With no repository yet the command fails, OLDREF stays empty
+# and the output is correct.
 push(@steps, 'OLDREF=$(git --git-dir='.$R.' rev-parse -q --verify '.$B.
 	     ' 2>/dev/null || true)');
 push(@steps, "if [ ! -d $R ]; then ".
@@ -475,30 +475,30 @@ push(@steps, "if [ ! -d $R ]; then ".
 	     "fi");
 push(@steps, "git --git-dir=$R remote set-url origin -- ".
 	     quotemeta($dep->{'repo'}));
-# '-v': fetch getirecek bir sey yoksa VARSAYILAN OLARAK hicbir sey yazmaz
-# ve ekran bombos kalirdi. Terminalde 'git pull' deyince gorunen "Already up
-# to date." mesaji pull'un merge adimindan geliyor; bizde merge yok (bare
-# repo + ayri checkout), o yuzden karsiligi fetch'in ayrintili ciktisi:
+# '-v': with nothing to fetch, git prints NOTHING by default and the screen
+# would be blank. The "Already up to date." people know from 'git pull' comes
+# from pull's merge half, which we do not run (bare repo plus a separate
+# checkout), so the equivalent is fetch's verbose output:
 #   = [up to date]      main       -> main
 #   4cb4a6e..ed3bea3    main       -> main
-# Kendi metnimizi yazmiyoruz - bunlar git'in kendi satirlari.
+# These are git's own lines, not ours.
 push(@steps, "$env git --git-dir=$R fetch -v --prune origin ".
 	     quotemeta("+refs/heads/*:refs/heads/*"));
 push(@steps, 'NEWREF=$(git --git-dir='.$R.' rev-parse '.$B.')');
-# Ilk cekmede OLDREF bos olur ve aralik anlamsizdir; ayni commit'te
-# kalindiysa da gosterilecek bir sey yoktur - iki durumda da hicbir sey
-# basilmiyor, uydurma bir metin degil.
+# On the first pull OLDREF is empty and the range is meaningless; if the
+# commit did not move there is nothing to show either. In both cases nothing
+# is printed, rather than inventing a line.
 push(@steps, 'if [ -n "$OLDREF" ] && [ "$OLDREF" != "$NEWREF" ]; then '.
 	     'git --git-dir='.$R.' log --oneline --no-decorate "$OLDREF..$NEWREF"; '.
 	     'git --git-dir='.$R.' diff --stat "$OLDREF" "$NEWREF"; fi');
 return @steps;
 }
 
-# Dagitim: bare repodaki dali hedefe yaz.
-# checkout -f: calisma kopyasi bu dalla ayni hale gelir. IZLENEN dosyalardan
-# repoda silinmis olanlar buradan da silinir; IZLENMEYEN dosyalara (yuklemeler,
-# .env) dokunulmaz - onlari yalnizca 'git clean' silerdi, kullanmiyoruz.
-# Yol belirtmiyoruz ('-- .' yok) ki HEAD de dala tasinsin.
+# Deploy: write the bare repository's branch into the target.
+# checkout -f makes the working copy match the branch: TRACKED files deleted in
+# the repository are deleted here too, while UNTRACKED files (uploads, .env) are
+# left alone - only 'git clean' would remove those, and it is not used.
+# No path is given ('-- .') so that HEAD moves to the branch as well.
 sub deploy_steps
 {
 my ($d, $dep) = @_;
@@ -507,23 +507,21 @@ my $T = quotemeta(&deploy_target_dir($d, $dep));
 my $B = quotemeta($dep->{'branch'});
 my @steps;
 push(@steps, "mkdir -p $T");
-# checkout'un "Already on 'main'" satiri BILEREK duruyor. Uc durumda da ayni
-# ciktigi olculdu (dosyalar ilk kez yazilirken, hicbir sey degismezken ve
-# gercekten degisirken), yani dagitimin bir sey yapip yapmadigini soylemiyor -
-# ama onu zaten panel soyluyor: cekme bolumu neyin geldigini, liste ve
-# bekleyen dagitim kutusu da yayindaki ile cekilen ucu gosteriyor. '-q' ile
-# susturulunca dagitim bolumu tek satira dusuyor ve fazla ciplak kaliyordu.
+# checkout's "Already on 'main'" line is kept deliberately. It was measured to
+# be identical in all three cases (first write, nothing changed, real change),
+# so it says nothing about whether the deploy did anything - the panel already
+# says that. Silencing it with '-q' left the deploy section at a single line,
+# which read as too bare.
 push(@steps, "git --git-dir=$R --work-tree=$T checkout -f $B");
-# Yayina giren commit. '--oneline' git'in KENDI hazir bicimi ve cekme
-# bolumundeki commit listesiyle ayni gorunuyor; onceki
-# --pretty=format:"%h %ad %an %s" bizim uydurdugumuz bicimdi.
+# The commit that went live. '--oneline' is git's OWN format and matches the
+# commit list in the pull section; the previous --pretty=format was ours.
 push(@steps, "git --git-dir=$R --work-tree=$T log -1 --oneline --no-decorate");
 return @steps;
 }
 
-# Dagitim sonrasi komutlar. Kullanicinin yazdigi satirlar hedef klasorde,
-# domainin kendi yetkileriyle calisir. 'set -e' altinda oldugu icin ILK
-# HATADA durur: yarim kalmis bir dagitimi basarili saymiyoruz.
+# Post-deploy commands. The user's lines run in the target directory with the
+# domain's own privileges. Under 'set -e' they stop at the FIRST failure: a
+# half-finished deploy is not counted as success.
 sub action_steps
 {
 my ($d, $dep) = @_;
@@ -532,14 +530,14 @@ my $cmds = &actions_read($d, $dep);
 return ( ) if ($cmds !~ /\S/);
 my $target = &deploy_target_dir($d, $dep);
 
-# Kullanicinin blogu bir BETIK DOSYASINA yaziliyor ve tek satirla
-# calistiriliyor. Sebebi: komut dizesine satir sonu koyamiyoruz
-# (command_as_user quotemeta'liyor, bash ters-bolu + satir sonunu satir
-# devami sayip siliyor), oysa 'if'/'for' gibi yapilar satir sonu ister.
-# Dosyaya yazinca kutuya ne yazildiysa aynen o calisiyor.
+# The user's block is written to a SCRIPT FILE and invoked in one line. The
+# reason: a newline cannot survive the command string - command_as_user
+# quotemetas it and bash then reads backslash-newline as a line continuation -
+# while 'if' and 'for' need newlines. Written to a file, exactly what was typed
+# in the box runs.
 #
-# Dosya domainin KENDI dizininde ve KENDI kullanicisinin: betigi calistiran
-# da o. Ayrica orada durmasi ise yariyor - ne calistigi SSH ile de gorulebilir.
+# The file lives in the domain's OWN directory as its OWN user, which also runs
+# it - and having it there is useful, since what ran can be inspected over SSH.
 my $file = &actions_script_path($d, $dep);
 my $script = "set -e
 ".
@@ -548,8 +546,8 @@ my $script = "set -e
 my $bindir = &ensure_php_path_dir($d, $target);
 $script .= "PATH=".quotemeta($bindir).":\"\$PATH\"
 " if ($bindir);
-# Kabugun kendi izlemesi: her komut calisirken loga dusuyor, dongulerin ve
-# kosullarin ici dahil. Elle yankilamak cok satirli yapilari bozardi.
+# The shell's own tracing: every command is logged as it runs, including
+# inside loops and conditionals. Echoing by hand would break multi-line blocks.
 $script .= "set -x
 ";
 my $body = $cmds;
@@ -563,27 +561,26 @@ $script .= $body;
 
 &write_user_script($d, $file, $script) || return ( );
 
-# Betigin basindaki 'set -x' her komutu calisirken '+ komut' olarak
-# basiyor, yani ekran zaten konsol gibi ilerliyor - ayrica baslik
-# yankilamaya gerek yok.
+# The 'set -x' at the top of the script prints '+ command' as each one runs,
+# so the screen already reads like a console; no heading is needed.
 my @steps;
-# Betik kendi icinde 'set -e' tasiyor; hata verirse cikis kodu sifirdan
-# farkli oluyor ve disaridaki 'set -e' dagitimi durduruyor.
+# The script carries its own 'set -e', so a failure gives a non-zero exit and
+# the outer 'set -e' stops the deploy.
 push(@steps, "bash ".quotemeta($file));
 return @steps;
 }
 
-# actions_script_path(&domain, &deploy) -> calistirilacak betigin yolu
+# actions_script_path(&domain, &deploy) -> path of the script that is run
 sub actions_script_path
 {
 my ($d, $dep) = @_;
 return $d->{'home'}."/.vmkit/actions-".$dep->{'id'}.".sh";
 }
 
-# write_user_script(&domain, yol, icerik) -> basarili mi
-# Dosyayi domainin kullanicisina ait ve yalnizca ona okunur/calistirilir
-# olarak yazar (0700). Root yazip sahipligi devrediyoruz: icerigi baska
-# kullanicilar gormesin, calistiran ise domainin kendisi olsun.
+# write_user_script(&domain, path, content) -> success?
+# Writes the file owned by the domain's user and readable/executable only by
+# them (0700). Root writes it and hands over ownership: other users must not
+# see the content, and the domain itself is what runs it.
 sub write_user_script
 {
 my ($d, $file, $text) = @_;
@@ -603,15 +600,15 @@ return 0 if ($@);
 return 1;
 }
 
-# run_streaming(komut, saniye, &geri-cagirma) -> (cikti, zaman-asimi, basarili)
+# run_streaming(command, seconds, &callback) -> (output, timed-out, success)
 #
-# Ciktiyi SATIR SATIR okuyup hem geri cagirmaya veriyor hem biriktiriyor.
-# backquote_with_timeout bunu yapamiyor: komut bitene kadar hicbir sey
-# dondurmuyor, dolayisiyla sayfa da bos bekliyor. Uzun suren bir 'composer
-# install' sirasinda kullanicinin ekrani bos kalmasin diye gerekiyor.
+# Reads the output LINE BY LINE, passing each to the callback and collecting
+# it. backquote_with_timeout cannot do this: it returns nothing until the
+# command finishes, so the page would sit blank through a long
+# 'composer install'.
 #
-# Zaman asiminda sureci OLDURUYORUZ: yalnizca okumayi birakmak arkada
-# calisan bir komut birakirdi.
+# On timeout the process is KILLED: merely stopping the read would leave a
+# command running in the background.
 sub run_streaming
 {
 my ($cmd, $secs, $cb) = @_;
@@ -639,26 +636,25 @@ close($fh);
 return ($out, 0, $? == 0 ? 1 : 0);
 }
 
-# Cekme ve dagitimin tamami icin zaman asimi. Ayarda yoksa 900: modul
-# yukseltilirken var olan config dosyasina yeni anahtarlar EKLENMIYOR
-# (update-plugins.sh yalnizca dosya yoksa kopyaliyor), o yuzden her okuma
-# kendi varsayilanini tasimali.
+# Timeout for the whole pull and deploy. 900 when unset: every read carries its
+# own default, because a module upgrade does not necessarily add new keys to an
+# existing config file.
 sub deploy_timeout
 {
 my $t = $config{'timeout'};
 return $t && $t =~ /^\d+$/ && $t > 0 ? $t : 900;
 }
 
-# deploy_run(&domain, &deploy, op, [&geri-cagirma]) -> (basarili?, cikti)
+# deploy_run(&domain, &deploy, op, [&callback]) -> (success?, output)
 #
-# Geri cagirma verilirse cikti satir satir ona gonderiliyor ve sayfa is
-# ilerledikce doluyor. Verilmezse eskisi gibi toplu donuyor - web kancasi ve
-# komut satiri boyle kullaniyor, onlarin akitacak bir ekrani yok.
-#   op 'pull'   yalnizca cek
-#   op 'deploy' yalnizca dagit (once cekilmis olmali)
-#   op 'both'   cek ve dagit
-# Tum komutlar domainin kendi kullanicisi olarak, tek bir kabuk oturumunda ve
-# 'set -e' altinda calisir.
+# With a callback the output is sent line by line and the page fills as the
+# work proceeds. Without one it is returned in one piece - the webhook and the
+# command line use it that way, having no screen to stream to.
+#   op 'pull'   pull only
+#   op 'deploy' deploy only (something must have been pulled first)
+#   op 'both'   pull and deploy
+# Every command runs as the domain's own user, in a single shell session, under
+# 'set -e'.
 sub deploy_run
 {
 my ($d, $dep, $op, $cb) = @_;
@@ -667,9 +663,9 @@ my @steps;
 push(@steps, &pull_steps($d, $dep))   if ($op eq 'pull' || $op eq 'both');
 if ($op eq 'deploy' || $op eq 'both') {
 	if ($op eq 'deploy' && !-d &deploy_repo_path($d, $dep)) {
-		# Geri cagirma varsa mesaj EKRANA da dusmeli: sayfa yalnizca
-		# akan satirlari basiyor, donen $out'u kullanmiyor. Yoksa
-		# hicbir sey cekilmemisken 'Dagit' bombos bir ekran veriyordu.
+		# With a callback the message must also reach the SCREEN: the
+		# page prints only streamed lines and ignores the returned
+		# $out, so 'Deploy' with nothing pulled showed a blank screen.
 		&$cb($text{'err_nopull'}) if ($cb);
 		return (0, $text{'err_nopull'});
 		}
@@ -677,18 +673,17 @@ if ($op eq 'deploy' || $op eq 'both') {
 	push(@steps, &action_steps($d, $dep));
 	}
 
-# Adimlar TEK SATIRDA, ';' ile birlestiriliyor - araya satir sonu KOYULAMAZ.
-# Komut command_as_user'dan gecerken quotemeta'lanıyor ve quotemeta bir satir
-# sonunu ters-bolu + satir sonu yapiyor; bash bunu SATIR DEVAMI sayip siliyor,
-# yani butun betik tek satira yapisiyor: "set -e" + "echo" -> "set -eecho".
-# (Olculdu: 'bash -c' ayni hatayi veriyor.)
+# The steps are joined into ONE LINE with ';' - a newline CANNOT be used.
+# command_as_user quotemetas the command, which turns a newline into
+# backslash-newline, and bash then reads that as a LINE CONTINUATION and
+# removes it, gluing the whole script into one line: "set -e" + "echo" becomes
+# "set -eecho". (Measured; 'bash -c' fails the same way.)
 #
-# Kullanicinin cok satirli yazabilmesi bu yuzden baska turlu cozuluyor: onun
-# blogu ayri bir betik DOSYASINA yaziliyor ve buradan tek satirla
-# calistiriliyor (bkz. action_steps).
+# This is why the user's multi-line block is solved differently: it is written
+# to its own script FILE and invoked in one line from here - see action_steps.
 my $inner = "set -e; ".join("; ", @steps);
 my $cmd = &command_as_user($d->{'user'}, 1, $inner);
-# Dagitim sonrasi komutlar (composer install gibi) uzun surebiliyor.
+# Post-deploy commands (composer install and the like) can take a while.
 my $secs = &deploy_timeout();
 my ($out, $timed, $ok);
 if ($cb) {
@@ -698,22 +693,21 @@ else {
 	($out, $timed) = &backquote_with_timeout("$cmd 2>&1", $secs);
 	$ok = !$timed && !$? ? 1 : 0;
 	}
-# Zaman asiminda ciktinin UZERINE yazmiyoruz: o ana kadar akan satirlar
-# ekranda duruyor, kayit dosyasinda da dursun. Not sona ekleniyor.
+# On timeout the output is NOT overwritten: the lines that streamed so far are
+# on screen and belong in the log too. The note is appended.
 $out .= "\n".$text{'err_timeout'}."\n" if ($timed);
 
-# Log ayri dosyada: key=value bicimi coksatirli degeri tasiyamaz.
+# The log is a separate file: the key=value format cannot hold a multi-line
+# value.
 #
-# Dosyaya YALNIZCA ham cikti yaziliyor - tarih/durum basligi YOK. Ikisi
-# zaten deployment kaydinda (last_time, last_op, last_status) duruyor ve
-# deploylog.cgi onlari oradan basiyor. Basligi buraya yazarken tarihi
-# make_date ile bicimlendiriyorduk; tema make_date'i EZIYOR ve HTML
-# donduruyor, o yuzden log sayfasinda ham metin olarak
-# "<span data-filesize-bytes=...>" gorunuyordu.
+# ONLY raw output is written - no date or status header. Both already live in
+# the deployment record (last_time, last_op, last_status) and deploylog.cgi
+# prints them from there. The header used to format the date with make_date,
+# which the theme OVERRIDES to return HTML, so the log page showed a literal
+# "<span data-filesize-bytes=...>".
 &ensure_log_dir();
-# Webmin'in tempfile fonksiyonlari bareword dosya tanitici bekliyor; 'use
-# strict' altinda bu yasak oldugu icin Virtualmin eklentilerinin kendi
-# kullandigi kalipla kisa sureligine kapatiyoruz.
+# Webmin's tempfile functions expect bareword filehandles, which 'use strict'
+# forbids; the same pattern Virtualmin's own plugins use turns it off briefly.
 no strict "subs";
 &open_tempfile(LOG, ">".&deploy_log_path($d, $dep));
 &print_tempfile(LOG, $out);
@@ -724,8 +718,8 @@ $dep->{'last_time'}   = time();
 $dep->{'last_status'} = $ok ? "ok" : "failed";
 $dep->{'last_op'}     = $op;
 if ($ok) {
-	# Cekilen ve dagitilan ucu ayri tutuyoruz: manuel modda "cekildi ama
-	# daha yayinlanmadi" durumunu bundan goruyoruz.
+	# The pulled and deployed tips are tracked separately: in manual mode
+	# that is what shows "pulled but not published yet".
 	my $ref = &current_ref($d, $dep);
 	$dep->{'pulled_ref'} = $ref if ($ref && $op ne 'deploy');
 	$dep->{'deployed_ref'} = ($dep->{'pulled_ref'} || $ref)
@@ -743,21 +737,21 @@ return $op eq 'pull'   ? $text{'op_pull'} :
        $op eq 'deploy' ? $text{'op_deploy'} : $text{'op_both'};
 }
 
-# deploy_commits(&domain, &deploy, [adet]) -> (\@commit, hata)
-# Bare repodaki dalin son commit'leri. Repo yalnizca ilk deploy'dan sonra
-# olustugu icin yoksa acik bir mesaj donuyoruz.
+# deploy_commits(&domain, &deploy) -> (\@commits, error)
+# Commits on the branch in the bare repository. The repository only exists
+# after the first pull, so its absence gets an explicit message.
 #
-# Alanlar birim ayiricisi (0x1f) ile ayriliyor: commit konusunda her noktalama
-# gecebilir, metin bir ayirici guvenli olmaz.
+# Fields are separated by the unit separator (0x1f): a commit subject can
+# contain any punctuation, so no textual separator would be safe.
 sub deploy_commits
 {
 my ($d, $dep) = @_;
 my $repo = &deploy_repo_path($d, $dep);
 return (undef, $text{'commits_norepo'}) if (!-d $repo);
 
-# Dalin TAMAMI listeleniyor, son N tanesi degil: bu sayfa gecmise bakmak
-# icin var ve nerede kesilecegini bilmiyoruz. Cikti tek satirlik kayitlar
-# oldugu icin binlerce commit'te bile kucuk kaliyor.
+# The WHOLE branch is listed rather than the last N: the page exists for
+# looking at history and there is no obvious place to cut. Each record is one
+# line, so even thousands of commits stay small.
 my $fmt = '%h%x1f%an%x1f%ad%x1f%s';
 my $inner = "git --git-dir=".quotemeta($repo).
 	    " log --no-decorate --date=short --format=".quotemeta($fmt).
@@ -778,19 +772,19 @@ return (\@rv, undef);
 }
 
 
-# ---- duzenleme formu ----------------------------------------------------
-# Form TEK YERDE ciziliyor cunku iki sayfa da gosteriyor: edit_deploy.cgi ve
-# "Repoyu kontrol et" basildiginda save_deploy.cgi.
+# ---- the edit form -------------------------------------------------------
+# Drawn in ONE place because two pages show it: edit_deploy.cgi and
+# save_deploy.cgi when "Check repository" is pressed.
 #
-# Neden save_deploy.cgi de cizmek zorunda: formu iki ayri hedefe gonderecek
-# tek yol dugmedeki 'formaction' niteligiydi, ama tema form gonderimini kendi
-# ele aldigi icin onu yok sayiyor ve her sey formun action'ina gidiyordu -
-# Kontrol dugmesi sessizce KAYDEDIP listeye donuyordu. Artik form her zaman
-# save_deploy.cgi'ye gidiyor, o da 'check' basildiysa kaydetmek yerine formu
-# yeniden ciziyor.
+# Why save_deploy.cgi has to draw it too: the only way to send the form to two
+# targets was the button's 'formaction' attribute, but the theme handles form
+# submission itself and ignores it, so everything went to the form's action -
+# the Check button silently SAVED and returned to the list. The form now always
+# posts to save_deploy.cgi, which redraws instead of saving when 'check' was
+# pressed.
 
-# deploy_from_in(&domain) -> (&deploy, komut-metni, yeni-mi)
-# Formdan gelenleri kayitla birlestirir.
+# deploy_from_in(&domain) -> (&deploy, command-text, is-new)
+# Merges the submitted form with the stored record.
 sub deploy_from_in
 {
 my ($d) = @_;
@@ -808,7 +802,7 @@ foreach my $f ('name', 'repo', 'branch', 'target', 'mode') {
 	}
 my $actions;
 if ($in{'check'} || $in{'regen'}) {
-	# Alan eylemi turundan geliyoruz: kullanicinin yazdiklari %in'de.
+	# Came from a field action, so what the user typed is in %in.
 	$dep->{'actions_on'} = $in{'actions_on'} ? 1 : 0;
 	$actions = $in{'actions'};
 	}
@@ -816,9 +810,9 @@ else {
 	$actions = &actions_read($d, $dep);
 	}
 
-# Ad bos birakildiysa repo adresinin son parcasindan doldur:
-# ".../vmin-kit.git" -> "vmin-kit.git". Elle bir ad yazmak cogu zaman
-# gereksiz; yazan olursa ona dokunulmuyor.
+# If the name was left empty, fill it from the last part of the repository URL
+# (".../vmin-kit.git" -> "vmin-kit.git"). Typing a name is usually unnecessary,
+# and one that was typed is never touched.
 if ($dep->{'repo'} && ($dep->{'name'} || '') !~ /\S/) {
 	my $n = $dep->{'repo'};
 	$n =~ s/\/+$//;
@@ -827,10 +821,9 @@ if ($dep->{'repo'} && ($dep->{'name'} || '') !~ /\S/) {
 	$dep->{'name'} = $n if ($n =~ /\S/);
 	}
 
-# Kanca adresi EKLERKEN de gorunsun. Eskiden UUID yalnizca kayittan sonra
-# uretiliyordu, yani adresi almak icin "kaydet, listeye don, tekrar duzenle"
-# gerekiyordu. Artik form acilirken uretiliyor, gizli alanda tasiniyor ve
-# kaydederken ayni deger yaziliyor.
+# The hook URL is visible while ADDING too. The UUID used to be generated only
+# on save, so getting the URL meant "save, go back, edit again". It is now
+# generated when the form opens, carried in a hidden field and stored on save.
 $dep->{'uuid'} = $in{'uuid'}
 	if ($in{'uuid'} && $in{'uuid'} =~ /^[a-f0-9]{32}$/);
 $dep->{'uuid'} ||= &new_uuid();
@@ -838,12 +831,12 @@ $dep->{'uuid'} ||= &new_uuid();
 return ($dep, $actions, $new);
 }
 
-# print_deploy_form(&domain, &deploy, komut-metni, yeni-mi)
+# print_deploy_form(&domain, &deploy, command-text, is-new)
 sub print_deploy_form
 {
 my ($d, $dep, $actions, $new) = @_;
 
-# Repo adresi varsa dallari sorgula (klonlamaz, yalnizca ls-remote).
+# With a repository URL, query the branches (ls-remote only, no clone).
 my ($defbranch, $branches, $rerr);
 if ($dep->{'repo'}) {
 	($defbranch, $branches, $rerr) = &remote_branches($d, $dep->{'repo'});
@@ -853,7 +846,8 @@ if ($dep->{'repo'}) {
 if ($rerr) {
 	print "<p><b>$text{'edit_echeck'}</b></p>\n";
 	print "<pre style='white-space:pre-wrap'>",&html_escape($rerr),"</pre>\n";
-	# Ozel repo ise domainin SSH anahtari GitHub/Gitea HESABINA eklenmeli.
+	# For a private repository the domain's SSH key must be added to the
+	# GitHub/Gitea ACCOUNT.
 	print "<p>",&ui_link("sshkey.cgi?dom=$d->{'id'}&new=$new&id=$dep->{'id'}".
 			     "&repo=".&urlize($dep->{'repo'}),
 			     $text{'edit_showkey'}),"</p>\n";
@@ -863,22 +857,23 @@ print &ui_form_start("save_deploy.cgi", "post");
 print &ui_hidden("dom", $d->{'id'});
 print &ui_hidden("new", $new);
 print &ui_hidden("id", $dep->{'id'});
-# Kanca adresi kayittan once uretiliyor; formdan geri gelsin diye gizli alanda.
+# The hook UUID is generated before saving; hidden so it survives the round trip.
 print &ui_hidden("uuid", $dep->{'uuid'});
 print &ui_table_start($text{'edit_header'}, "width=100%", 2);
 
 print &ui_table_row($text{'edit_name'},
 	&ui_textbox("name", $dep->{'name'}, 30));
 
-# Kontrol dugmesi ADRESIN YANINDA: o alana ait bir eylem, sayfanin altindaki
-# kaydet/sil dugmeleriyle isi yok. Ayni formun icinde ayri adli bir submit,
-# save_deploy.cgi ona bakip kaydetmek yerine formu yeniden ciziyor.
+# The Check button sits NEXT TO THE URL: it acts on that field and has nothing
+# to do with the save/delete buttons at the bottom. It is a separately named
+# submit in the same form, which save_deploy.cgi reads to redraw instead of save.
 print &ui_table_row($text{'edit_repo'},
 	&ui_textbox("repo", $dep->{'repo'}, 50)." ".
 	&ui_submit($text{'edit_check'}, "check")."<br>".
 	"<font size=-1>$text{'edit_repo_help'}</font>");
 
-# Dal, repo okunana kadar secilemez - repoya bagli tek alan bu.
+# The branch cannot be chosen until the repository is read - the only field
+# that depends on it.
 print &ui_table_row($text{'edit_branch'},
 	$branches ? &ui_select("branch", $dep->{'branch'}, $branches, 1, 0, 0)
 		  : &ui_select("branch", undef, [ ], 1, 0, 0, 1)." ".
@@ -889,8 +884,8 @@ print &ui_table_row($text{'edit_target'},
 	&ui_textbox("target", &target_sub($d, $dep->{'target'}), 25)."<br>".
 	"<font size=-1>$text{'edit_target_help'}</font>");
 
-# Acilir liste, radyo dugmesi degil: iki radyo yan yana duruken orada bir
-# ayar oldugu bile fark edilmiyordu.
+# A dropdown rather than radio buttons: side by side, the two radios did not
+# even read as a setting.
 print &ui_table_row($text{'edit_mode'},
 	&ui_select("mode", $dep->{'mode'} || 'manual',
 		   [ [ "manual", $text{'mode_manual_desc'} ],
