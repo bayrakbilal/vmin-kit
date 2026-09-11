@@ -1229,65 +1229,57 @@ step_report(){
   docker ps --format '{{.Names}}' 2>/dev/null | grep -x portainer >/dev/null &&
     comps+=("Portainer")
   if command -v composer >/dev/null 2>&1; then
-    # Composer'i dagitim paketinden kuruyoruz: kendini guncelleyemez. Yeni
-    # cerceveler daha yeni bir composer isterse cevap burada gorunur.
+    # Composer comes from the distribution package and cannot self-update, so
+    # if a framework ever needs a newer one, the answer is visible here.
     #
-    # SABIT ALAN NUMARASI KULLANILMIYOR: eskiden $3 aliniyordu ve Ubuntu
-    # 22.04'te ozette surum yerine "2022-02-04" yazdi - o satirda alan sirasi
-    # beklenenden bir kaymis. Surum numarasina benzeyen ILK alan aliniyor.
+    # No fixed field number: $3 used to be read and on Ubuntu 22.04 that landed
+    # on the date instead of the version. The FIRST field shaped like a version
+    # number is taken.
     #
-    # awk erken 'exit' etmiyor: girdiyi bitirmeden kapatsaydi composer
-    # SIGPIPE alir, 'pipefail' altinda atama basarisiz olurdu.
+    # awk does not 'exit' early: closing the pipe before the input ends would
+    # send composer a SIGPIPE and fail the assignment under pipefail.
     cmp="$(composer --version --no-interaction 2>/dev/null |
            awk 'NR==1{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+/){v=$i; break}}
                 END{print v}')"
     comps+=("Composer ${cmp:-}")
   fi
 
-  # Domain bilgisi TEK cagrida aliniyor; iki alan bu ciktidan ayikleniyor
-  # (eskiden ayni komut dort kez calisiyordu).
+  # Domain details are fetched in ONE call and two fields are read from it.
   dinfo="$(virtualmin list-domains --domain "$MAIN_DOMAIN" --multiline 2>/dev/null)"
-  # Hangi ozelliklerin acildigini Virtualmin'in kendisinden okuyoruz: domain
-  # --default-features ile olusturuldugu icin liste sunucunun kendi
-  # yapilandirmasindan geliyor, varsayimda bulunmuyoruz.
+  # Which features are on is read from Virtualmin rather than assumed.
   dfeat="$(printf '%s\n' "$dinfo" | awk -F": " '/^[[:space:]]*Features:/{print $2; exit}')"
   dplug="$(printf '%s\n' "$dinfo" | awk -F": " '/^[[:space:]]*Plugins:/{print $2; exit}')"
 
   say ""
-  say "=========== vmin-kit kurulum ozeti ==========="
-  say "Tarih        : $(date '+%Y-%m-%d %H:%M:%S %z')"
-  say "Arac surumu  : $(vminkit_version)"
-  say "Ana domain   : $MAIN_DOMAIN"
-  say "Hostname     : $HOSTNAME_FQDN  (${ip:-IP bilinmiyor})"
-  # Mod ETIKETIN ICINDE: "DNS (harici)" / "DNS (bind)". Degeri satirin
-  # sagina yazmak yerine boyle daha kisa ve sutun hizasi bozulmuyor -
-  # etiketler 12 karaktere yaslaniyor.
-  local dnslabel
-  if [ -n "${DNS_MODE:-}" ] && [ "$DNS_MODE" != bilinmiyor ]; then
-    dnslabel="DNS ($DNS_MODE)"
-  else
-    dnslabel="DNS"
+  say "=========== vmin-kit installation summary ==========="
+  say "Date         : $(date '+%Y-%m-%d %H:%M:%S %z')"
+  say "Tool version : $(vminkit_version)"
+  say "Main domain  : $MAIN_DOMAIN"
+  say "Hostname     : $HOSTNAME_FQDN  (${ip:-IP unknown})"
+  local dnsval="${AUTH_NS:-unknown}"
+  if [ -n "${DNS_MODE:-}" ] && [ "$DNS_MODE" != unknown ]; then
+    dnsval="$DNS_MODE - $dnsval"
   fi
-  say "$(printf '%-12s : %s' "$dnslabel" "${AUTH_NS:-bilinmiyor}")"
-  say "               zone sablonundaki cift: ${NS1:-} / ${NS2:-}"
-  if [ -n "$dfeat" ]; then say "Ozellikler   : $dfeat"; fi
-  if [ -n "$dplug" ]; then say "Eklentiler   : $dplug"; fi
-  # Elle birlestiriliyor: 'IFS=" | "' ile "${comps[*]}" ISE YARAMAZ, bash
-  # IFS'in yalnizca ILK karakterini ayirici olarak kullanir (yani bosluk).
+  say "DNS          : $dnsval"
+  say "               zone template pair: ${NS1:-} / ${NS2:-}"
+  if [ -n "$dfeat" ]; then say "Features     : $dfeat"; fi
+  if [ -n "$dplug" ]; then say "Plugins      : $dplug"; fi
+  # Joined by hand: 'IFS=" | "' with "${comps[*]}" does NOT work, bash uses
+  # only the FIRST character of IFS as the separator.
   if [ ${#comps[@]} -gt 0 ]; then
     local joined="" c
     for c in "${comps[@]}"; do
       if [ -z "$joined" ]; then joined="$c"; else joined="$joined | $c"; fi
     done
-    say "Bilesenler   : $joined"
+    say "Components   : $joined"
   fi
 
-  # Adim ADI yazilmiyor: 'panel_sites' fonksiyon adi, okuyan icin bir sey
-  # ifade etmiyor. Sorunun ne oldugu zaten yukarida kendi satirinda yaziyor;
-  # burada tek is "her sey yolunda gitmedi" bayragini kaldirmak.
+  # No step NAME here: 'panel_sites' is a function name and means nothing to a
+  # reader. What went wrong is already on its own line above; this only raises
+  # the flag that not everything succeeded.
   if [ ${#VMINKIT_FAILED[@]} -gt 0 ]; then
     say ""
-    warn "Eksik tamamlandi - sorunlar yukarida [!] ile isaretli."
+    warn "Finished with problems - see the [!] lines above."
   fi
 
   say ""

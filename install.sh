@@ -175,9 +175,9 @@ log "  $MAIN_DOMAIN -> ${MAIN_IPS[*]:-(cozumlemiyor)}"
 log "  $HOSTNAME_FQDN -> ${HOST_IPS[*]:-(cozumlemiyor)}"
 log "  NS: ${NS_NAMES[*]:-(yok)}"
 
-DNS_MODE=bilinmiyor
+DNS_MODE=unknown
 if [ ${#NS_NAMES[@]} -gt 0 ]; then
-  DNS_MODE=harici
+  DNS_MODE=external
   for n in "${NS_NAMES[@]}"; do
     while read -r nip; do
       [ -n "$nip" ] || continue
@@ -193,13 +193,13 @@ fi
 NS1="${NS1_PREFIX:-ns1}.${MAIN_DOMAIN}"
 NS2="${NS2_PREFIX:-ns2}.${MAIN_DOMAIN}"
 
-# Gercekte otoriter olan sunucular - sadece bilgi ve rapor icin.
-AUTH_NS="${NS_NAMES[*]:-bilinmiyor}"
+# The servers that are actually authoritative - information only.
+AUTH_NS="${NS_NAMES[*]:-unknown}"
 
 case "$DNS_MODE" in
-  bind)    log "  Mod: BIND - NS kayitlari bu sunucuyu gosteriyor (sunucu otoriter)." ;;
-  harici)  log "  Mod: HARICI DNS - otoriter: $AUTH_NS" ;;
-  *)       warn "  Mod: belirlenemedi (NS kaydi okunamadi)." ;;
+  bind)     log "  Mode: BIND - the NS records point at this server (it is authoritative)." ;;
+  external) log "  Mode: EXTERNAL DNS - authoritative: $AUTH_NS" ;;
+  *)        warn "  Mode: undetermined (no NS record could be read)." ;;
 esac
 say ""
 # ---- 4) ozet ----
