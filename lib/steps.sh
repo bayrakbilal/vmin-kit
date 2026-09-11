@@ -1,41 +1,28 @@
 #!/usr/bin/env bash
-# Adim fonksiyonlari. install.sh bunlari ACIK SIRAYLA cagirir.
-# Gerekli degiskenler install.sh tarafindan set edilir / config.env'den gelir:
-#   MAIN_DOMAIN, HOSTNAME_FQDN, NS1, NS2, DNS_MODE, POSTGRES,
-#   docker, portainer, PORTAINER_*
-# Hepsi idempotent: ikinci kez calistirmak zarar vermez.
+# Step functions. install.sh calls them in an explicit order. Their inputs are
+# set by install.sh or come from config.env: MAIN_DOMAIN, HOSTNAME_FQDN, NS1,
+# NS2, DNS_MODE and the feature flags. Every step is idempotent.
 
-# Not: ayri bir rapor dosyasi (vmin-kit-rapor.txt) YOK. Ozet artik dogrudan
-# ekrana ve kurulum kaydina yaziliyor - bkz. step_report.
-
-# Basarisiz adimlarin listesi. Adimlar 'set +e' altinda calisiyor: biri hata
-# verirse kurulum devam ediyor ve ekranda tek bir kirmizi satir kaliyor. Uzun
-# bir kurulumda o satir kaybolur, o yuzden sonuclari topluyoruz - hem kapanista
-# hem raporda yaziliyor.
+# Steps run under 'set +e', so a failure does not stop the install. Their names
+# are collected here because a single red line scrolls away during a long run;
+# the summary and the closing line both read this.
 VMINKIT_FAILED=()
 
-# Alt alanlarin sertifika durumu: onek -> 1 (gecerli ACME sertifikasi var) /
-# 0 (self-signed kaldi). ensure_site_cert dolduruyor, port kapatan adimlar
-# okuyor.
+# Certificate state per sub-domain prefix: 1 = valid ACME cert, 0 = self-signed.
+# ensure_site_cert writes it, the port-closing steps read it.
 #
-# NEDEN GEREKLI: bir alt alan self-signed kaldiysa tarayici o adrese
-# guvenmiyor. Tam o anda yonetim portunu da disariya kapatirsak geriye HIC
-# erisim yolu kalmiyor - Ubuntu 24.04 turunda webmin. ve usermin. sertifikasiz
-# kaldi, portlar da kapandi ve panele girilemedi. Artik karar bu tabloya
-# bakiyor: sertifika varsa port kapanir, yoksa acik kalir.
+# Without it we can lock a user out of their own server: a browser will not
+# trust a self-signed address, so if the management port is closed at the same
+# moment there is no way in at all.
 declare -A VMINKIT_SITE_CERT=()
 
-# run_step <adim-fonksiyonu>
-# Adimi calistirir, basarisiz olursa adi listeye yazar. Donus degerini aynen
-# geciriyor ki cagiran taraf isterse ayrica bakabilsin.
+# run_step <step-function>
+# Runs the step and records its name on failure. The status is taken with
+# '|| rc=$?' rather than 'if "$fn"' - a failing if without else yields 0, so $?
+# would be the if's status, not the step's.
 #
-# Donus kodu 'if "$fn"; then' ile YAKALANMAZ: basarisiz ve else'siz bir if
-# bilesik komutu 0 dondurdugu icin $? o noktada adimin degil if'in sonucudur.
-# '|| rc=$?' dogrudan komutun kodunu aliyor.
-#
-# Ekrana hata AYRINTISI basilmiyor. Bir sure adimin son log satirlarini
-# gosteriyorduk; gereksiz cikti. Komutlarin ciktisi zaten kurulum kaydinda,
-# ekranin isi durumu gostermek.
+# No error DETAIL is printed: command output is already in the install log, and
+# the screen's job is to show state.
 run_step(){
   local fn="$1" rc=0
   "$fn" || rc=$?
@@ -43,70 +30,51 @@ run_step(){
   return "$rc"
 }
 
-# Araci ureten surum: 12 ay sonra "bu sunucu hangi vmin-kit ile kuruldu"
-# sorusunun cevabi. Depo yoksa (arsivden acilmissa) bilinmiyor deriz.
+# Which version of the tool built this server - the answer a year from now.
+# '-uno' ignores untracked files: the install leaves files of its own behind,
+# and counting them reported "modified" when no code had changed.
 vminkit_version(){
   local v
   v="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || true)"
-  [ -n "$v" ] || { printf 'bilinmiyor'; return; }
-  # '-uno': IZLENMEYEN dosyalar sayilmaz. Yoksa kurulumun kendi biraktigi bir
-  # dosya (eski vmin-kit-rapor.txt gibi) yuzunden, kodda hicbir degisiklik
-  # olmadigi halde "degistirilmis" yaziyordu. Bu satirin tek isi "bu sunucu
-  # hangi vmin-kit ile kuruldu" sorusuna cevap vermek; yanlis alarm degeri
-  # dusuruyor.
+  [ -n "$v" ] || { printf 'unknown'; return; }
   if [ -n "$(git -C "$ROOT_DIR" status --porcelain -uno 2>/dev/null)" ]; then
-    v="$v (degistirilmis calisma kopyasi)"
+    v="$v (modified working copy)"
   fi
   printf '%s' "$v"
 }
 
 step_hostname(){
   local cur; cur="$(hostname -f 2>/dev/null || hostname)"
-  if [ "$cur" = "$HOSTNAME_FQDN" ]; then ok "Hostname zaten $HOSTNAME_FQDN."; return; fi
-  log "Hostname -> $HOSTNAME_FQDN (eski: $cur)"
+  if [ "$cur" = "$HOSTNAME_FQDN" ]; then ok "Hostname is already $HOSTNAME_FQDN."; return; fi
+  log "Hostname -> $HOSTNAME_FQDN (was: $cur)"
   hostnamectl set-hostname "$HOSTNAME_FQDN"
   local ip short; ip="$(detect_ip)"; short="${HOSTNAME_FQDN%%.*}"
   if ! grep -q "[[:space:]]$HOSTNAME_FQDN\([[:space:]]\|$\)" /etc/hosts; then
     printf '%s %s %s\n' "${ip:-127.0.1.1}" "$HOSTNAME_FQDN" "$short" >> /etc/hosts
   fi
-  ok "Hostname ayarlandi."
+  ok "Hostname set."
 }
 
 step_virtualmin(){
-  if command -v virtualmin >/dev/null 2>&1; then ok "Virtualmin zaten kurulu (atlaniyor)."; return; fi
-  ensure_pkg curl curl || { err "curl kurulamadi."; return 1; }
-  # ADRES ONEMLI: 'install.sh', 'virtualmin-install.sh' DEGIL.
-  #
-  # Eski ad hala servis ediliyor ama BIR SURUMDE DONMUS: VER=7.5.2, 1716
-  # satir, desteklenen sistemler "Debian 10, 11 and 12". Guncel olan
-  # 'install.sh': VER=8.1.2, 2281 satir, "Debian 12 and 13" (arm64 dahil).
-  # Ikisi de indirilip karsilastirildi.
-  #
-  # Sonucu suydu: kurulum bir yil eski Virtualmin 7.5.2 yukluyordu ve sunucu
-  # ancak sonradan apt ile 8.x'e cikiyordu. Debian 13'un onundeki engel de
-  # bizim OS kontrolumuz degil, indirdigimiz bu eski dosyaydi.
-  #
-  # Kullandigimiz iki bayrak yeni surumde de aynen var ve ayni sekilde
-  # ayristiriliyor (--hostname|-n deger alir, --force|-f|--yes|-y onay atlar).
-  # Yenisinde ayrica --minimal/--bundle/--include/--extra var; eski notumuz
-  # "bu bayraklar servis edilen surumde yok" diyordu, o not artik gecersiz.
-  log "Virtualmin resmi installer indiriliyor..."
+  if command -v virtualmin >/dev/null 2>&1; then ok "Virtualmin is already installed (skipping)."; return; fi
+  ensure_pkg curl curl || { err "Could not install curl."; return 1; }
+  # The URL matters: 'install.sh', NOT 'virtualmin-install.sh'. The old name is
+  # still served but frozen at VER=7.5.2 ("Debian 10, 11 and 12"), which is why
+  # installs used to end up a year behind and why Debian 13 appeared unsupported.
+  log "Downloading the official Virtualmin installer..."
   curl -fsSL https://software.virtualmin.com/gpl/scripts/install.sh -o /root/virtualmin-install.sh
   chmod +x /root/virtualmin-install.sh
   local args=(--force --hostname "$HOSTNAME_FQDN")
-  # TEK ISTISNA: bu komutun ciktisi EKRANDA da gorunuyor. Dakikalarca surdugu
-  # icin sessiz bir ekran "takildi mi" hissi verir; ustelik en cok burada bir
-  # seyin ters gittigini anlamak isteriz. Geri kalan tum adimlarin ciktisi
-  # yalnizca log dosyasina gidiyor.
-  log "Calistiriliyor (uzun surer, cikti ekranda): virtualmin install.sh ${args[*]}"
+  # The one step whose output is also shown on screen: it runs for minutes, and
+  # a silent screen for that long reads as a hang.
+  log "Running (takes a while, output shown): virtualmin install.sh ${args[*]}"
   run_visible sh /root/virtualmin-install.sh "${args[@]}"
-  ok "Virtualmin kurulumu bitti."
+  ok "Virtualmin installed."
 }
 
-# Domainin ACME (Lets Encrypt) sertifikasi var mi?
-# Etikete guvenilmez: list-domains ciktisindaki satir adi Virtualmin surumune
-# gore degisiyor ("Lets Encrypt cert issued" / "SSL provider cert issued").
-# O yuzden once dosya sistemine, sonra dar bir ifadeye bakiyoruz.
+# Does the domain have an ACME (Let's Encrypt) certificate?
+# The label is not reliable - the line in list-domains output is named
+# differently across Virtualmin versions - so check the filesystem first.
 domain_has_acme_cert(){
   local d="$1"
   [ -s "/etc/letsencrypt/live/$d/cert.pem" ] && return 0
@@ -115,224 +83,185 @@ domain_has_acme_cert(){
   return 1
 }
 
-# PostgreSQL Virtualmin kurulumuyla GELMEZ; paketi ayrica kuruyoruz.
+# PostgreSQL does not come with Virtualmin; install the package separately.
 step_postgres(){
   if command -v psql >/dev/null 2>&1; then
-    ok "PostgreSQL zaten kurulu."
+    ok "PostgreSQL is already installed."
   else
-    log "PostgreSQL kuruluyor..."
+    log "Installing PostgreSQL..."
     apt-get update -qq
     DEBIAN_FRONTEND=noninteractive apt-get install -y postgresql postgresql-contrib
-    # SONUCU DOGRULA: adimlar 'set +e' altinda calisiyor, basarisiz bir
-    # apt-get sessizce geciliyordu ve asagidaki satir yine "kuruldu" diyordu.
+    # Verify: steps run under 'set +e', so a failed apt-get would otherwise be
+    # followed by a line claiming success.
     if ! command -v psql >/dev/null 2>&1; then
-      err "PostgreSQL kurulamadi (psql bulunamadi)."
+      err "Could not install PostgreSQL (psql not found)."
       return 1
     fi
-    ok "PostgreSQL kuruldu. Virtualmin ilk oturum sihirbazinda secilebilir olacak."
+    ok "PostgreSQL installed. The post-install wizard will offer it."
   fi
-  # Ozelligi ayrica acmaya gerek yok: Virtualmin kurulu PostgreSQL'i kendisi
-  # goruyor ve ilk oturum sihirbazinda veritabani secenekleri arasinda sunuyor.
-  # (set-global-feature denemesi ise yaramiyor; taze kurulumda clamd henuz
-  # ayakta olmadigi icin Virtualmin'in genel yapilandirma kontrolune takiliyor.)
-  systemctl enable --now postgresql 2>/dev/null || warn "postgresql servisi baslatilamadi."
+  # The feature needs no enabling here: Virtualmin detects PostgreSQL itself
+  # and offers it in the wizard. (set-global-feature does not work on a fresh
+  # box - clamd is not up yet and Virtualmin's config check refuses.)
+  systemctl enable --now postgresql 2>/dev/null || warn "Could not start the postgresql service."
 }
 
-# Composer Virtualmin kurulumuyla GELMEZ; vmkit-composer eklentisinin
-# gereksinimidir ve o eklenti composer yoksa acilmaz.
+# Composer does not come with Virtualmin either; the vmkit-composer plugin
+# requires it and will not open without it.
 step_composer(){
   if command -v composer >/dev/null 2>&1; then
-    ok "Composer zaten kurulu."
+    ok "Composer is already installed."
     return
   fi
-  log "Composer kuruluyor..."
+  log "Installing Composer..."
   apt-get update -qq
   DEBIAN_FRONTEND=noninteractive apt-get install -y composer
-  # SONUCU DOGRULA: adimlar 'set +e' altinda calisiyor, basarisiz bir apt-get
-  # sessizce geciliyordu ve asagidaki satir yine "kuruldu" diyordu.
-  #
-  # SEBEP TAHMIN EDILMIYOR. Bir sure burada "Ubuntu'da 'universe' bileseni
-  # kapali olabilir" yaziyordu; Ubuntu 22.04 kurulumunda tam da bu satir
-  # cikti ve YANLISTI - universe acikti (onlarca paket oradan indi), gercek
-  # sebep depo dizini ile havuzun uyusmamasiydi: indekste duran surumun
-  # .deb'i aynada yoktu, uc pakette 404. Uydurulmus bir sebep dogru sebebi
-  # aramayi geciktirir. Apt'in kendi ciktisi zaten kurulum kaydinda ve
-  # basarisiz adimin son satirlari ekrana basiliyor.
+  # Verify, as above. The message deliberately names no cause: it used to
+  # assert that Ubuntu's 'universe' component was disabled, which turned out
+  # to be wrong on a real failure (the mirror was missing the .deb the index
+  # advertised). A made-up cause delays finding the real one.
   if ! command -v composer >/dev/null 2>&1; then
-    err "Composer kurulamadi. Apt'in ciktisi yukarida ve kurulum kaydinda."
-    err "Sik gorulen iki sebep: aynada eksik paket (biraz sonra tekrar deneyin)"
-    err "ya da paketin bulundugu bilesenin kapali olmasi (add-apt-repository universe)."
+    err "Could not install Composer. Apt's own output is in the install log."
     return 1
   fi
-  ok "Composer kuruldu."
+  ok "Composer installed."
 }
 
 step_dns_template(){
   local cfg="/etc/webmin/virtual-server/config"
-  if [ ! -f "$cfg" ]; then err "Virtualmin config yok; dns-template atlaniyor."; return 1; fi
-  if [ -z "${NS1:-}" ] || [ -z "${NS2:-}" ]; then warn "NS1/NS2 bos; dns-template atlaniyor."; return 0; fi
+  if [ ! -f "$cfg" ]; then err "No Virtualmin config; skipping dns-template."; return 1; fi
+  if [ -z "${NS1:-}" ] || [ -z "${NS2:-}" ]; then warn "NS1/NS2 empty; skipping dns-template."; return 0; fi
   [ -f "${cfg}.vmin-kit.bak" ] || cp -a "$cfg" "${cfg}.vmin-kit.bak"
-  # Not: dns_default_ip4/ip6 (8.8.8.8) BIND recursive forwarder degeridir
-  # (A-kaydi IP'si degil); ona dokunulmaz.
+  # dns_default_ip4/ip6 is BIND's recursive forwarder, not an A-record address;
+  # leave it alone.
   set_kv "$cfg" bind_master "$NS1"
   set_kv "$cfg" dns_ns      "$NS2"
   set_kv "$cfg" dns_prins   "1"
   set_kv "$cfg" bind_sub    "yes"
-  systemctl restart webmin 2>/dev/null || warn "webmin restart edilemedi (elle: systemctl restart webmin)"
+  systemctl restart webmin 2>/dev/null || warn "Could not restart webmin (manually: systemctl restart webmin)"
   ok "dns-template: bind_master=$NS1, dns_ns=$NS2, bind_sub=yes"
 }
 
-# Virtualmin her yeni domaine iki "kisayol" ekliyor:
-#   admin.<domain>   -> Webmin  (https://<domain>:10000)
-#   webmail.<domain> -> Usermin (https://<domain>:20000)
-# Her biri bir A kaydi ve vhost'ta bir 301 yonlendirmesi demek. Ikisini de
-# istemiyoruz: panele hostname uzerinden giriliyor.
+# Virtualmin adds two shortcuts to every new domain - admin.<domain> to Webmin
+# and webmail.<domain> to Usermin - each an A record plus a 301 in the vhost.
+# We want neither; the panel is reached through the hostname.
 #
-# Ayar SABLON duzeyinde tutuluyor (web_admin / web_webmail). Varsayilan
-# sablonun ayri bir dosyasi yok: list_templates() 0 numarali sablonu dogrudan
-# modul yapilandirmasindan uretiyor, save_template() de oraya geri yaziyor. Bu
-# yuzden dogru yer /etc/webmin/virtual-server/config - dns-template adiminin
-# yazdigi dosyanin ayni.
+# The switches are template-level (web_admin / web_webmail), and the default
+# template has no file of its own: template 0 is built from the module config,
+# so the right place to write is virtual-server/config.
 #
-# Her anahtar iki seyi birden kapatiyor: DNS kaydini
-# (add_webmail_dns_records_to_file) ve Apache yonlendirmesi ile ServerAlias'i
-# (add_webmail_redirect_directives). ServerAlias gitince ad sertifikaya da
-# girmiyor - get_hostnames_for_ssl yalnizca web sunucusunun gercekten cevap
-# verdigi adlari topluyor.
+# Each key disables both the DNS record and the redirect with its ServerAlias.
+# Losing the alias also keeps the name out of certificates, because
+# get_hostnames_for_ssl only collects names the web server actually answers on.
 #
-# DOMAIN OLUSTURMADAN ONCE calismali: sonradan kapatmak var olan domainlerin
-# kaydini ve yonlendirmesini temizlemiyor.
+# Must run BEFORE any domain exists: disabling later does not clean up domains
+# that already have the record and the redirect.
 step_panel_redirects(){
   local cfg="/etc/webmin/virtual-server/config"
-  if [ ! -f "$cfg" ]; then err "Virtualmin config yok; panel yonlendirmeleri atlaniyor."; return 1; fi
+  if [ ! -f "$cfg" ]; then err "No Virtualmin config; skipping panel redirects."; return 1; fi
   [ -f "${cfg}.vmin-kit.bak" ] || cp -a "$cfg" "${cfg}.vmin-kit.bak"
 
   local row key flag name cur
   for row in "web_admin|${NO_ADMIN_REDIRECT:-1}|admin"              "web_webmail|${NO_WEBMAIL_REDIRECT:-1}|webmail"; do
     IFS='|' read -r key flag name <<< "$row"
     if ! is_truthy "$flag"; then
-      log "  ${name}.<domain> yonlendirmesine dokunulmuyor (ayar 0)."
+      log "  leaving the ${name}.<domain> redirect alone (setting is 0)."
       continue
     fi
-    # Deger '=' icerebiliyor (newdom_aliases gibi), o yuzden awk -F= degil sed.
+    # Values can contain '=' (newdom_aliases does), so sed rather than awk -F=.
     cur="$(sed -n "s/^${key}=//p" "$cfg" | head -1)"
     if [ "$cur" = "0" ]; then
-      ok "${name}.<domain> yonlendirmesi zaten kapali."
+      ok "${name}.<domain> redirect is already off."
     else
       set_kv "$cfg" "$key" "0"
-      ok "${name}.<domain> yonlendirmesi kapatildi (bundan sonra olusan domainler icin)."
+      ok "${name}.<domain> redirect turned off (for domains created from now on)."
     fi
   done
 }
 
-# Domain varsayilanlari: ilk domain olusmadan once Virtualmin'in modul
-# yapilandirmasina yazilir, cunku --default-features bu degerleri okuyor.
-# Bayrak yok - dogru kurulum davranisi bu; istisna gerekirse panelden acilir.
+# Domain defaults, written to Virtualmin's module config before the first
+# domain exists because that is where new domains read them from.
 #
-#   bind_spf=yes     Her yeni domaine SPF kaydi. Varsayilan kapali.
-#   bind_spfall=1    SPF'in "all" kipi. Sablondaki 0/1/2, bind8'de 1/2/3 olup
-#                    ?all / ~all / -all uretiyor (f-dns.pl: dns_spfall + 1).
-#                    Bos birakilirsa ?all cikiyor - hicbir sey soylemeyen bir
-#                    kayit. 1 -> ~all: standart ve guvenli. -all katidir,
-#                    posta bir yerden yonlendirilirse reddedilmesine yol acar.
+#   bind_spf=yes   an SPF record on every new domain; off by default
+#   bind_spfall=1  the SPF "all" qualifier. 0/1/2 here become ?all / ~all / -all.
+#                  Empty yields ?all, which asserts nothing. 1 (~all) is the
+#                  safe standard; -all rejects forwarded mail.
+#   bind_dmarc=yes a DMARC record on every new domain. The policy is left unset,
+#                  which means p=none: published but blocking nothing. Tighten
+#                  from the panel once SPF and DKIM are confirmed working.
 #
-#   bind_dmarc=yes   Her yeni domaine DMARC kaydi. Politika ayrica yazilmiyor:
-#                    bind_dmarcp bos oldugunda "none" kullaniliyor (vslib.pl:
-#                    bind_dmarcp || "none"), yani kayit yayinlanir ama hicbir
-#                    posta engellenmez. SPF/DKIM'in dogru calistigi gorulunce
-#                    panelden quarantine'e sikilir. Yuzde de varsayilan 100.
+# spam=0 / virus=0 are deliberately NOT written here. Setting them made the
+# post-install wizard stop asking about spam and virus scanning - it only asks
+# about features that are on - so the decision became silently ours. The main
+# domain gets an explicit feature list instead (step_main_domain), which keeps
+# it light while leaving the question to the user.
 #
-# BURADA ARTIK spam=0 / virus=0 YOK (2026-09-10). Yaziyorduk ve sonucu suydu:
-# kurulum sonrasi sihirbaz bunlari HIC SORMUYORDU. Sihirbaz "acik olanlari
-# kapatayim mi" diye soruyor, biz onceden kapatinca soracak bir sey kalmiyor
-# ve karar sessizce bizim olmus oluyordu. Temiz kurulumda dogrulandi.
-#
-# Artik global yapilandirmaya dokunmuyoruz; ana domain bu ozellikler olmadan
-# olusuyor (bkz. step_main_domain, acik ozellik listesi). Boylece domain yine
-# hafif kaliyor ama "bu sunucuda spam/virus taramasi olsun mu" sorusuna
-# sihirbazda kullanici cevap veriyor - ve cevabi sonraki domainler icin de
-# gecerli oluyor.
-#
-# Burada BILEREK olmayanlar: posta kutusu adlandirmasi (append_style) ve rol
-# adreslerinin hedefi (newdom_aliases) Virtualmin'in getirdigi gibi birakiliyor.
-# Domain sahibinin unix hesabi ayni zamanda posta kutusudur; bunu degistirmenin
-# her yolu (unixname=3 gibi) o adi ev dizinine ve veritabani adina da tasiyor.
-# Kendi posta kutularin (ornegin bilal@ornek.com) zaten e-posta adresiyle giris
-# yapiyor; domain sahibi hesabi yalnizca postmaster/abuse okumak icin.
-#
-# Idempotent: deger zaten dogruysa dosyaya dokunulmaz.
+# Also deliberately untouched: mailbox naming (append_style) and the target of
+# the role aliases. The domain owner's unix account is its mailbox, and every
+# way of changing that carries the name into the home directory and the
+# database name too.
 step_domain_defaults(){
   local cfg="/etc/webmin/virtual-server/config"
-  if [ ! -f "$cfg" ]; then err "Virtualmin config yok; domain varsayilanlari atlaniyor."; return 1; fi
+  if [ ! -f "$cfg" ]; then err "No Virtualmin config; skipping domain defaults."; return 1; fi
   [ -f "${cfg}.vmin-kit.bak" ] || cp -a "$cfg" "${cfg}.vmin-kit.bak"
 
   local row key val name cur
-  for row in "bind_spf|yes|SPF kaydi" \
-             "bind_spfall|1|SPF sertligi (~all)" \
-             "bind_dmarc|yes|DMARC kaydi"; do
+  for row in "bind_spf|yes|SPF record" \
+             "bind_spfall|1|SPF qualifier (~all)" \
+             "bind_dmarc|yes|DMARC record"; do
     IFS='|' read -r key val name <<< "$row"
     cur="$(sed -n "s/^${key}=//p" "$cfg" | head -1)"
     if [ "$cur" = "$val" ]; then
-      ok "$name: zaten yerinde ($key=$val)"
+      ok "$name: already set ($key=$val)"
     else
       set_kv "$cfg" "$key" "$val"
-      ok "$name: $key=$val yazildi"
+      ok "$name: wrote $key=$val"
     fi
   done
 
-  # Rol adresleri: sablonda gelen listeden yalnizca gerekli olanlari birakiyoruz.
-  #   postmaster  RFC 5321 geregi kabul edilmeli
-  #   abuse       diger operatorlerin ve kara liste servislerinin bildirim adresi
-  # hostmaster ve webmaster yalnizca gelenek - Virtualmin kaynaginda hicbir yerde
-  # kullanilmiyorlar, SOA kaydi da hostmaster'a bakmiyor.
+  # Role addresses: keep only the ones that are actually required.
+  #   postmaster  must be accepted (RFC 5321)
+  #   abuse       where other operators and blocklists send reports
+  # hostmaster and webmaster are convention only - nothing in Virtualmin uses
+  # them, and the SOA record does not point at hostmaster either.
   #
-  # Degeri SIFIRDAN YAZMIYORUZ, var olani suzuyoruz: hedef bicimini Virtualmin
-  # nasil kuruyorsa oyle kalsin. Yalnizca bundan sonra olusan domainleri etkiler.
+  # The value is FILTERED, not rewritten from scratch, so Virtualmin's own
+  # target format survives. Affects domains created from now on.
   local keep="${ROLE_ALIASES:-postmaster abuse}" cur_a new_a e nm
   cur_a="$(sed -n "s/^newdom_aliases=//p" "$cfg" | head -1)"
   if [ -z "$cur_a" ]; then
-    log "  Rol adresi sablonu bos; dokunulmadi."
+    log "  Role-address template is empty; left alone."
   else
     new_a=""
-    # printf '%s' son satiri newline'siz birakiyor ve 'read' onu donguye
-    # sokmuyor: listedeki SON giris sessizce dusuyordu (once webmaster, sonraki
-    # turda abuse). '%s\n' sart.
+    # '%s\n', not '%s': without the newline 'read' never sees the last entry
+    # and it was dropped silently.
     while IFS= read -r e; do
       [ -n "$e" ] || continue
       nm="${e%%=*}"
       case " $keep " in *" $nm "*) new_a="${new_a}${new_a:+$'\t'}${e}" ;; esac
     done < <(printf '%s\n' "$cur_a" | tr '\t' '\n')
     if [ -z "$new_a" ]; then
-      warn "  Rol adresi sablonunda '$keep' bulunamadi; dokunulmadi."
+      warn "  '$keep' not found in the role-address template; left alone."
     elif [ "$cur_a" = "$new_a" ]; then
-      ok "Rol adresleri: zaten yalnizca $keep"
+      ok "Role addresses: already just $keep"
     else
       set_kv "$cfg" newdom_aliases "$new_a"
-      ok "Rol adresleri: yalnizca $keep birakildi"
+      ok "Role addresses: reduced to $keep"
     fi
   fi
 }
 
-# DKIM: giden postalari imzala.
+# DKIM: sign outgoing mail.
 #
-# Sunucu geneli, tek seferlik bir kurulum - sablon ayari degil. Anahtari
-# uretir, OpenDKIM'i yapilandirir, imzalanacak domain haritasini yazar ve
-# DKIM acikken olusan her domaine <secici>._domainkey TXT kaydini ekler
-# (feature-mail.pl bunu $config{dkim_enabled} bakarak yapiyor). Bu yuzden ilk
-# domainden ONCE calisiyor.
+# A server-wide, one-time setup, so it runs BEFORE the first domain: with DKIM
+# enabled, every domain created afterwards gets its <selector>._domainkey record
+# automatically. There is no CLI for this, so the steps of the panel's
+# enable_dkim.cgi are repeated here (selector defaults to YYYYMM, sign and
+# verify on, only domains with DNS and mail, 2048-bit key).
 #
-# Panelde ayni is: Email Settings -> DomainKeys Identified Mail. Burada
-# enable_dkim.cgi'nin yaptigi adimlarin aynisini yapiyoruz:
-#   selector  varsayilan YYYYAA (get_default_dkim_selector)
-#   sign=1    giden postayi imzala
-#   verify=1  gelen postanin imzasini dogrula
-#   alldns=0  yalnizca DNS ve posta acik olan domainler
-#   2048 bit  panelin varsayilan anahtar boyu
-#
-# check_dkim() sistem uygun degilse (paket yok gibi) sebebini soyluyor; o
-# durumda kurulumu durdurmuyoruz, atlayip devam ediyoruz.
+# check_dkim() reports why the system cannot do it; in that case we skip rather
+# than fail the install.
 step_dkim(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; DKIM atlaniyor."; return 1; }
+  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping DKIM."; return 1; }
   local out
   out="$(perl -e '
     my ($root) = @ARGV;
@@ -363,16 +292,16 @@ step_dkim(){
   ' "$(webmin_root)" 2>&1)"
 
   printf '%s\n' "$out" | grep -v '^VMKIT-DKIM:' | sed 's/^/    /'
-  # Isaret satirini SATIR bazinda ayikliyoruz; ${out##...} kullanilsaydi
-  # isaretten sonraki tum ciktiyi alirdi.
+  # The marker is extracted per LINE: ${out##...} would take everything after
+  # the marker instead.
   local mark val
   mark="$(printf '%s\n' "$out" | grep '^VMKIT-DKIM:' | head -1)"
   val="${mark#VMKIT-DKIM:* }"
   case "$mark" in
-    "VMKIT-DKIM:ALREADY"*) ok "DKIM zaten acik (secici: $val)." ;;
-    "VMKIT-DKIM:SKIP"*)    warn "DKIM acilamadi, atlaniyor: $val" ;;
-    "VMKIT-DKIM:OK"*)      ok "DKIM acildi (secici: $val)." ;;
-    *)                     err "DKIM acilamadi."; return 1 ;;
+    "VMKIT-DKIM:ALREADY"*) ok "DKIM is already on (selector: $val)." ;;
+    "VMKIT-DKIM:SKIP"*)    warn "DKIM not enabled, skipping: $val" ;;
+    "VMKIT-DKIM:OK"*)      ok "DKIM enabled (selector: $val)." ;;
+    *)                     err "Could not enable DKIM."; return 1 ;;
   esac
 }
 
