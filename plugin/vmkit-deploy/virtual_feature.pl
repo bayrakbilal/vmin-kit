@@ -1,8 +1,8 @@
-# vmkit-deploy - Virtualmin feature sozlesmesi.
+# vmkit-deploy - the Virtualmin feature contract.
 #
-# Ozellik domain basina acilir. Ozelligin kendisi bir SEY KURMAZ: bir domainde
-# acilmasi yalnizca "bu domainde deployment tanimlanabilir" demektir. Asil is
-# kullanicinin tanimladigi deployment'larda (bkz. vmkit-deploy-lib.pl).
+# The feature is enabled per domain, and enabling it INSTALLS NOTHING: it only
+# means "deployments may be defined for this domain". The real work happens in
+# the deployments the user defines - see vmkit-deploy-lib.pl.
 use strict;
 use warnings;
 our (%text, %config);
@@ -17,7 +17,7 @@ return $text{'feat_name'};
 }
 
 # feature_label(in-edit-form)
-# Domain olusturma ve duzenleme formunda gorunen etiket.
+# The label shown on the create and edit domain forms.
 sub feature_label
 {
 my ($edit) = @_;
@@ -37,14 +37,14 @@ return $text{'feat_disname'};
 }
 
 # feature_check()
-# Ozellik kullanilabilir mi? git yoksa hata dondur.
+# Is the feature usable at all? Returns an error when git is missing.
 sub feature_check
 {
 return &has_command("git") ? undef : $text{'feat_echeck'};
 }
 
 # feature_suitable(&parentdom, &aliasdom, &subdom)
-# Alias domainlerde anlamsiz; ust duzey ve alt sunucularda kullanilabilir.
+# Meaningless on alias domains; fine on top-level domains and sub-servers.
 sub feature_suitable
 {
 my ($parentdom, $aliasdom, $subdom) = @_;
@@ -52,7 +52,7 @@ return $aliasdom ? 0 : 1;
 }
 
 # feature_depends(&domain)
-# Deploy edilecek bir dizin gerektigi icin web ozelligi sart.
+# Deploying needs a directory to deploy into, so the web feature is required.
 sub feature_depends
 {
 my ($d) = @_;
@@ -60,14 +60,14 @@ return $d->{'web'} ? undef : $text{'feat_edepweb'};
 }
 
 # feature_setup(&domain)
-# Kurulacak bir sey yok: deployment tanimlari panelden, kullanici tarafindan
-# eklenir. Ozellik yalnizca menuye erisim veriyor.
+# Nothing to install: deployments are added by the user from the panel. The
+# feature only grants access to the menu.
 sub feature_setup
 {
 my ($d) = @_;
 &$virtual_server::first_print($text{'setup_start'});
-# Ilk domainde kanca yolunun kayitli oldugundan emin ol: modul elle
-# kopyalanmis, yani postinstall.pl hic calismamis olabilir.
+# Make sure the hook path is registered on the first domain: the module may
+# have been copied by hand, in which case postinstall.pl never ran.
 &ensure_hook_path();
 &$virtual_server::second_print($virtual_server::text{'setup_done'});
 }
@@ -78,7 +78,8 @@ sub feature_modify
 }
 
 # feature_delete(&domain)
-# Ozellik kaldirilinca bu domaine ait tum deployment tanimlarini sil.
+# Removes every deployment definition for this domain when the feature is
+# turned off.
 sub feature_delete
 {
 my ($d) = @_;
@@ -88,9 +89,9 @@ my ($d) = @_;
 }
 
 # feature_disable(&domain) / feature_enable(&domain)
-# Domain askiya alinip geri acildiginda cagriliyor. Yapacak isimiz yok:
-# tanimlar dosyada duruyor, deploy zaten yalnizca elle ya da zamanlayiciyla
-# tetikleniyor. Silmek feature_delete'in isi.
+# Called when a domain is suspended and restored. Nothing to do: the
+# definitions stay on disk, and a deploy only ever runs when triggered.
+# Deleting is feature_delete's job.
 sub feature_disable
 {
 }
@@ -106,8 +107,8 @@ return undef;
 }
 
 # feature_links(&domain)
-# Domainin sol menusune ikon ekler. Cekirdek kisayollar 500 (web apps) ve
-# 600 (File Manager) arasinda yer birakiyor.
+# Adds an icon to the domain's menu. The core shortcuts leave room between
+# 500 (web apps) and 600 (File Manager).
 sub feature_links
 {
 my ($d) = @_;
@@ -119,7 +120,7 @@ return ( { 'mod'   => $module_name,
 }
 
 # feature_webmin(&main-domain, &all-domains)
-# Domain sahibinin kendi hesabiyla bu modulu gorebilmesi icin.
+# Lets the domain owner see this module under their own account.
 sub feature_webmin
 {
 my ($d, $alldoms) = @_;
@@ -129,43 +130,43 @@ return @doms ? ( [ $module_name, { 'dom' => join(" ", @doms),
 }
 
 # feature_modules()
-# Sunucu sablonlarinda domain sahibine verilebilecek moduller listesinde cikar.
+# Appears in the list of modules a server template can grant to domain owners.
 sub feature_modules
 {
 return ( [ $module_name, $text{'feat_module'} ] );
 }
 
 # ---------------------------------------------------------------------------
-# YEDEK / GERI YUKLEME
+# BACKUP AND RESTORE
 #
-# NEDEN GEREKLI: Webmin'in veritabani yok, her sey dosyada ve bizim
-# dosyalarimiz Virtualmin'in domain yedegine KENDILIGINDEN girmiyor. Yedege
-# giren tek sey, ozellik basina cagrilan feature_backup'in yazdigi dosya.
+# Webmin has no database: everything is files, and our files do NOT travel with
+# a Virtualmin domain backup by themselves. The only thing that gets in is what
+# feature_backup writes, called once per feature.
 #
-# NELER TASINIYOR: yalnizca /etc/webmin/vmkit-deploy altindakiler, yani
-# deployment tanimlari (repo, dal, hedef, mod, kanca UUID'si) ve dagitim
-# sonrasi komut metni. Domainin EV DIZININDEKILER buraya girmiyor cunku
-# zaten 'dir' ozelligiyle yedekleniyorlar: ~/.vmkit/repos/<id>.git,
-# ~/.vmkit/actions-<id>.sh, ~/.vmkit/bin/php ve ~/.ssh/id_ed25519.
+# What travels: only what lives under /etc/webmin/vmkit-deploy - the deployment
+# definitions (repository, branch, target, mode, hook UUID) and the post-deploy
+# command text. Nothing from the domain's HOME is included, because the 'dir'
+# feature already backs that up: ~/.vmkit/repos/<id>.git,
+# ~/.vmkit/actions-<id>.sh, ~/.vmkit/bin/php and ~/.ssh/id_ed25519.
 #
-# LOGLAR TASINMIYOR: gecmis bir calismanin ciktisi baska bir sunucuda
-# yaniltici olur, ayrica zaten tek seferlik.
+# LOGS ARE NOT INCLUDED: the output of a past run would be misleading on
+# another server, and it is single-use anyway.
 #
-# DOMAIN ID'SI DEGISIR: dosya adlarimiz "<domainid>-<deploymentid>" bicimde
-# ve geri yuklenen domain YENI bir id alabilir. Bu yuzden yedege domain id
-# yazilmiyor; geri yuklemede kayitlar o anki $d->{'id'} ile tazeleniyor.
+# THE DOMAIN ID CHANGES: our file names are "<domainid>-<deploymentid>" and a
+# restored domain can get a NEW id. So the domain id is left out of the backup
+# and the records are rebuilt with the current $d->{'id'} on restore.
 # ---------------------------------------------------------------------------
 
 # feature_backup_name()
-# Yedek ekranlarinda bu ozelligin ne sakladigini anlatir.
+# Describes on the backup screens what this feature stores.
 sub feature_backup_name
 {
 return $text{'backup_name'};
 }
 
-# feature_backup(&domain, dosya, &opts, homeformat?, differential?, as-owner,
+# feature_backup(&domain, file, &opts, homeformat?, differential?, as-owner,
 #                &all-opts, &destinations)
-# 1 = basarili, 0 = basarisiz.
+# 1 = success, 0 = failure.
 sub feature_backup
 {
 my ($d, $file, $opts, $homefmt, $increment, $asd) = @_;
@@ -175,17 +176,17 @@ my @deps = &list_deploys($d);
 my @recs;
 foreach my $dep (@deps) {
 	my %copy = %$dep;
-	# 'file' yerel yol, 'dom' yerel domain id: ikisi de bu sunucuya ait,
-	# geri yuklemede yeniden uretiliyor.
+	# 'file' is a local path and 'dom' a local domain id: both belong to
+	# this server and are rebuilt on restore.
 	delete($copy{'file'});
 	delete($copy{'dom'});
 	push(@recs, { 'dep'     => \%copy,
 		      'actions' => &actions_read($d, $dep) });
 	}
 
-# serialise_variable Webmin'in kendi bicimi (Virtualmin de yedek
-# ustverisinde bunu kullaniyor). Kendi ayirici uydurmaktansa bunu
-# kullaniyoruz: ic ice yapiyi ve coksatirli metni sorunsuz tasiyor.
+# serialise_variable is Webmin's own format, which Virtualmin also uses for
+# backup metadata. Better than inventing a separator: it carries nested
+# structures and multi-line text without trouble.
 my $data = &serialise_variable(\@recs);
 my $err;
 eval {
@@ -202,9 +203,10 @@ if ($err) {
 	return 0;
 	}
 
-# Domain sahibi kendi yedegini aliyorsa ($asd dolu) dosyayi root degil o
-# okuyabilmeli - arsivi paketleyen de o. Icerik zaten kendi domainine ait
-# (kanca adresi ve komutlar panelde ona zaten gorunuyor).
+# When the domain owner takes their own backup ($asd is set) the file must be
+# readable by them, not root - they are the one packing the archive. The
+# content is theirs anyway; the hook URL and commands are already visible to
+# them in the panel.
 if ($asd) {
 	&set_ownership_permissions($d->{'uid'}, $d->{'gid'}, 0600, $file);
 	}
@@ -216,7 +218,7 @@ else {
 return 1;
 }
 
-# feature_restore(&domain, dosya, &opts, &all-opts)
+# feature_restore(&domain, file, &opts, &all-opts)
 sub feature_restore
 {
 my ($d, $file) = @_;
@@ -233,12 +235,12 @@ if (ref($recs) ne 'ARRAY') {
 	return 0;
 	}
 
-# Once bu domaine ait MEVCUT tanimlari temizliyoruz, yoksa yedekte olmayan
-# eski bir deployment geri yuklemeden sonra da listede kalirdi.
+# Existing definitions for this domain are cleared first, otherwise an old
+# deployment that is not in the backup would survive the restore.
 #
-# delete_deploy KULLANILMIYOR: o, bare repoyu da siliyor. Repo ev dizininde
-# ve ev dizini 'dir' ozelligiyle geri yukleniyor; buradan silmek, yalnizca
-# bu ozelligi geri yukleyen birinin deposunu yok ederdi.
+# delete_deploy is NOT used: it also removes the bare repository, which lives
+# in the home directory and is restored by the 'dir' feature. Removing it here
+# would destroy the repository of anyone restoring only this feature.
 foreach my $old (&list_deploys($d)) {
 	unlink($old->{'file'}) if ($old->{'file'});
 	unlink(&actions_path($d, $old));
@@ -248,8 +250,8 @@ my $n = 0;
 foreach my $r (@$recs) {
 	my $dep = $r->{'dep'};
 	next if (ref($dep) ne 'HASH' || !$dep->{'id'});
-	# save_deploy 'dom' alanini ve dosya adini o anki domain id'siyle
-	# yeniden kuruyor - yedekte domain id'si bilerek yok.
+	# save_deploy rebuilds the 'dom' field and the file name from the
+	# current domain id - the backup deliberately carries no domain id.
 	&save_deploy($d, $dep);
 	&actions_write($d, $dep, $r->{'actions'});
 	$n++;
