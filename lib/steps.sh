@@ -727,155 +727,134 @@ proxy_site_works(){
           --resolve "${site}:443:127.0.0.1" "https://${site}/" 2>/dev/null || true)"
   case "$code" in
     200|302|301|401) return 0 ;;
-    *) log "  $site -> HTTP ${code:-yanit yok}"; return 1 ;;
+    *) log "  $site -> HTTP ${code:-no response}"; return 1 ;;
   esac
 }
 
 
-# webmail.<ana-domain>: Roundcube.
+# webmail.<main-domain>: Roundcube.
 #
-# Bu bir vekil DEGIL, gercek bir PHP uygulamasi; Virtualmin'in kendi kurucusu
-# (Install Scripts) ile kuruluyor. Roundcube veritabani istedigi icin alt
-# sunucu --mysql ile olusuyor.
+# Not a proxy but a real PHP application, installed through Virtualmin's own
+# Install Scripts, which is why this sub-server is created with --mysql.
 #
-# Roundcube yalnizca bir IMAP istemcisi: postalar Dovecot'un Maildir'inde
-# durur, kullanici/kutu/sifre yonetimi Virtualmin'de kalir. Giris adresi tam
-# e-posta adresidir (ornek: blnk@blnk.tr).
+# Roundcube is only an IMAP client: the mail lives in Dovecot's Maildir and
+# users, mailboxes and passwords stay in Virtualmin. Logins use the full email
+# address.
 step_webmail(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; webmail atlaniyor."; return 1; }
+  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping webmail."; return 1; }
   local site="${WEBMAIL_PREFIX:-webmail}.${MAIN_DOMAIN}"
 
   if virtualmin list-domains --name-only 2>/dev/null | grep -xF "$site" >/dev/null; then
-    ok "Alt sunucu zaten var: $site"
+    ok "Sub-server already exists: $site"
   else
-    log "Alt sunucu olusturuluyor: $site (ana domain: $MAIN_DOMAIN)"
+    log "Creating sub-server: $site (parent: $MAIN_DOMAIN)"
     if ! virtualmin create-domain \
            --domain "$site" \
            --parent "$MAIN_DOMAIN" \
            --desc   "Roundcube (vmin-kit)" \
            --dir --web --ssl --dns --mysql --break-ssl-cert; then
-      err "$site olusturulamadi; Roundcube atlaniyor."
+      err "Could not create $site; skipping Roundcube."
       return 1
     fi
-    ok "Alt sunucu olusturuldu: $site"
+    ok "Sub-server created: $site"
   fi
 
-  # Vekil siteleriyle ayni kalip: olusturmanin hemen ardindan sertifika.
+  # Same shape as the proxy sites: certificate right after creation.
   ensure_site_cert "${WEBMAIL_PREFIX:-webmail}" || true
 
   if virtualmin list-scripts --domain "$site" 2>/dev/null | grep -i roundcube >/dev/null; then
-    ok "Roundcube zaten kurulu: https://${site}/"
+    ok "Roundcube is already installed: https://${site}/"
   else
-    log "Roundcube kuruluyor: https://${site}/  (indirme ve kurulum biraz surer)"
+    log "Installing Roundcube: https://${site}/  (download and setup take a while)"
     if virtualmin install-script --domain "$site" --type roundcube \
            --version latest --path / --db "mysql roundcube" --newdb --prefix-db; then
-      ok "Roundcube kuruldu: https://${site}/"
+      ok "Roundcube installed: https://${site}/"
     else
-      err "Roundcube kurulamadi. Elle: Virtualmin -> $site -> Install Scripts"
+      err "Could not install Roundcube. Manually: Virtualmin -> $site -> Install Scripts"
       return 1
     fi
   fi
 
-  # Kimlik adresi. Virtualmin'in kurucusu mail_domain satirini
-  # config.inc.php.sample icinde DEGISTIREREK yaziyor (scripts/roundcube.pl);
-  # Roundcube 1.7'nin ornek dosyasinda o satir artik olmadigi icin deger bos
-  # kaliyor ve DOMAIN SAHIBININ kimligi <kullanici>@localhost cikiyordu.
+  # Sender identity. Virtualmin's installer writes mail_domain by REPLACING a
+  # line in config.inc.php.sample, and Roundcube 1.7 no longer ships that line,
+  # so the value stayed empty and the domain owner's identity came out as
+  # <user>@localhost.
   #
-  # Tek bir mail_domain yazmak cok domainli sunucuda yanlis olur. Bunun yerine
-  # Roundcube'un virtuser_file eklentisini kullaniyoruz: giris adini Postfix'in
-  # virtual haritasinda arayip gercek adresi buluyor. AYAR TEK BASINA YETMEZ,
-  # eklenti $config['plugins'] listesinde de olmali.
+  # A single mail_domain would be wrong on a multi-domain server, so the
+  # virtuser_file plugin is used instead: it looks the login name up in
+  # Postfix's virtual map. The setting alone is not enough - the plugin must
+  # also be in $config['plugins'].
   #
-  # Kapsami: yalnizca domain sahibini duzeltir. Alias adresleri gelmez, cunku
-  # harita iki seviyeli (alias -> adres -> unix kullanici) ve eklenti tek
-  # seviye bakiyor; @ iceren giris adlari da haritada \@ olarak kacisli
-  # yazildigi icin eslesmiyor. Alias'lar Roundcube'da elle kimlik olarak
-  # eklenir.
+  # Scope: this fixes the domain owner only. Aliases are not covered, because
+  # the map is two levels deep (alias -> address -> unix user) while the plugin
+  # looks at one, and login names containing @ are escaped in the map. Add
+  # aliases as identities in Roundcube by hand.
   local dir cfg
   dir="$(virtualmin list-scripts --domain "$site" --multiline 2>/dev/null |
          awk -F': ' '/^[[:space:]]*Directory:/{print $2; exit}')"
   cfg="$dir/config/config.inc.php"
   if [ ! -f "$cfg" ]; then
-    warn "Roundcube yapilandirmasi bulunamadi ($cfg); kimlik ayari atlandi."
+    warn "Roundcube config not found ($cfg); skipping the identity setting."
     return 0
   fi
   if grep -q "virtuser_file" "$cfg"; then
-    ok "Roundcube kimlik ayari zaten yapilmis."
+    ok "Roundcube identity setting is already in place."
   else
     {
       echo
-      echo "// vmin-kit: giris adini Postfix virtual haritasindan gercek adrese cevir"
+      echo "// vmin-kit: resolve the login name to a real address via Postfix's virtual map"
       echo "\$config['virtuser_file'] = '/etc/postfix/virtual';"
       echo "\$config['plugins'][] = 'virtuser_file';"
     } >> "$cfg"
-    ok "Roundcube virtuser_file eklentisi etkinlestirildi."
+    ok "Roundcube virtuser_file plugin enabled."
   fi
 
-  # --- des_key: oturum sifreleme anahtari ---
+  # --- des_key: the session encryption key ---
   #
-  # Roundcube kullanicinin IMAP PAROLASINI oturum verisinde bu anahtarla
-  # sifreliyor. Varsayilani sabit ve herkesin bildigi bir dize:
-  #   $config['des_key'] = 'rcmail-!24ByteDESkey*Str';   (defaults.inc.php)
-  # Bilinen bir anahtar, oturum verisine erisebilen birinin posta parolasini
-  # cozebilmesi demek.
+  # Roundcube encrypts the user's IMAP PASSWORD in the session with this key,
+  # and its default is a fixed, publicly known string. Roundcube's own web
+  # installer would generate a random one, but Virtualmin never runs that
+  # installer and its script never touches des_key, so the default survives.
   #
-  # Roundcube'un kendi web kurulum sihirbazi normalde rastgele bir anahtar
-  # uretir; Virtualmin sihirbazi CALISTIRMIYOR, tarball'i acip ornek
-  # yapilandirmayi satir satir duzenliyor - ve scripts/roundcube.pl'de
-  # des_key HIC GECMIYOR (kaynaktan dogrulandi). Yani anahtar varsayilanda
-  # kaliyor.
+  # 24 characters, letters and digits only: the default cipher needs that
+  # length, and no quote or backslash may end up inside a PHP string.
   #
-  # Uzunluk: varsayilan cipher_method DES-EDE3-CBC ve belgesi "a required key
-  # length is 24 characters" diyor. Yalnizca harf/rakam uretiyoruz; tirnak ya
-  # da ters bolu gibi PHP dizesini bozacak karakter hic olusmasin.
-  # Once des_key gecen satirlari sec, yorumlari at, sondaki atamanin degerini
-  # oku - PHP de son atamayi kullanir. Tek bir sed ifadesiyle denendi ve cift
-  # tirnak icindeki '\$' kacisi yuzunden hicbir zaman eslesmiyordu.
+  # The current value is read by taking the LAST assignment (as PHP would),
+  # after dropping comment lines.
   local cur_key
   cur_key="$(grep 'des_key' "$cfg" | grep -v '^[[:space:]]*//' |
              sed -n "s/.*= *'\(.*\)';.*/\1/p" | tail -1)"
   if [ -n "$cur_key" ] && [ "$cur_key" != "rcmail-!24ByteDESkey*Str" ]; then
-    # Birileri (ya da onceki calismamiz) zaten koymus; dokunmuyoruz. Her
-    # calistirmada yeni anahtar yazmak butun oturumlari dusururdu.
-    ok "Roundcube oturum anahtari zaten ozel."
+    # Someone (or an earlier run) already set one. Writing a new key every run
+    # would drop every active session.
+    ok "Roundcube session key is already private."
   else
     local newkey
-    # '|| true' SART: head 24 bayti alip cikiyor, tr yazmaya devam ettigi
-    # icin SIGPIPE aliyor ve 'pipefail' bunu hata sayiyor - olculdu, cikis
-    # kodu 141 (deger yine dogru uretiliyor). Bugun zararsiz cunku ardindan
-    # baska satirlar var; bu satir bir fonksiyonun SON komutu olsaydi adim
-    # sebepsiz "basarisiz" gorunurdu.
+    # '|| true' is required: head exits after 24 bytes, tr then dies of SIGPIPE
+    # and pipefail would report failure even though the value is correct.
     newkey="$(LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom 2>/dev/null | head -c 24 || true)"
     if [ "${#newkey}" -ne 24 ]; then
-      warn "Rastgele anahtar uretilemedi; Roundcube des_key varsayilanda kaldi."
+      warn "Could not generate a random key; Roundcube des_key left at its default."
     else
       {
         echo
-        echo "// vmin-kit: oturumdaki IMAP parolasini sifreleyen anahtar."
-        echo "// Roundcube'un varsayilani sabit ve herkesce bilinir."
+        echo "// vmin-kit: key that encrypts the IMAP password in the session."
+        echo "// Roundcube's default is fixed and publicly known."
         echo "\$config['des_key'] = '$newkey';"
       } >> "$cfg"
-      ok "Roundcube oturum anahtari rastgele bir degerle degistirildi."
+      ok "Roundcube session key replaced with a random value."
     fi
   fi
 
-  # --- kurulum sihirbazini kaldir ---
+  # --- remove the setup wizard ---
   #
-  # Roundcube'un dizin duzeni (kaynagindan dogrulandi):
-  #   <kok>/installer                 sihirbazin asil kodu
-  #   <kok>/public_html/installer.php on denetleyici
-  # enable_installer varsayilani false, yani sihirbaz calismayi reddediyor;
-  # yine de Roundcube'un kendi tavsiyesi kurulumdan sonra silmek. Ayarin
-  # yanlislikla acilmasi ya da bir surumde varsayilanin degismesi ihtimaline
-  # karsi kod hic durmasin.
+  # Roundcube keeps the wizard in <root>/installer with a front controller at
+  # <root>/public_html/installer.php. enable_installer defaults to false, so it
+  # refuses to run, but Roundcube's own advice is to delete it after setup -
+  # and then the setting cannot be turned on by accident.
   #
-  # DIKKAT: Virtualmin'in script yukseltmesi tarball'i yeniden actigi icin
-  # sihirbaz geri gelebilir. Bu blok tekrarlanabilir, install.sh'i yeniden
-  # calistirmak yeterli.
-  #
-  # $dir bos olamaz - buraya gelmeden once $cfg="$dir/config/config.inc.php"
-  # dosyasinin varligi kontrol edildi. Yine de silme islemi oldugu icin acikca
-  # bir kez daha bakiyoruz.
+  # A script upgrade re-extracts the tarball and can bring it back, so this
+  # block is repeatable: re-running install.sh is enough.
   if [ -n "$dir" ] && [ -d "$dir" ]; then
     local removed=0
     if [ -e "$dir/installer" ]; then rm -rf "$dir/installer"; removed=1; fi
@@ -883,41 +862,27 @@ step_webmail(){
       rm -f "$dir/public_html/installer.php"; removed=1
     fi
     if [ "$removed" = 1 ]; then
-      ok "Roundcube kurulum sihirbazi kaldirildi."
+      ok "Roundcube setup wizard removed."
     else
-      ok "Roundcube kurulum sihirbazi zaten yok."
+      ok "Roundcube setup wizard is already gone."
     fi
   fi
 
-  # Sertifika eksikse adim basarisiz sayiliyor: Roundcube kurulu ama kimse
-  # guvenmeyen bir adresten posta okumaz.
+  # A missing certificate fails this step: Roundcube is installed, but nobody
+  # reads mail from an address the browser does not trust.
   [ "${VMINKIT_SITE_CERT[${WEBMAIL_PREFIX:-webmail}]:-1}" = "0" ] && return 1
   return 0
 }
 
-# docker.<domain> alt sunucusu + Portainer'a proxy.
-#
-# Ozellikler burada BILEREK tek tek sayiliyor: ana domainin aksine
-# --default-features KULLANILMIYOR. Burasi yalnizca bir ters vekil; posta,
-# DNS, veritabani ve eklentiler bu siteye gereksiz. Liste zaten en kucuk hali:
-#   --dir    web sitesi icin sart (check_depends_web home dizini istiyor)
-#   --web    vekil vhost'unun kendisi
-#   --ssl    https://docker.<domain> icin
-#   --dns    alt alanin A kaydi. bind_sub=yes oldugu icin ayri zone acilmaz,
-#            kayit ana domainin zone'una yazilir (f-dns.pl: dns_submode).
-#            Olmadan alt alan hic cozumlenmez - Cloudflare'de joker kayit
-#            varsa gizlenir ama BIND modunda dogrudan kirilir.
-#   --parent alt sunucu: ayri Unix kullanicisi acilmaz
-# --break-ssl-cert ile ana domainin sertifikasina baglanmak yerine kendi
-# sertifikasini alir (ana domainin sertifikasi bu ismi kapsamiyor).
+# The docker.<domain> sub-server and its proxy to Portainer.
+# The feature list is the minimum a reverse proxy needs; see ensure_proxy_site.
 step_docker_site(){
   local prefix="${DOCKER_PREFIX:-docker}" port="${PORTAINER_PORT:-9000}"
   ensure_proxy_site "$prefix" "http://127.0.0.1:${port}/" "Portainer (vmin-kit)" || return 1
 
-  # Portainer'in 9000'i icin Webmin/Usermin ile AYNI kural: vekil adresine
-  # tarayicinin guvenecegi bir sertifika varsa port disariya kapali kalir,
-  # yoksa acik birakilir ki Portainer'a hicbir yoldan girilemez duruma
-  # dusulmesin.
+  # Portainer's 9000 follows the SAME rule as Webmin and Usermin: the port is
+  # closed only when the proxy address has a certificate a browser will trust,
+  # so there is never a moment with no way in at all.
   #
   # PORTAINER_BIND_LOCAL=no diyen kullaniciya karisilmiyor: bilerek disariya
   # acmis, sertifika durumu bu karari degistirmiyor.
