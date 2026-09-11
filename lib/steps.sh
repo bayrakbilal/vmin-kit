@@ -547,6 +547,57 @@ step_ssl(){
   fi
 }
 
+# Kurulumun olusturdugu alt sitelerden sertifikasi olmayanlar icin bir kez
+# daha ACME denemesi.
+#
+# NEDEN AYRI BIR ADIM: alt sunucular sertifikayi yalnizca OLUSTURULDUKLARI
+# anda istiyor. O anda DNS henuz yayilmamissa ya da Lets Encrypt kotasi
+# doluysa Virtualmin "keeping self-signed certificate" deyip geciyor ve bir
+# daha kimse istemiyor - Ubuntu 24.04 turunda webmin. ve usermin. tam olarak
+# boyle self-signed kaldi, uzerine panel portlari 127.0.0.1'e kilitli oldugu
+# icin panele erisim de zorlasti. Bu adimla engel kalktiginda ./install.sh'i
+# tekrar calistirmak yetiyor.
+#
+# YALNIZCA SERTIFIKASI OLMAYAN domain icin istek yapiliyor. Her koşuda hepsini
+# istemek ayni ad kumesi icin 7 gunde 5 sertifika olan kotayi bos yere
+# tuketirdi - zaten bu tura kadar geldigimiz yer orasi.
+#
+# Liste kurulumun kendi oneklerinden geliyor: kullanicinin panelden actigi
+# domainlere karisilmiyor, onlarin sertifikasi onlarin isi.
+step_ssl_sites(){
+  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; SSL atlaniyor."; return 1; }
+  local doms s rc=0
+  local -a sites=()
+  if is_truthy "${PANEL_PROXY:-0}"; then
+    sites+=("${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}")
+    sites+=("${USERMIN_PREFIX:-usermin}.${MAIN_DOMAIN}")
+  fi
+  if is_truthy "${ROUNDCUBE:-0}"; then
+    sites+=("${WEBMAIL_PREFIX:-webmail}.${MAIN_DOMAIN}")
+  fi
+  if is_truthy "${DOCKER:-0}"; then
+    sites+=("${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}")
+  fi
+  [ ${#sites[@]} -gt 0 ] || return 0
+
+  doms="$(virtualmin list-domains --name-only 2>/dev/null)"
+  for s in "${sites[@]}"; do
+    # Boru hatti YOK: 'grep -xF ... | ' bicimi pipefail altinda erken
+    # eslesmede uretici tarafini SIGPIPE ile oldurup sessiz yanlis negatif
+    # uretiyor. Here-string bu sorunu tasimiyor.
+    grep -xF "$s" <<<"$doms" >/dev/null || continue
+    domain_has_acme_cert "$s" && continue
+    log "Sertifika isteniyor (ACME): $s"
+    if virtualmin generate-letsencrypt-cert --domain "$s" --default-hosts --renew; then
+      ok "  alindi: $s"
+    else
+      warn "  alinamadi: $s - self-signed kaliyor, engel kalkinca tekrar deneyin."
+      rc=1
+    fi
+  done
+  return "$rc"
+}
+
 # Portainer loglarindan en son setup_token'i okur (yoksa bos doner).
 # $1 verilirse yalnizca o andan sonraki loglara bakar - eski, tuketilmis bir
 # token'i yeniymis gibi okumamak icin gerekli.

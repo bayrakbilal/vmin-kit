@@ -122,6 +122,7 @@ Dosyanın sonunda kaçış kapıları var (`SKIP_DNS_CHECK`, `ALLOW_ANY_OS`,
 | `panel-sites` | `webmin.` ve `usermin.` alt alanlarını yayınlar |
 | `docker` | Docker + Portainer + `docker.` alt alanı *(isteğe bağlı)* |
 | `webmail` | `webmail.` alt alanı + Roundcube *(isteğe bağlı)* |
+| `ssl-sites` | Alt alanlardan sertifikası olmayan kaldıysa bir kez daha ister (DNS geç yayıldıysa ya da Let's Encrypt kotası dolduysa: engel kalkınca `./install.sh` tekrar çalıştırmak yeter) |
 | `lock-panel-ports` | Vekilin çalıştığı doğrulandıktan **sonra** panel portlarını kapatır |
 | `report` | Özeti ekrana ve kurulum kaydına yazar |
 

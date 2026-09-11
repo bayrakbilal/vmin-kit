@@ -308,6 +308,10 @@ if is_truthy "$DOCKER"; then
   run_step step_portainer
   run_step step_docker_site
 fi
+# Alt sitelerin sertifika kontrolu, siteler olustuktan SONRA ve panel
+# portlari kilitlenmeden ONCE: eksik bir sertifika varsa kullanici hala
+# 10000 uzerinden panele girebilecek durumdayken haberdar oluyor.
+run_step step_ssl_sites
 # Kilitleme EN SON: once vekillerin calistigi dogrulanir, dogrulanamazsa
 # port kapatilmaz. Yanlis sirada yapilirsa panele erisim kaybedilir.
 if is_truthy "$PANEL_PROXY" && is_truthy "$LOCK_PANEL_PORTS"; then
