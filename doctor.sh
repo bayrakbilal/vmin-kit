@@ -320,7 +320,7 @@ else
       fi
     done
     set +f
-    ok "$UNAUTH_OK unauth varsayilani yerinde"
+    ok "$UNAUTH_OK unauthcgi varsayilani yerinde"
   fi
 fi
 echo
