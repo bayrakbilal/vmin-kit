@@ -326,7 +326,7 @@ if is_truthy "$DOCKER"; then step_portainer_token; fi
 # Kapanis yalnizca "bitti mi" ve "ayrintili cikti nerede" sorularina cevap.
 say ""
 if [ ${#VMINKIT_FAILED[@]} -gt 0 ]; then
-  warn "Tamamlandi. Tamamlanamayan adimlar: ${VMINKIT_FAILED[*]}"
+  warn "Eksik tamamlandi."
 else
   ok "Tamamlandi."
 fi

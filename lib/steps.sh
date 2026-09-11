@@ -1324,9 +1324,12 @@ step_report(){
     say "Bilesenler   : $joined"
   fi
 
+  # Adim ADI yazilmiyor: 'panel_sites' fonksiyon adi, okuyan icin bir sey
+  # ifade etmiyor. Sorunun ne oldugu zaten yukarida kendi satirinda yaziyor;
+  # burada tek is "her sey yolunda gitmedi" bayragini kaldirmak.
   if [ ${#VMINKIT_FAILED[@]} -gt 0 ]; then
     say ""
-    warn "Tamamlanamayan adimlar: ${VMINKIT_FAILED[*]}"
+    warn "Eksik tamamlandi - sorunlar yukarida [!] ile isaretli."
   fi
 
   say ""
