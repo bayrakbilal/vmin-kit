@@ -1283,7 +1283,7 @@ step_report(){
   fi
 
   say ""
-  say "Adresler"
+  say "Addresses"
   say "  Site       : https://${MAIN_DOMAIN}"
   if [ "$(awk -F= '/^bind=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null)" = "127.0.0.1" ]; then
     say "  Panel      : https://${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}/"
@@ -1297,105 +1297,86 @@ step_report(){
     say "  Portainer  : https://${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}/"
   fi
 
-  # Disariya acik dinleyen portlar. Guvenlik duvarini bu arac yonetmiyor;
-  # en azindan sonucun ne oldugu gorunsun - 10000/20000 burada gorunuyorsa
-  # kilitleme adimi calismamis demektir.
+  # Ports listening on non-local addresses. This tool does not manage the
+  # firewall; the point is that the result is visible - seeing 10000/20000 here
+  # means the locking step did not run.
   #
-  # SUREC ADIYLA: yalniz port numarasi "bu da neyin nesi" sorusunu cevapsiz
-  # birakiyordu. '-p' surec adini veriyor (root oldugumuz icin gorunuyor).
+  # With the process name: a bare port number leaves "what is that?" unanswered.
   #
-  # Boru hatti dogrudan yazmiyor, once degiskene aliniyor: 'say' disindaki
-  # her cikti yalnizca log dosyasina gider, ekranda gorunmezdi.
+  # The pipeline is captured into a variable first: anything other than 'say'
+  # goes only to the log file and would never reach the screen.
   if command -v ss >/dev/null 2>&1; then
     local portlist
     portlist="$(ss -ltnpH 2>/dev/null | awk '
       {
         addr = $4
-        # Yalnizca yerel dinleyenler bizi ilgilendirmiyor.
+        # ALL of 127.0.0.0/8 is filtered, not just 127.0.0.1: systemd-resolved
+        # listens on 127.0.0.53 and .54, and a narrow filter both reported them
+        # as exposed and hid the REAL listener on the same port (named).
         #
-        # TUM 127.0.0.0/8 eleniyor, yalnizca 127.0.0.1 degil: systemd-resolved
-        # "127.0.0.53%lo" ve "127.0.0.54" uzerinde dinliyor. Dar suzgec bunu
-        # "disariya acik" gosteriyor, ustelik ayni porttaki GERCEK dinleyiciyi
-        # (named) de gizliyordu - temiz kurulumda "53 systemd-resolve" diye
-        # cikti, oysa dogrusu "53 named". Gercek 'ss' ciktisiyla dogrulandi.
+        # fe80::/10 too: link-local addresses are reachable only from the same
+        # segment. named opens one per interface.
         #
-        # fe80::/10 de eleniyor: baglanti-yerel adresler yalnizca ayni ag
-        # segmentinden erisilebilir, "disariya acik" sayilmaz. named her
-        # arayuz icin bir tane aciyor (ens192, docker0, veth...).
-        #
-        # Docker koprusu (172.17.x) BILEREK eleniyor DEGIL: oradan bir
-        # konteyner erisebilir, yani gercek bir yol.
+        # The Docker bridge (172.17.x) is deliberately NOT filtered - a
+        # container can reach it, so it is a real path.
         if (addr ~ /^127\./ || addr ~ /^\[::1\]:/ || addr ~ /^\[[Ff][Ee]80:/) next
         n = split(addr, a, ":")
         port = a[n]
-        # users:(("ad",pid=...  -> ad. Onek 9 karakter, kapanis tirnagi 1.
+        # users:(("name",pid=...  -> name. Prefix is 9 chars, closing quote 1.
         name = "?"
         if (match($0, /users:\(\("[^"]+"/)) {
           name = substr($0, RSTART + 9, RLENGTH - 10)
         }
-        # Ayni port hem IPv4 hem IPv6 icin gorunuyor; bir kez yazalim.
+        # The same port appears for IPv4 and IPv6; print it once.
         if (!(port in seen) || seen[port] == "?") seen[port] = name
       }
       END { for (p in seen) printf "%s %s\n", p, seen[p] }
     ' | sort -n -u | awk '
       { rows[NR] = sprintf("%5s  %-18s", $1, $2) }
       END {
-        # Iki sutun: liste uzun, tek sutunda raporu gereksiz uzatiyor.
+        # Two columns: the list is long enough that one column pads the report.
         half = int((NR + 1) / 2)
         for (i = 1; i <= half; i++) {
           line = sprintf("  %s%s", rows[i], (i + half <= NR ? rows[i + half] : ""))
-          sub(/[ \t]+$/, "", line)   # sagda bosluk birakma
+          sub(/[ \t]+$/, "", line)   # no trailing whitespace
           print line
         }
       }
     ')"
     say ""
-    say "Dinleyen portlar (yerel olmayan adreslerde)"
+    say "Listening ports (on non-local addresses)"
     if [ -n "$portlist" ]; then
       say "$portlist"
     else
-      # 'ss' var ve calisti; bos sonuc "okunamadi" degil "hicbiri" demek.
-      say "  (yok - yalnizca 127.0.0.1 uzerinde dinleyenler var)"
+      # 'ss' exists and ran; an empty result means "none", not "unreadable".
+      say "  (none - everything listens on 127.0.0.1 only)"
     fi
-    # GUVENLIK DUVARI DURUMU BURADA RAPORLANMIYOR - bilerek.
-    #
-    # Bir sure "nftables kural seti yuklu/bos" diye bir satir vardi ve iki
-    # sekilde birden yanlisti:
-    #
-    #   1) KAPSAM DISI. Bu bir kurulum araci; "hangi portlar dinliyor" bir
-    #      olgu, "guvenlik duvari ne durumda" ise ayri bir konu ve henuz
-    #      incelemedigimiz bir sey hakkinda yorum yapmis oluyorduk.
-    #
-    #   2) OLCUM DE YANLISTI. 'nft list ruleset | grep -q ...' kaliyordu:
-    #      grep ilk eslesmede cikinca nft SIGPIPE ile 141 donuyor ve
-    #      'set -o pipefail' bunu tum boru hattinin hatasi sayiyor - kural
-    #      seti DOLUYKEN "BOS" yaziyordu. (Kucuk ciktilarda uremiyor, boru
-    #      arabellegine sigiyor; gercek nft ciktisi sigmiyor.)
-    #
-    # Gerektiginde guvenlik duvari yapilandirmasi ayri bir adim olarak
-    # eklenir; o zamana kadar burada yalnizca dinleyen soketler yaziyor.
+    # FIREWALL STATE IS DELIBERATELY NOT REPORTED HERE. Which ports listen is
+    # a fact; what the firewall does is a separate subject and belongs to the
+    # post-install phase. (The line that once did this was also measured
+    # wrong: 'nft list ruleset | grep -q' reported an EMPTY ruleset while it
+    # was full - see the grep -q note elsewhere.)
   fi
 
-  # NOTLAR: yalnizca ILERIDE YAPILACAK, kendiliginden olmayacak seyler.
-  # Nasil yapilacagi README'de; burada sadece hatirlatma.
+  # NOTES: only things that will NOT happen by themselves. How to do them is
+  # in the README; this is just the reminder.
   say ""
-  say "Notlar"
-  say "  - Domain sahibi sifresi saklanmadi; gerekirse panelden belirleyin."
+  say "Notes"
+  say "  - The domain owner's password was not stored; set one from the panel if needed."
   case " $dfeat " in
     *" mail "*)
-      say "  - DMARC 'p=none' ile basliyor; birkac hafta sonra quarantine'e cekin."
+      say "  - DMARC starts at 'p=none'; tighten it to quarantine after a few weeks."
       ;;
   esac
-  # Harici DNS icin ayrica bir hatirlatma YOK: Cloudflare senkron eklentisi
-  # tam da bu is icin var, yani "A kaydini saglayicida da ac" demek hem
-  # gereksiz hem de kendi aracimizin yaptigi isi bilmiyormus gibi duruyor.
+  # No reminder for external DNS: the Cloudflare sync plugin exists for exactly
+  # that, so telling the user to add the record at their provider would ignore
+  # what this tool already does.
   if [ "${DNS_MODE:-}" = bind ]; then
-    say "  - Registrar'da ${NS1:-ns1} / ${NS2:-ns2} icin glue kaydi: ${ip:-<sunucu-ip>}"
+    say "  - Glue records at the registrar for ${NS1:-ns1} / ${NS2:-ns2}: ${ip:-<server-ip>}"
   fi
-  say "  - Ayrinti ve sorun giderme: README.md"
+  say "  - Details and troubleshooting: README.md"
   say ""
 
-  # Ikinci sunucu icin ayrica bir cevap dosyasi URETMIYORUZ: ayarlar zaten
-  # depodaki config.env icinde duruyor. Yeni sunucuda depoyu cekip ana
-  # domaini yazmak yeterli.
+  # No answer file is generated for the next server: the settings already live
+  # in config.env in the repository. Clone it and give the main domain.
 }
