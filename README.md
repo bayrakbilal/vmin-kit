@@ -122,12 +122,19 @@ Dosyanın sonunda kaçış kapıları var (`SKIP_DNS_CHECK`, `ALLOW_ANY_OS`,
 | `panel-sites` | `webmin.` ve `usermin.` alt alanlarını yayınlar |
 | `docker` | Docker + Portainer + `docker.` alt alanı *(isteğe bağlı)* |
 | `webmail` | `webmail.` alt alanı + Roundcube *(isteğe bağlı)* |
-| `ssl-sites` | Alt alanlardan sertifikası olmayan kaldıysa bir kez daha ister (DNS geç yayıldıysa ya da Let's Encrypt kotası dolduysa: engel kalkınca `./install.sh` tekrar çalıştırmak yeter) |
-| `lock-panel-ports` | Vekilin çalıştığı doğrulandıktan **sonra** panel portlarını kapatır |
+| `lock-panel-ports` | Vekilin çalıştığı doğrulandıktan **ve** alt alanın geçerli sertifikası olduğu görüldükten sonra panel portlarını kapatır |
 | `report` | Özeti ekrana ve kurulum kaydına yazar |
 
 Bir adım hata verirse kurulum durmaz; o adım atlanır, kalanlar çalışır ve durum
 raporda görünür.
+
+**Sertifika ve port ilişkisi.** Her alt alan (`webmin.`, `usermin.`, `webmail.`,
+`docker.`) oluşturulduğu adımda sertifikası kontrol edilir; yoksa bir kez daha
+istenir. Sertifika alınamazsa — DNS henüz yayılmamışsa ya da Let's Encrypt
+kotası dolmuşsa — **o servisin yönetim portu dışarıya kapatılmaz**: tarayıcı
+self-signed sertifikalı vekil adresine güvenmeyeceği için port da kapanırsa
+hiçbir erişim yolu kalmaz. Engel kalktığında `./install.sh` tekrar
+çalıştırıldığında sertifika istenir ve port kapatılır.
 
 ---
 

@@ -14,6 +14,17 @@
 # hem raporda yaziliyor.
 VMINKIT_FAILED=()
 
+# Alt alanlarin sertifika durumu: onek -> 1 (gecerli ACME sertifikasi var) /
+# 0 (self-signed kaldi). ensure_site_cert dolduruyor, port kapatan adimlar
+# okuyor.
+#
+# NEDEN GEREKLI: bir alt alan self-signed kaldiysa tarayici o adrese
+# guvenmiyor. Tam o anda yonetim portunu da disariya kapatirsak geriye HIC
+# erisim yolu kalmiyor - Ubuntu 24.04 turunda webmin. ve usermin. sertifikasiz
+# kaldi, portlar da kapandi ve panele girilemedi. Artik karar bu tabloya
+# bakiyor: sertifika varsa port kapanir, yoksa acik kalir.
+declare -A VMINKIT_SITE_CERT=()
+
 # run_step <adim-fonksiyonu>
 # Adimi calistirir, basarisiz olursa adi listeye yazar. Donus degerini aynen
 # geciriyor ki cagiran taraf isterse ayrica bakabilsin.
@@ -547,55 +558,50 @@ step_ssl(){
   fi
 }
 
-# Kurulumun olusturdugu alt sitelerden sertifikasi olmayanlar icin bir kez
-# daha ACME denemesi.
+# ensure_site_cert <onek> -> alt alanin gecerli bir ACME sertifikasi var mi
 #
-# NEDEN AYRI BIR ADIM: alt sunucular sertifikayi yalnizca OLUSTURULDUKLARI
-# anda istiyor. O anda DNS henuz yayilmamissa ya da Lets Encrypt kotasi
-# doluysa Virtualmin "keeping self-signed certificate" deyip geciyor ve bir
-# daha kimse istemiyor - Ubuntu 24.04 turunda webmin. ve usermin. tam olarak
-# boyle self-signed kaldi, uzerine panel portlari 127.0.0.1'e kilitli oldugu
-# icin panele erisim de zorlasti. Bu adimla engel kalktiginda ./install.sh'i
-# tekrar calistirmak yetiyor.
+# Alt sunucu olusturulduktan HEMEN SONRA cagriliyor, ana domainde step_ssl'in
+# yaptiginin aynisi: sertifika varsa dokunmuyor, yoksa bir kez istiyor.
 #
-# YALNIZCA SERTIFIKASI OLMAYAN domain icin istek yapiliyor. Her koşuda hepsini
-# istemek ayni ad kumesi icin 7 gunde 5 sertifika olan kotayi bos yere
-# tuketirdi - zaten bu tura kadar geldigimiz yer orasi.
+# NEDEN GEREKLI: Virtualmin sertifikayi yalnizca domaini OLUSTURURKEN istiyor.
+# O an DNS henuz yayilmamissa ya da Lets Encrypt kotasi doluysa "keeping
+# self-signed certificate" deyip geciyor ve bir daha kimse istemiyor. Burada
+# her kosuda tekrar denendigi icin engel kalktiginda ./install.sh'i yeniden
+# calistirmak yetiyor.
 #
-# Liste kurulumun kendi oneklerinden geliyor: kullanicinin panelden actigi
-# domainlere karisilmiyor, onlarin sertifikasi onlarin isi.
-step_ssl_sites(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; SSL atlaniyor."; return 1; }
-  local doms s rc=0
-  local -a sites=()
-  if is_truthy "${PANEL_PROXY:-0}"; then
-    sites+=("${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}")
-    sites+=("${USERMIN_PREFIX:-usermin}.${MAIN_DOMAIN}")
+# YALNIZCA SERTIFIKASI OLMAYAN icin istek yapiliyor: her kosuda istemek ayni
+# ad kumesi icin 7 gunde 5 sertifika olan kotayi bos yere tuketirdi.
+#
+# Sonuc VMINKIT_SITE_CERT'e yaziliyor; portu kapatacak adimlar oraya bakiyor.
+ensure_site_cert(){
+  local prefix="$1" site="$1.${MAIN_DOMAIN}"
+  if domain_has_acme_cert "$site"; then
+    VMINKIT_SITE_CERT["$prefix"]=1
+    ok "Sertifika yerinde: $site"
+    return 0
   fi
-  if is_truthy "${ROUNDCUBE:-0}"; then
-    sites+=("${WEBMAIL_PREFIX:-webmail}.${MAIN_DOMAIN}")
+  log "Sertifika isteniyor (ACME): $site"
+  if virtualmin generate-letsencrypt-cert --domain "$site" --default-hosts --renew; then
+    VMINKIT_SITE_CERT["$prefix"]=1
+    ok "Sertifika alindi: $site"
+    return 0
   fi
-  if is_truthy "${DOCKER:-0}"; then
-    sites+=("${DOCKER_PREFIX:-docker}.${MAIN_DOMAIN}")
-  fi
-  [ ${#sites[@]} -gt 0 ] || return 0
+  VMINKIT_SITE_CERT["$prefix"]=0
+  warn "Sertifika alinamadi: $site - self-signed kaliyor."
+  warn "  Engel kalkinca ./install.sh tekrar calistirilinca yeniden denenir."
+  return 1
+}
 
-  doms="$(virtualmin list-domains --name-only 2>/dev/null)"
-  for s in "${sites[@]}"; do
-    # Boru hatti YOK: 'grep -xF ... | ' bicimi pipefail altinda erken
-    # eslesmede uretici tarafini SIGPIPE ile oldurup sessiz yanlis negatif
-    # uretiyor. Here-string bu sorunu tasimiyor.
-    grep -xF "$s" <<<"$doms" >/dev/null || continue
-    domain_has_acme_cert "$s" && continue
-    log "Sertifika isteniyor (ACME): $s"
-    if virtualmin generate-letsencrypt-cert --domain "$s" --default-hosts --renew; then
-      ok "  alindi: $s"
-    else
-      warn "  alinamadi: $s - self-signed kaliyor, engel kalkinca tekrar deneyin."
-      rc=1
-    fi
-  done
-  return "$rc"
+# site_cert_ok <onek> -> o alt alana sertifikali erisim mumkun mu
+# Tablo hic doldurulmadiysa (adim atlanmis ya da eski kurulum) dosya
+# sisteminden bakiyoruz: kararin kaynagi her zaman gercek durum olsun.
+site_cert_ok(){
+  local prefix="$1"
+  if [ -n "${VMINKIT_SITE_CERT[$prefix]:-}" ]; then
+    [ "${VMINKIT_SITE_CERT[$prefix]}" = "1" ]
+    return
+  fi
+  domain_has_acme_cert "$1.${MAIN_DOMAIN}"
 }
 
 # Portainer loglarindan en son setup_token'i okur (yoksa bos doner).
@@ -733,6 +739,13 @@ ensure_proxy_site(){
     fi
   fi
 
+  # Sertifika kontrolu sitenin kendi adiminda, olusturmanin hemen ardinda -
+  # ana domainde step_ssl ne yapiyorsa burada da o. Sonuc tabloya yaziliyor.
+  # Sertifika alinamamasi bu adimi BASARISIZ SAYMIYOR: site ve vekil
+  # calisiyor, eksik olan yalnizca guvenilir sertifika. Sonucu port kapatan
+  # adim degerlendiriyor.
+  ensure_site_cert "$prefix" || true
+
   return 0
 }
 
@@ -778,6 +791,9 @@ step_webmail(){
     fi
     ok "Alt sunucu olusturuldu: $site"
   fi
+
+  # Vekil siteleriyle ayni kalip: olusturmanin hemen ardindan sertifika.
+  ensure_site_cert "${WEBMAIL_PREFIX:-webmail}" || true
 
   if virtualmin list-scripts --domain "$site" 2>/dev/null | grep -i roundcube >/dev/null; then
     ok "Roundcube zaten kurulu: https://${site}/"
@@ -922,9 +938,25 @@ step_webmail(){
 # --break-ssl-cert ile ana domainin sertifikasina baglanmak yerine kendi
 # sertifikasini alir (ana domainin sertifikasi bu ismi kapsamiyor).
 step_docker_site(){
-  ensure_proxy_site "${DOCKER_PREFIX:-docker}" \
-                    "http://127.0.0.1:${PORTAINER_PORT:-9000}/" \
-                    "Portainer (vmin-kit)"
+  local prefix="${DOCKER_PREFIX:-docker}" port="${PORTAINER_PORT:-9000}"
+  ensure_proxy_site "$prefix" "http://127.0.0.1:${port}/" "Portainer (vmin-kit)" || return 1
+
+  # Portainer'in 9000'i icin Webmin/Usermin ile AYNI kural: vekil adresine
+  # tarayicinin guvenecegi bir sertifika varsa port disariya kapali kalir,
+  # yoksa acik birakilir ki Portainer'a hicbir yoldan girilemez duruma
+  # dusulmesin.
+  #
+  # PORTAINER_BIND_LOCAL=no diyen kullaniciya karisilmiyor: bilerek disariya
+  # acmis, sertifika durumu bu karari degistirmiyor.
+  [ "${PORTAINER_BIND_LOCAL:-yes}" = "yes" ] || return 0
+
+  if site_cert_ok "$prefix"; then
+    portainer_set_publish "127.0.0.1:${port}:9000"
+  else
+    warn "${prefix}.${MAIN_DOMAIN} self-signed sertifikada; Portainer ${port} disariya acik birakiliyor."
+    warn "  Sertifika alindiktan sonra ./install.sh tekrar calistirin, port kapanir."
+    portainer_set_publish "${port}:9000"
+  fi
 }
 
 # Webmin/Usermin, istegin Referer basligindaki adresi kendi gordugu
@@ -1023,6 +1055,23 @@ lock_panel_port(){
     return 1
   fi
 
+  # IKINCI SART: alt alanin gecerli bir sertifikasi olmali.
+  #
+  # Vekilin cevap vermesi yetmez - curl'e -k veriyoruz, self-signed sertifika
+  # da 200 dondurur. Tarayici ise donmez: HSTS devredeyse "yine de devam et"
+  # secenegi bile cikmaz. O noktada port da kapaliysa panele hicbir yoldan
+  # girilemez. Ubuntu 24.04 turunda tam olarak bu oldu.
+  #
+  # Bu yuzden sertifika yoksa port ACIK BIRAKILIYOR. Guvenli olan davranis bu:
+  # acik kalan port bilinen ve raporda yazan bir durum, kapali port ise
+  # kullaniciyi kendi sunucusunun disinda birakiyor.
+  if ! site_cert_ok "$prefix"; then
+    warn "$name kilitlenmedi: ${prefix}.${MAIN_DOMAIN} self-signed sertifikada."
+    warn "  Tarayici bu adrese guvenmeyecegi icin port acik birakildi."
+    warn "  Sertifika alindiktan sonra ./install.sh tekrar calistirin."
+    return 0
+  fi
+
   [ -f "${conf}.vmin-kit.bak" ] || cp -a "$conf" "${conf}.vmin-kit.bak"
   set_kv "$conf" bind "127.0.0.1"
   systemctl restart "$svc" >/dev/null 2>&1 || warn "  $svc yeniden baslatilamadi."
@@ -1089,9 +1138,54 @@ step_portainer(){
       err "Portainer imaji indirilemedi."; return 1
     fi
   fi
-  docker run -d --name portainer --restart=always -p "$pub" \
-    -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data "$image" >/dev/null
+  portainer_run "$pub" "$image" || return 1
   ok "Portainer calisiyor -> $pub"
+}
+
+# portainer_run <yayin> <imaj>
+# Konteyneri olusturan TEK yer. Iki cagiran var (ilk kurulum ve yayin
+# degisikligi); komut iki yere kopyalanirsa biri gun gelir digerinden sapar.
+portainer_run(){
+  docker run -d --name portainer --restart=always -p "$1" \
+    -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data "$2" >/dev/null
+}
+
+# portainer_set_publish <yayin>   ornek: "127.0.0.1:9000:9000" ya da "9000:9000"
+#
+# Docker calisan bir konteynerin port yayinini DEGISTIREMIYOR; tek yol silip
+# yeniden olusturmak. Veri portainer_data biriminde durdugu icin kayipsiz -
+# yonetici hesabi ve ayarlar yerinde kaliyor.
+#
+# Zaten istenen durumdaysa hicbir sey yapmiyor: temiz bir kurulumda konteyner
+# bir kez olusturulur, bir daha dokunulmaz.
+portainer_set_publish(){
+  local want="$1" cur expect image
+  docker ps -a --format '{{.Names}}' 2>/dev/null | grep -x portainer >/dev/null || return 0
+
+  # "127.0.0.1:9000:9000" -> "127.0.0.1:9000" ; "9000:9000" -> "0.0.0.0:9000"
+  expect="${want%:9000}"
+  case "$expect" in
+    *:*) ;;
+    *)   expect="0.0.0.0:$expect" ;;
+  esac
+  # 'docker port' 0.0.0.0 ve [::] icin iki satir yazabiliyor; ilki yeterli.
+  # Boru hatti yerine degisken kirpmasi: 'head -1' ureticiyi SIGPIPE ile
+  # oldurup pipefail altinda yanlis negatif uretebiliyor.
+  cur="$(docker port portainer 9000/tcp 2>/dev/null || true)"
+  cur="${cur%%$'\n'*}"
+  cur="${cur%$'\r'}"
+  [ "$cur" = "$expect" ] && return 0
+
+  log "Portainer yayini degistiriliyor: ${cur:-yok} -> $expect"
+  image="$(docker inspect -f '{{.Config.Image}}' portainer 2>/dev/null || true)"
+  [ -n "$image" ] || image="${PORTAINER_IMAGE:-portainer/portainer-ce:lts}"
+  docker rm -f portainer >/dev/null 2>&1 || true
+  if portainer_run "$want" "$image"; then
+    ok "Portainer yayini: $expect"
+  else
+    err "Portainer yeniden olusturulamadi."
+    return 1
+  fi
 }
 
 # Eklentiler: paketleri uretip Webmin'in KENDI kurulum yoluyla kur.
