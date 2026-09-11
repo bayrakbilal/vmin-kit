@@ -1,31 +1,27 @@
 #!/usr/bin/env bash
-# update-plugins.sh - GELISTIRME dongusu: plugin/ altindaki modulleri dogrudan
-# /usr/share/webmin'e kopyalar.
-#   sudo ./update-plugins.sh          # kurar / gunceller
-#   sudo ./update-plugins.sh --remove # kaldirir
+# update-plugins.sh - the DEVELOPMENT loop: copies the modules under plugin/
+# straight into /usr/share/webmin.
+#   sudo ./update-plugins.sh          # install / update
+#   sudo ./update-plugins.sh --remove # remove
 #
-# TEMIZ KURULUMDA BU SCRIPT KULLANILMAZ. install.sh eklentileri .wbm.gz olarak
-# paketleyip Webmin'in kendi install-module.pl'i ile kurar (step_plugins).
-# Burasi test/gelistirme icin: paketleme adimini atlayip dosyalari dogrudan
-# yerine koyar, boylece "duzenle - yenile" dongusu hizli kalir.
+# A CLEAN INSTALL DOES NOT USE THIS. install.sh packages the plugins as .wbm.gz
+# and installs them with Webmin's own install-module.pl (step_plugins). This is
+# for development: it skips the packaging step so the edit-refresh loop is fast.
 #
-# NE ZAMAN CALISTIRMAK GEREKIR?
-#   Webmin her istegi taze bir Perl process'inde calistirir; derleme yoktur.
-#   Bu yuzden .cgi / *.pl / lang duzenlemeleri icin HICBIR SEY gerekmez,
-#   tarayicida sayfayi yenilemek yeterlidir. Bu script yalnizca:
-#     - ilk kurulumda
-#     - module.info degistiginde (onbellek yalnizca /usr/share/webmin
-#       dizininin mtime'ina bakiyor, icindeki dosyaya degil)
-#     - modul eklenip cikarildiginda
-#   gerekir. Yine de her 'git pull' sonrasi calistirmak zararsizdir: dosyalar
-#   kopyalanir ve Webmin YALNIZCA module.info degistiginde yeniden baslatilir.
+# WHEN IS IT NEEDED?
+#   Webmin runs every request in a fresh Perl process; there is no build step,
+#   so edits to .cgi / *.pl / lang need NOTHING - just refresh the page. This
+#   script is needed only on the first install, when module.info changes (the
+#   cache looks at the mtime of /usr/share/webmin, not at the file), and when a
+#   module is added or removed. Running it after every 'git pull' is harmless:
+#   the files are copied and Webmin is restarted ONLY if module.info changed.
 #
-# Not: moduller kopyalanir, symlink kurulmaz. Symlink kurulsaydi Webmin'in ve
-# bu script'in yazdiklari dogrudan git deposunu kirletirdi.
+# Modules are copied, not symlinked: a symlink would let Webmin's own writes
+# land in the git working copy.
 #
-# Modulun postinstall.pl / uninstall.pl kancalari da calistirilir - Webmin
-# normalde bunlari kendisi cagirir, bu script o yolu kullanmadigi icin elle
-# cagiriyoruz. vmkit-cloudflare kendi systemd birimlerini orada kuruyor.
+# The module's postinstall.pl / uninstall.pl hooks are run here too - Webmin
+# normally calls them itself, and this script does not go through that path.
+# vmkit-cloudflare installs its systemd units in them.
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
@@ -36,12 +32,12 @@ MODE=copy
 case "${1:-}" in
   --remove) MODE=remove ;;
   "")       ;;
-  *) err "Bilinmeyen secenek: $1"; exit 1 ;;
+  *) err "Unknown option: $1"; exit 1 ;;
 esac
 
 WEBMIN_ROOT="$(webmin_root)"
-[ -d "$WEBMIN_ROOT" ] || { err "Webmin bulunamadi: $WEBMIN_ROOT"; exit 1; }
-[ -f /etc/webmin/virtual-server/config ] || { err "Virtualmin yapilandirmasi yok."; exit 1; }
+[ -d "$WEBMIN_ROOT" ] || { err "Webmin not found: $WEBMIN_ROOT"; exit 1; }
+[ -f /etc/webmin/virtual-server/config ] || { err "No Virtualmin configuration."; exit 1; }
 
 NEED_RESTART=0
 MODULES=()
@@ -49,22 +45,18 @@ for dir in "$ROOT_DIR"/plugin/*/; do
   [ -f "${dir}module.info" ] || continue
   MODULES+=("$(basename "$dir")")
 done
-[ ${#MODULES[@]} -gt 0 ] || { err "plugin/ altinda modul bulunamadi."; exit 1; }
+[ ${#MODULES[@]} -gt 0 ] || { err "No modules found under plugin/."; exit 1; }
 
-# Webmin'in modul kurulum kancalari. Normalde install_module.pl bunlari
-# cagirir; bu script dosyalari elle kopyaladigi icin ayni isi biz yapiyoruz.
-# Modul boylece nasil kurulursa kurulsun (buradan ya da .wbm.gz ile) ayni
-# kurulum sonrasi adimlari calistirir.
-# merge_config <modulun-config-dosyasi> <kurulu-config-dosyasi>
+# merge_config <module's config file> <installed config file>
 #
-# Webmin'in copyconfig.pl'i ile AYNI davranis: mevcut dosya korunur ama
-# modulun getirdigi YENI anahtarlar varsayilanlariyla eklenir.
+# The SAME behaviour as Webmin's copyconfig.pl: the existing file is kept, but
+# NEW keys the module ships are added with their defaults.
 #
-# Eskiden burada yalnizca "dosya yoksa kopyala" vardi. Sonucu suydu: bir
-# surumde yeni bir ayar eklendiginde .wbm.gz ile kurulan sunucularda ayar
-# varsayilaniyla geliyor, bu betikle guncellenen gelistirme sunucusunda ise
-# hic olusmuyordu - ayarlar sayfasi bos gorunuyordu. Gelistirme dongusu
-# gercek kurulumdan farkli davranmamali.
+# This used to be "copy if absent", and the result was that a setting added in
+# a new version arrived with its default on servers installed from .wbm.gz but
+# never appeared on a development server updated with this script - the
+# settings page looked empty. The development loop must not behave differently
+# from a real install.
 merge_config(){
   local src="$1" dst="$2" line k
   [ -f "$src" ] || return 0
@@ -73,23 +65,26 @@ merge_config(){
     chmod 0600 "$dst"
     return 0
   fi
-  # Mevcut dosya satir sonu ile bitmiyorsa eklenecek ilk satir son satira
-  # YAPISIR ve iki ayari birden bozar (olculdu: 'scan_depth=9flags='). Elle
-  # duzenlenmis bir dosyada bu gayet mumkun.
+  # If the existing file does not end with a newline, the first appended line
+  # GLUES onto the last one and corrupts two settings at once (measured:
+  # 'scan_depth=9flags='). Quite possible in a hand-edited file.
   if [ -s "$dst" ] && [ -n "$(tail -c 1 "$dst")" ]; then
     printf '\n' >> "$dst"
   fi
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in ''|'#'*) continue ;; esac
     k="${line%%=*}"
-    [ "$k" = "$line" ] && continue          # '=' yoksa ayar satiri degil
-    # Satir basina sabitlenmis arama: 'timeout=' anahtari 'x_timeout=' ile
-    # eslesmesin. set_kv ile ayni kalip.
+    [ "$k" = "$line" ] && continue          # no '=', so not a setting line
+    # Anchored at the start of the line so 'timeout=' does not match
+    # 'x_timeout='. The same pattern as set_kv.
     awk -v k="$k" 'index($0, k "=") == 1 { found = 1 } END { exit !found }' \
       "$dst" || printf '%s\n' "$line" >> "$dst"
   done < "$src"
 }
 
+# Webmin's module install hooks. install-module.pl normally calls them; this
+# script copies the files by hand, so it calls them itself and a module runs
+# the same post-install steps however it was installed.
 run_module_hook(){
   local mod="$1" file="$2" func="$3"
   [ -f "$WEBMIN_ROOT/$mod/$file" ] || return 0
@@ -98,11 +93,11 @@ run_module_hook(){
     $ENV{WEBMIN_CONFIG} ||= "/etc/webmin"; $ENV{WEBMIN_VAR} ||= "/var/webmin";
     push(@INC, $root, "$root/$mod"); $main::no_acl_check++;
     chdir("$root/$mod");
-    # init_config modul adini $0 icindeki dizinden okuyor.
+    # init_config reads the module name from the directory in $0.
     $0 = "$root/$mod/$file";
     require "./$file";
     &{\&{"main::$func"}}();
-  ' "$WEBMIN_ROOT" "$mod" "$file" "$func" || warn "  $mod: $file calistirilamadi"
+  ' "$WEBMIN_ROOT" "$mod" "$file" "$func" || warn "  $mod: could not run $file"
 }
 
 for mod in "${MODULES[@]}"; do
@@ -110,8 +105,8 @@ for mod in "${MODULES[@]}"; do
   dst="$WEBMIN_ROOT/$mod"
 
   if [ "$MODE" = remove ]; then
-    log "Kaldiriliyor: $mod"
-    # Once modulun kendi temizligi (systemd birimleri gibi), dosyalar dururken.
+    log "Removing: $mod"
+    # The module's own cleanup first (systemd units), while its files are there.
     run_module_hook "$mod" uninstall.pl module_uninstall
     rm -rf "$dst"
     plugins_remove "$mod"
@@ -120,68 +115,68 @@ for mod in "${MODULES[@]}"; do
     continue
   fi
 
-  log "Kuruluyor: $mod"
-  # Webmin yeniden baslatmasi yalnizca module.info degistiginde gerekiyor
-  # (onbellek /usr/share/webmin dizininin mtime'ina bakiyor, icerige degil).
+  log "Installing: $mod"
+  # A Webmin restart is needed only when module.info changed: the cache looks
+  # at the mtime of /usr/share/webmin, not at the file contents.
   old_info=""
   [ -f "$dst/module.info" ] && old_info="$(md5sum < "$dst/module.info")"
   [ -e "$dst" ] || NEED_RESTART=1
 
-  # Onceki kurulum ne olursa olsun (dizin ya da eski symlink) temizle.
+  # Clear whatever was there before, directory or old symlink.
   rm -rf "$dst"
   cp -a "$src" "$dst"
-  # 'cp -a' SAHIPLIGI KORUR. Depo root'un degilse (ornegin bir domain
-  # klasorune cekilmisse) modul dosyalari o kullanicinin uzerine gecerdi -
-  # ve Webmin CGI'leri ROOT olarak calistirdigi icin o kullanici kendi
-  # .cgi'sini duzenleyip root olabilirdi. Modul dosyalari her zaman root'un.
+  # 'cp -a' PRESERVES OWNERSHIP. If the checkout is not root's - say it lives
+  # in a domain's home - the module files would belong to that user, and since
+  # Webmin runs CGIs as ROOT that user could edit their own .cgi and become
+  # root. Module files are always root's.
   chown -R root:root "$dst"
-  # Yalnizca CGI'ler calistirilabilir olmali; *.pl dosyalari kutuphane.
+  # Only the CGIs need to be executable; *.pl files are libraries.
   chmod 0755 "$dst"/*.cgi 2>/dev/null || true
 
   new_info="$(md5sum < "$dst/module.info")"
   [ "$old_info" = "$new_info" ] || NEED_RESTART=1
 
-  # Modulun kendi yapilandirma dizini ve varsayilan ayarlari.
+  # The module's own config directory and default settings.
   install -d -m 0755 "/etc/webmin/$mod"
   merge_config "$src/config" "/etc/webmin/$mod/config"
 
   acl_grant "$mod"
   plugins_add "$mod"
 
-  # Modulun kendi kurulum sonrasi isi: vmkit-cloudflare burada systemd
-  # birimlerini kurup baslatiyor. Zaten kuruluysa hicbir sey yapmaz.
+  # The module's post-install work: vmkit-cloudflare installs and starts its
+  # systemd units here. Does nothing when they are already in place.
   run_module_hook "$mod" postinstall.pl module_install
 done
 
 if clear_links_cache; then
-  log "Domain menu onbellegi temizlendi."
+  log "Domain menu cache cleared."
 else
-  warn "Menu onbellegi temizlenemedi; degisiklik gorunmezse domaini kaydedin."
+  warn "Could not clear the menu cache; save a domain if changes do not appear."
 fi
 
 if [ "$NEED_RESTART" = 1 ]; then
-  # module.info onbellegi: yalnizca /usr/share/webmin dizininin mtime'ina
-  # bakildigi icin icerik degisikliklerinde kendiliginden tazelenmiyor.
+  # The module.info cache is keyed on the mtime of /usr/share/webmin, so it
+  # does not refresh itself when only the contents change.
   rm -f /etc/webmin/module.infos.cache /var/webmin/module.infos.cache
-  log "module.info degisti -> Webmin yeniden baslatiliyor..."
+  log "module.info changed -> restarting Webmin..."
   systemctl restart webmin
 else
-  log "module.info degismedi -> Webmin yeniden baslatilmadi (sayfayi yenilemek yeterli)."
+  log "module.info unchanged -> Webmin not restarted (refreshing the page is enough)."
 fi
 
 echo
 if [ "$MODE" = remove ]; then
-  ok "Moduller kaldirildi: ${MODULES[*]}"
+  ok "Modules removed: ${MODULES[*]}"
 else
-  ok "Moduller kuruldu: ${MODULES[*]}"
+  ok "Modules installed: ${MODULES[*]}"
   echo
-  log "Her ucu de domain basina ozelliktir. Once System Settings -> Features"
-  log "and Plugins altindan etkinlestirin, sonra Edit Virtual Server'da ilgili"
-  log "domain icin acin. Acildiginda domainin menusunde gorunurler:"
-  log "  Git Deploy       - uzak repodan deploy"
-  log "  Composer         - composer.json bulunan klasorler icin install/update"
-  log "  Cloudflare DNS   - yerel zone'u Cloudflare ile senkronlar"
+  log "All three are per-domain features. Enable them under System Settings ->"
+  log "Features and Plugins, then turn them on for a domain in Edit Virtual"
+  log "Server. Once on, they appear in that domain's menu:"
+  log "  Git Deploy       - deploy from a remote repository"
+  log "  Composer         - install/update for directories with a composer.json"
+  log "  Cloudflare DNS   - syncs the local zone to Cloudflare"
   if systemctl is-active --quiet vmkit-cloudflare-sync.path 2>/dev/null; then
-    log "Otomatik DNS senkronu calisiyor (zone degistiginde tetiklenir)."
+    log "Automatic DNS sync is running (triggered when a zone changes)."
   fi
 fi
