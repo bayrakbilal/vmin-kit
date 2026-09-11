@@ -305,69 +305,46 @@ step_dkim(){
   esac
 }
 
-# Ana domaini VIRTUALMIN'IN KENDI VARSAYILANLARIYLA olusturur
-# (--default-features): panelden "Create Virtual Server" dediginde ne
-# aciliyorsa aynisi. Boylece ana domain ozel bir durum olmuyor, sonradan
-# panelden actigin domainlerle ayni sekilde kuruluyor.
+# Creates the main domain with an EXPLICIT feature list.
 #
-# Hangi ozelliklerin varsayilan oldugu Virtualmin'in kendi yapilandirmasindan
-# geliyor (System Settings -> Features and Plugins). Bizim eklentilerimiz de o
-# listede: plugins_inactive'e yazmadigimiz icin yeni domainlerde varsayilan
-# acikler.
+# '--default-features' was used at first and had two problems: shaping those
+# defaults meant changing Virtualmin's global config, which silenced the
+# post-install wizard's questions; and the result became "whatever this server
+# currently defaults to", which is not reproducible.
 #
-# Bunun bedeli: sonuc o sunucunun global yapilandirmasina bagli. Bu yuzden
-# olusan ozellik listesini asagida LOGA yaziyoruz - ikinci sunucuda fark
-# olursa kurulum kaydindan gorulsun.
+# The list:
+#   unix dir    user and home directory; both mandatory
+#   web ssl     the site and its certificate - the reason the domain exists
+#   dns         the local BIND zone; the Cloudflare sync models itself on it
+#   mail        where the role addresses (postmaster/abuse) land
+#   logrotate   so the domain's logs do not grow forever
+#   webmin      lets the domain owner sign in to the panel
+#   mysql       REQUIRED: the webmail sub-server needs a database for Roundcube,
+#               and sub-servers take their MySQL user from the PARENT, so
+#               without mysql here that database would have no owner
+#   vmkit-*     our own plugins
 #
-# Posta acildiginda Virtualmin zone'a mail.<domain> A kaydi ve MX ekler; ayrica
-# domain sahibi unix kullanicisi o anda bir posta kutusuna donusur: adresi
-# <kullanici>@<domain> olur. Ayri bir hesap acilmiyor, var olan hesap adres
-# kazaniyor. Sifresi rastgele uretilip atildigi icin kutuyu kullanmadan once
-# panelden bir sifre belirlemek gerekir.
+# Deliberately absent: spam and virus (the wizard should ask), postgres (the
+# wizard enables it), virtualmin-awstats (per domain if wanted).
+#
+# Enabling mail turns the domain owner's unix account into a mailbox at
+# <user>@<domain>. Its password is random and discarded, so set one from the
+# panel before using it.
 step_main_domain(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; ana domain atlaniyor."; return 1; }
+  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping main domain."; return 1; }
   if virtualmin list-domains --name-only 2>/dev/null | grep -x "$MAIN_DOMAIN" >/dev/null; then
-    ok "Ana domain zaten var: $MAIN_DOMAIN (atlaniyor)."; return
+    ok "Main domain already exists: $MAIN_DOMAIN (skipping)."; return
   fi
-  # Sifre rastgele uretilir ve HICBIR YERE yazilmaz. Kullanilmasi gerekirse
-  # (Webmin girisi, FTP) panelden degistirilir; saklanmayan sir sizmaz.
+  # Random password, stored nowhere. A secret that is not kept cannot leak;
+  # set a real one from the panel when it is needed.
   local pw; pw="$(gen_pass)"
 
-  # ACIK OZELLIK LISTESI, '--default-features' DEGIL (2026-09-10).
-  #
-  # Once varsayilanlarla olusturuyorduk. Iki sorunu vardi: (1) varsayilanlari
-  # istedigimiz gibi yapmak icin Virtualmin'in global yapilandirmasini
-  # degistirmemiz gerekiyordu ve bu kurulum sihirbazinin sorularini
-  # susturuyordu; (2) ana domain "sunucunun o anki varsayilani ne ise o"
-  # oluyordu, yani sonucu kestirilemezdi.
-  #
-  # Simdi liste burada ve okunur:
-  #   unix dir       kullanici + ev dizini; ikisi de zorunlu
-  #   web ssl        site ve sertifikasi - bu domainin varlik sebebi
-  #   dns            yerel BIND zone'u; Cloudflare senkronu bunu model aliyor
-  #   mail           rol adresleri (postmaster/abuse) buraya dusuyor
-  #   logrotate      domainin gunlukleri sonsuza kadar buyumesin
-  #   webmin         domain sahibinin panele girebilmesi
-  #   mysql          GEREKLI: webmail alt sunucusu Roundcube icin veritabani
-  #                  istiyor ve alt sunucular MySQL kullanicisini EBEVEYNDEN
-  #                  aliyor (feature-mysql.pl: mysql_user parent'a devrediyor,
-  #                  setup_mysql kullaniciyi yalnizca !parent iken olusturuyor).
-  #                  Ana domainde mysql yoksa webmail'in veritabani sahipsiz
-  #                  kalir.
-  #   vmkit-*        kendi eklentilerimiz; zaten bu sunucunun amaci
-  #
-  # BILEREK YOK: spam, virus (sihirbaz sorsun), postgres (sihirbaz aciyor),
-  # virtualmin-awstats (gerekirse domain basina acilir).
-  #
-  # Not: bir '--<ozellik>' bayragi, o ozellik modul yapilandirmasinda kapaliysa
-  # reddediliyor (create-domain.pl: "cannot be used unless the feature is
-  # enabled in the module configuration"). Bu yuzden postgres'i buraya
-  # yazamayiz - sihirbazdan once kapali.
-  # BAYRAKLAR SUZULEREK veriliyor. Sebebi: kapali bir ozellik icin bayrak
-  # gecmek create-domain'i kullanim hatasiyla durduruyor ve o an ana domain
-  # olusmadigi icin ARDINDAN GELEN HER ADIM (SSL, panel siteleri, webmail,
-  # docker) da dusuyor. Sunucuda bir ozellik beklenmedik sekilde kapaliysa
-  # kurulumu ucurmaktansa o ozelligi atlayip uyari yazmak yegdir.
+  # Flags are FILTERED against the module config. Passing a flag for a disabled
+  # feature stops create-domain with a usage error, and since the main domain
+  # would then not exist, every following step (SSL, panel sites, webmail,
+  # docker) fails too. Skipping the feature with a warning is far better than
+  # losing the whole install. This is also why postgres cannot be listed here:
+  # it is off until the wizard enables it.
   local cfg="/etc/webmin/virtual-server/config"
   local want="unix dir web ssl dns mail logrotate webmin mysql"
   local -a flags=()
@@ -379,8 +356,8 @@ step_main_domain(){
       skipped="$skipped $f"
     fi
   done
-  # Eklentiler ayri kontrol: bunlar 'plugins=' satirinda olmali (step_plugins
-  # yaziyor ve o adim bundan once calisiyor).
+  # Plugins are checked separately: they must be on the 'plugins=' line, which
+  # step_plugins writes before this step runs.
   local p
   for p in vmkit-cloudflare vmkit-composer vmkit-deploy; do
     if grep -qE "^plugins=.*\b${p}\b" "$cfg" 2>/dev/null; then
@@ -389,96 +366,81 @@ step_main_domain(){
       skipped="$skipped $p"
     fi
   done
-  [ -z "$skipped" ] || warn "Kapali oldugu icin atlanan ozellikler:$skipped"
+  [ -z "$skipped" ] || warn "Skipped because they are disabled:$skipped"
 
-  log "Ana domain olusturuluyor: $MAIN_DOMAIN"
+  log "Creating the main domain: $MAIN_DOMAIN"
   virtualmin create-domain \
     --domain "$MAIN_DOMAIN" \
     --pass   "$pw" \
     --desc   "$MAIN_DOMAIN" \
     "${flags[@]}"
   unset pw
-  ok "Ana domain olusturuldu."
-  # Ne acildigini kayda gecir: bayraklarin bir kismi modul yapilandirmasina
-  # bagli oldugu icin sonucu gormek onemli.
+  ok "Main domain created."
+  # Record what was actually enabled: some flags depend on the module config.
   virtualmin list-domains --domain "$MAIN_DOMAIN" --multiline 2>/dev/null |
     awk '/^[[:space:]]*(Features|Plugins):/ { sub(/^[[:space:]]*/,""); print "    "$0 }'
 }
 
-# Hostname (or: s.ornek.com) ana domainin zone'unda A kaydi olarak yer almali.
-# Virtualmin bunu kendiliginden eklemiyor. Harici DNS modunda yayinlanan kopya
-# disarida oldugu icin etkisi yok, ama yerel zone bizim "model"imiz: dogru olmali
-# ki ileride Cloudflare senkronu dogru kaydi gonderebilsin. BIND modunda ise
-# delegasyon geldiginde panelin adresinin cozumlenmesi buna bagli.
+# The hostname needs an A record in the main domain's zone; Virtualmin does not
+# add one. With external DNS the published copy lives elsewhere, but the local
+# zone is our model and has to be right for the sync to send the right record.
+# In BIND mode it is what makes the panel address resolve once delegation lands.
 step_host_dns(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; hostname DNS kaydi atlaniyor."; return 1; }
+  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping the hostname DNS record."; return 1; }
   case "$HOSTNAME_FQDN" in
     *".$MAIN_DOMAIN") ;;
-    *) log "Hostname ana domainin alt alani degil; DNS kaydi atlaniyor."; return;;
+    *) log "Hostname is not a subdomain of the main domain; skipping the DNS record."; return;;
   esac
   local ip; ip="$(detect_ip)"
   if virtualmin get-dns --domain "$MAIN_DOMAIN" --name-only 2>/dev/null \
      | sed 's/\.$//' | grep -ixF "$HOSTNAME_FQDN" >/dev/null; then
-    ok "Zone'da $HOSTNAME_FQDN kaydi zaten var."
+    ok "The zone already has a record for $HOSTNAME_FQDN."
     return
   fi
-  log "Zone'a hostname A kaydi ekleniyor: $HOSTNAME_FQDN -> $ip"
+  log "Adding the hostname A record to the zone: $HOSTNAME_FQDN -> $ip"
   if virtualmin modify-dns --domain "$MAIN_DOMAIN" --add-record "${HOSTNAME_FQDN}. A ${ip}"; then
-    ok "Hostname A kaydi eklendi."
+    ok "Hostname A record added."
   else
-    warn "Eklenemedi. Elle eklemek icin:"
+    warn "Could not add it. Manually:"
     warn "  virtualmin modify-dns --domain $MAIN_DOMAIN --add-record \"${HOSTNAME_FQDN}. A ${ip}\""
   fi
 }
 
-# Hostname sanal sunucusu.
+# The hostname virtual server.
 #
-# NEDEN BIZ YAPIYORUZ: Virtualmin kurucusu bunu yalnizca SERTIFIKA ALABILDIGI
-# durumda birakiyor. Kaynakta acikca yaziyor (Virtualmin::Config::Plugin::SSL):
+# Virtualmin's installer only keeps this when the certificate succeeds - its
+# SSL config plugin deletes what it created on failure - but the virtual server
+# is needed regardless: it is the DEFAULT website a bare-IP request lands on,
+# and it is where the Webmin/Usermin/Postfix/Dovecot certificates come from.
+# Without it Apache falls back to the alphabetically first vhost.
 #
-#   my ($ok, $error) = virtual_server::setup_virtualmin_default_hostname_ssl();
-#   if ($ok) { ... } else { virtual_server::delete_virtualmin_default_hostname_ssl(); }
-#
-# Yani DNS henuz yayilmamissa olusturdugunu geri siliyor. Kurucunun bunu
-# degistiren bir anahtari yok; --no-hostname-ssl adimi tumden atliyor.
-#
-# Oysa bu sanal sunucu sertifikadan bagimsiz olarak gerekli:
-#   - IP'ye gelen isteklerin dustugu VARSAYILAN site o (set_default_website).
-#     Olmadiginda Apache alfabetik ilk vhost'u kullaniyor; DNS'siz kurulumda
-#     IP'ye gidince Portainer sitesi aciliyordu.
-#   - Webmin/Usermin/Postfix/Dovecot sertifikalarinin kaynagi o.
-#
-# Virtualmin'in KENDI fonksiyonu cagriliyor, duz bir create-domain degil:
-# fonksiyon 'defaulthostdomain' isaretini koyuyor, varsayilan siteyi ayarliyor
-# ve default_domain_ssl anahtarini yonetiyor. Elle olusturulan bir domain
-# listede gorunur ama Virtualmin onu hostname domaini olarak tanimaz.
-#
-# Fonksiyonun CLI karsiligi yok (kutuda arandi: yalnizca
-# virtual-server-lib-funcs.pl icinde geciyor), o yuzden Webmin'in kendi
-# ortaminda calistiriliyor - onsoz Virtualmin'in kendi CLI betiklerinden.
+# Virtualmin's own function is called rather than a plain create-domain: it
+# marks the domain 'defaulthostdomain', sets the default website and manages
+# the default_domain_ssl key. A hand-made domain would appear in the list but
+# Virtualmin would not recognise it as the hostname domain. There is no CLI
+# wrapper for it, hence the inline Perl in Webmin's environment.
 step_host_domain(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; hostname sanal sunucusu atlaniyor."; return 1; }
+  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping the hostname virtual server."; return 1; }
   local host="$HOSTNAME_FQDN" vsdir="/usr/share/webmin/virtual-server"
 
   if virtualmin list-domains --name-only 2>/dev/null | grep -xF "$host" >/dev/null; then
-    ok "Hostname sanal sunucusu zaten var: $host"
-    # Fonksiyon bu noktada ise yaramaz: domain varken 'check_defhost_clash'
-    # ile reddediyor. Sertifika normal yoldan isteniyor.
+    ok "Hostname virtual server already exists: $host"
+    # The function is no use here: it refuses when the domain exists
+    # ('check_defhost_clash'), so the certificate is requested the normal way.
     ensure_site_cert hostname "$host" || true
-    # Dagitim YALNIZCA sertifika yeni alindiysa. Virtualmin yenilemede
-    # sertifikayi kendiliginden tazeliyor ama sadece o domainin sertifikasinin
-    # bir kopyasini TUTAN servislere (get_all_domain_service_ssl_certs icerik
-    # karsilastiriyor). Ilk kopyayi biri koymazsa o liste hep bos kalir.
+    # Distribute ONLY when the certificate was obtained in this run. Renewal
+    # refreshes services that already hold a copy of the cert, so unless the
+    # first copy is made once, that list stays empty forever.
     [ "${VMINKIT_CERT_NEW:-0}" = "1" ] && host_cert_to_services "$host"
     site_cert_ok hostname "$host"
     return
   fi
 
   if [ ! -f "$vsdir/virtual-server-lib.pl" ]; then
-    err "Virtualmin modulu bulunamadi: $vsdir"
+    err "Virtualmin module not found: $vsdir"
     return 1
   fi
-  log "Hostname sanal sunucusu olusturuluyor: $host"
+  log "Creating the hostname virtual server: $host"
   WEBMIN_CONFIG=/etc/webmin WEBMIN_VAR=/var/webmin perl - "$vsdir" <<'PERL'
 package virtual_server;
 my $dir = shift(@ARGV);
@@ -492,62 +454,52 @@ $msg =~ s/<[^>]*>//g;
 print "vmkit: hostname domain -> ", ($ok ? "ok" : "fail"), " : $msg\n";
 PERL
 
-  # Sonuc DONUS KODUNDAN okunmuyor: fonksiyon sertifika basarisizligi ile
-  # erken cikislari (clash, FQDN degil, yetki) ayni kodla donduruyor. Gercek
-  # durum sisteme sorularak ogreniliyor.
+  # Success is checked against the system, not the return code: the function
+  # uses the same value for a failed certificate and for early refusals.
   if ! virtualmin list-domains --name-only 2>/dev/null | grep -xF "$host" >/dev/null; then
-    err "Hostname sanal sunucusu olusturulamadi: $host"
+    err "Could not create the hostname virtual server: $host"
     return 1
   fi
-  ok "Hostname sanal sunucusu olusturuldu: $host"
+  ok "Hostname virtual server created: $host"
 
-  # NIYETIMIZ VIRTUALMIN'IN CONFIG'INE DE YAZILIYOR.
+  # The intent has to be recorded in Virtualmin's config as well: its
+  # "Re-Check Configuration" DELETES the hostname domain when the domain
+  # exists while default_domain_ssl is off, and Virtualmin only sets that key
+  # when the certificate succeeded.
   #
-  # check_virtualmin_default_hostname_ssl (panelde "Re-Check Configuration")
-  # hostname domaini VAR ama default_domain_ssl KAPALI ise onu siliyor:
-  #
-  #   if ($config{'default_domain_ssl'}) { ... } else { $remove_default_host_domain->(0) }
-  #
-  # Fonksiyon bu anahtari yalnizca sertifika alabildiginde 1 yapiyor, yani
-  # sertifikasiz kurulumda 0 kaliyor ve az once olusturdugumuz sunucu ilk
-  # yeniden denetlemede silinirdi.
-  #
-  # Deger 1 ("Yes"): Virtualmin'in sertifikali kurulumda kendi yazdigi deger.
-  # Ayni degeri yazmak, sertifika alinabilen ve alinamayan kurulumlari ayni
-  # noktaya getiriyor. 2 ("Yes, and have it configurable") hostname domainini
-  # panel listelerinde de gosterirdi; orada gorunmesini istemiyoruz.
-  # Zaten bir deger varsa DOKUNULMUYOR - kullanicinin secimi bizden onceliklidir.
+  # Value 1 is what Virtualmin itself writes, so both paths end up identical.
+  # 2 would also show the domain in the panel's lists, which we do not want.
+  # An existing value is left alone - the user's choice wins.
   local vcfg="/etc/webmin/virtual-server/config"
   if [ -f "$vcfg" ]; then
     case "$(awk -F= '/^default_domain_ssl=/{print $2; exit}' "$vcfg")" in
       1|2) ;;
       *) set_kv "$vcfg" default_domain_ssl 1
-         ok "  Hostname domaini Virtualmin ayarlarinda etkinlestirildi." ;;
+         ok "  Hostname domain enabled in the Virtualmin settings." ;;
     esac
   fi
 
-  # Sertifika alinabildiyse fonksiyon servislere dagitimi da yapti.
+  # When the certificate succeeded, the function distributed it to the services.
   if domain_has_acme_cert "$host"; then
     VMINKIT_SITE_CERT[hostname]=1
-    ok "Sertifika alindi: $host"
+    ok "Certificate obtained: $host"
     return 0
   fi
   VMINKIT_SITE_CERT[hostname]=0
-  warn "Sertifika alinamadi: $host (self-signed kaldi)"
+  warn "Could not obtain a certificate: $host (still self-signed)"
   return 1
 }
 
 # host_cert_to_services <hostname>
-# Hostname sertifikasini servislerin genel varsayilani yapar.
+# Makes the hostname certificate the services' global default.
 #
-# Servisler vhost gibi calismiyor: Postfix, Dovecot, miniserv hangi adla
-# gelinirse gelinsin tek bir varsayilan sertifika sunuyor ve o sertifika
-# dosyanin KOPYASI (/etc/webmin/<host>.cert gibi), baglanti degil.
+# Services do not work like vhosts: Postfix, Dovecot and miniserv present one
+# certificate whatever name the client used, and that certificate is a COPY of
+# the file (/etc/webmin/<host>.cert and friends), not a link.
 #
-# Servisler tek tek cagriliyor: install-service-cert gecersiz bir servis
-# adinda tum cagriyi reddediyor, gecerli liste ise sistemden geliyor
-# (list_service_ssl_cert_types). Desteklenmeyeni sessizce atlamak boyle
-# mumkun.
+# Called one service at a time: install-service-cert rejects the whole call if
+# any service name is invalid, and the valid list comes from the system at
+# runtime, so this is the only way to skip an unsupported one quietly.
 host_cert_to_services(){
   local host="$1" svc
   local -a done_svc=()
@@ -556,27 +508,27 @@ host_cert_to_services(){
       && done_svc+=("$svc")
   done
   if [ ${#done_svc[@]} -gt 0 ]; then
-    ok "Sertifika servislere dagitildi: ${done_svc[*]}"
+    ok "Certificate copied to services: ${done_svc[*]}"
     return 0
   fi
-  warn "Sertifika hicbir servise dagitilamadi."
+  warn "Could not copy the certificate to any service."
   return 1
 }
 
 step_ssl(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin yok; SSL atlaniyor."; return 1; }
-  # create-domain, otomatik ACME acikken sertifikayi zaten aliyor. Tekrar istemek
-  # ayni isim seti icin ikinci bir sertifika uretir ve saglayici kotasini yer
-  # (Lets Encrypt: ayni isimler icin haftada 5 sertifika).
+  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping SSL."; return 1; }
+  # create-domain already requests the certificate when automatic ACME is on.
+  # Asking again would issue a second certificate for the same name set and eat
+  # the provider's quota.
   if domain_has_acme_cert "$MAIN_DOMAIN"; then
-    ok "SSL sertifikasi zaten alinmis (atlaniyor)."
+    ok "Certificate already obtained (skipping)."
     return
   fi
-  log "Sertifika isteniyor (ACME/Lets Encrypt): $MAIN_DOMAIN"
+  log "Requesting a certificate (ACME/Let's Encrypt): $MAIN_DOMAIN"
   if virtualmin generate-letsencrypt-cert --domain "$MAIN_DOMAIN" --default-hosts --renew; then
-    ok "SSL alindi, otomatik yenileme acik."
+    ok "Certificate obtained, automatic renewal is on."
   else
-    warn "SSL alinamadi. A kaydini ve 80/443 erisimini kontrol edip tekrar deneyin:"
+    warn "Could not obtain a certificate. Check the A record and access to ports 80/443, then:"
     warn "  virtualmin generate-letsencrypt-cert --domain $MAIN_DOMAIN --default-hosts --renew"
   fi
 }
