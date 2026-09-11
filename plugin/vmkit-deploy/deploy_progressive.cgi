@@ -1,13 +1,14 @@
 #!/usr/bin/perl
-# Bir deployment'i calistirir ve ciktisini normal bir sayfada gosterir.
-# Webmin'in ui-lib'inde modal/popup destegi yok; kendi penceremizi uydurmak
-# yerine temanin standart sayfa duzenini kullaniyoruz.
+# Runs a deployment and shows its output on an ordinary page. Webmin's ui-lib
+# has no modal or popup support, so the theme's standard page layout is used
+# rather than inventing a window of our own.
 #
-# op parametresi:
-#   pull    yalnizca cek (site degismez)
-#   deploy  yalnizca dagit
-#   yoksa   deployment'in moduna bakilir: otomatik ise cek+dagit, manuel ise
-#           yalnizca cek. Webhook da parametresiz gelir, yani ayni kurala uyar.
+# The op parameter:
+#   pull    pull only (the site does not change)
+#   deploy  deploy only
+#   absent  decided by the deployment's mode: automatic means pull+deploy,
+#           manual means pull only. The webhook also arrives without it, so
+#           both follow the same rule.
 use strict;
 use warnings;
 our (%text, %in);
@@ -23,33 +24,32 @@ $d->{'vmkit-deploy'} || &error(&text('index_eoff', $d->{'dom'}));
 my $dep = &get_deploy($d, $in{'id'});
 $dep || &error($text{'edit_egone'});
 
-# Bilinmeyen ya da eksik op: moda gore karar ver. Webhook da parametresiz
-# gelecegi icin ayni kurala uyuyor - otomatikse cek+dagit, manuelse yalnizca cek.
+# An unknown or missing op is decided by the mode.
 my $op = $in{'op'} || '';
 if ($op !~ /^(pull|deploy|both)$/) {
 	$op = ($dep->{'mode'} || 'manual') eq 'auto' ? 'both' : 'pull';
 	}
 
 # ---------------------------------------------------------------------------
-# DOSYA ADI ONEMLI: adi "_progressive.cgi" ile bitmek ZORUNDA.
+# THE FILE NAME MATTERS: it MUST end in "_progressive.cgi".
 #
-# Tema (authentic) bir istegi akitarak mi yoksa bitmesini bekleyip tek seferde
-# mi basacagina JS tarafinda karar veriyor: unbuffered_header_processor_allow()
-# icinde yuzlerce satirlik SABIT bir yol listesi var (virtual-server/
-# enable_dkim.cgi, package-updates/update.cgi, webmin/upgrade.cgi ...). Listede
-# olmayan her sey normal pjax'a giriyor, pjax da ancak yanit tamamlaninca
-# ekrana basiyor - bizim "sayfa en sonda tek seferde geliyor" sorunumuz buydu.
+# The Authentic theme decides in JavaScript whether to stream a request or to
+# wait and print it in one go: unbuffered_header_processor_allow() holds a
+# hard-coded list of paths hundreds of lines long (virtual-server/
+# enable_dkim.cgi, package-updates/update.cgi, webmin/upgrade.cgi ...).
+# Anything not on it goes through ordinary pjax, which only paints once the
+# response is complete.
 #
-# Listenin sonundaki iki satir ucuncu partiler icin birakilmis genel kapi:
+# The last two lines of that list are the general door left open for third
+# parties:
 #     n.indexOf("_progressive.cgi") > -1 || n.indexOf("_saving.cgi") > -1
-# Yani dosya adinda "_progressive.cgi" gecen her CGI akitiliyor.
+# so any CGI whose name contains "_progressive.cgi" is streamed.
 #
-# TAMPONSUZ baslik da sart (ui_print_unbuffered_header, $| = 1); ama sunucu
-# tarafi zaten dogruydu, eksik olan tek sey bu isimdi.
+# An unbuffered header is required too (ui_print_unbuffered_header, $| = 1).
 #
-# Duzen Virtualmin'in kendi "is yapan" sayfalarindan (ornek: enable_dkim.cgi):
-# ustte hicbir sey yok, cikti hemen basliyor, sonuc ve notlar en sonda.
-# Sonucun ustte olmasi zaten mumkun degil - is bitmeden bilinmiyor.
+# The layout follows Virtualmin's own "doing work" pages (enable_dkim.cgi):
+# nothing above, output starts immediately, result and notes at the end - the
+# result cannot be at the top, it is not known until the work finishes.
 &ui_print_unbuffered_header(&virtual_server::domain_in($d), &op_label($op),
 			    "", undef, 0, 0);
 
@@ -69,13 +69,13 @@ print "<p><b>",
 		     $ok ? 'success' : 'danger'),
       "</b></p>\n";
 
-# Cekildi ama yayinlanmadiysa bir sonraki adimi hemen onune koy: manuel modun
-# butun anlami bu ara durumda.
+# Pulled but not published: offer the next step right here, since that middle
+# state is the whole point of manual mode.
 #
-# KUTU ICINDE ve acik metinle: eskiden bu dugme sayfanin dibinde, alt bilgi
-# baglantisinin hemen ustunde tek basina duruyordu ve "geri don" sanilip
-# yanlislikla basildi - istenmeyen bir dagitim. Bir siteyi yayina almak
-# yanlislikla tiklanacak bir sey olmamali.
+# It sits IN A BOX with explanatory text. On its own at the foot of the page,
+# just above the footer link, the button was mistaken for "go back" and clicked
+# by accident - an unwanted deployment. Publishing a site must not be something
+# you click by mistake.
 if ($ok && $op eq 'pull' && &pending($d, $dep)) {
 	print "<div style='border:1px solid #999; padding:10px; margin:12px 0'>\n";
 	print "<b>", $text{'deploy_pending'}, "</b><br>\n";
