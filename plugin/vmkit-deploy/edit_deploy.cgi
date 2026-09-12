@@ -11,10 +11,7 @@ our (%text, %in, %config, $module_name);
 require './vmkit-deploy-lib.pl';
 &ReadParse();
 
-my $d = &virtual_server::get_domain($in{'dom'});
-$d || &error($text{'index_edom'});
-&can_edit_domain($d) || &error($text{'index_eaccess'});
-$d->{'vmkit-deploy'} || &error(&text('index_eoff', $d->{'dom'}));
+my $d = &domain_from_in();
 
 my ($dep, $actions, $new) = &deploy_from_in($d);
 $dep || &error($text{'edit_egone'});

@@ -15,10 +15,7 @@ our (%text, %in, $module_name);
 require './vmkit-cloudflare-lib.pl';
 &ReadParse();
 
-my $d = &virtual_server::get_domain($in{'dom'});
-$d || &error($text{'index_edom'});
-&can_edit_domain($d) || &error($text{'index_eaccess'});
-$d->{'vmkit-cloudflare'} || &error(&text('index_eoff', $d->{'dom'}));
+my $d = &domain_from_in();
 
 &ui_print_header(&virtual_server::domain_in($d), $text{'cmp_title'},
 		 "", undef, 0, 0);

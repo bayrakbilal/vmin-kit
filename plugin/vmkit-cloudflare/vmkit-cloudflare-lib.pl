@@ -22,7 +22,7 @@ use warnings;
 BEGIN { push(@INC, ".."); };
 use WebminCore;
 
-our (%config, %text, $module_name, $module_config_directory,
+our (%config, %text, %in, $module_name, $module_config_directory,
      $module_root_directory);
 
 &init_config();
@@ -191,6 +191,18 @@ sub can_edit_domain
 {
 my ($d) = @_;
 return &virtual_server::can_edit_domain($d);
+}
+
+# domain_from_in() -> &domain
+# The domain every page works on: named by 'dom', editable by this user, and
+# with the feature enabled. Any other case ends the page with an error.
+sub domain_from_in
+{
+my $d = &virtual_server::get_domain($in{'dom'});
+$d || &error($text{'index_edom'});
+&can_edit_domain($d) || &error($text{'index_eaccess'});
+$d->{$module_name} || &error(&text('index_eoff', $d->{'dom'}));
+return $d;
 }
 
 # The masked form of the token, for display.

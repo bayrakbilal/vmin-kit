@@ -105,6 +105,18 @@ set_kv(){
   rm -f "$tmp"
 }
 
+# get_kv <file> <key> -> the value of the first "key=value" line, or nothing.
+# Everything after the first '=' is the value: Webmin lists (plugins=,
+# referers=) are space-separated and never contain '='.
+get_kv(){
+  local f="$1" k="$2"
+  [ -f "$f" ] || return 0
+  VMKIT_K="$k" awk '
+    BEGIN { k = ENVIRON["VMKIT_K"] "=" }
+    index($0, k) == 1 { print substr($0, length(k) + 1); exit }
+  ' "$f"
+}
+
 is_truthy(){ case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')" in 1|yes|true|on) return 0;; *) return 1;; esac; }
 
 # ask "Question" "default" -> prints the answer (default when input is empty)
@@ -189,7 +201,7 @@ gen_pass(){
 # Webmin root directory (/usr/share/webmin on Debian)
 webmin_root(){
   local r
-  r="$(awk -F= '/^root=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null || true)"
+  r="$(get_kv /etc/webmin/miniserv.conf root)"
   printf '%s' "${r:-/usr/share/webmin}"
 }
 
@@ -223,7 +235,7 @@ acl_revoke(){
 plugins_add(){
   local mod="$1" cur cfg=/etc/webmin/virtual-server/config
   [ -f "$cfg" ] || return 1
-  cur="$(awk -F= '/^plugins=/{sub(/^plugins=/,""); print; exit}' "$cfg" || true)"
+  cur="$(get_kv "$cfg" plugins)"
   case " $cur " in *" $mod "*) return 0 ;; esac
   set_kv "$cfg" plugins "$(echo "$cur $mod" | xargs)"
   log "  added to the Virtualmin plugin list: $mod"
@@ -232,7 +244,7 @@ plugins_add(){
 plugins_remove(){
   local mod="$1" cur new cfg=/etc/webmin/virtual-server/config
   [ -f "$cfg" ] || return 1
-  cur="$(awk -F= '/^plugins=/{sub(/^plugins=/,""); print; exit}' "$cfg" || true)"
+  cur="$(get_kv "$cfg" plugins)"
   new="$(echo "$cur" | tr ' ' '\n' | grep -vxF "$mod" | xargs || true)"
   set_kv "$cfg" plugins "$new"
 }

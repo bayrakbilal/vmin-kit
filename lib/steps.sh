@@ -521,7 +521,7 @@ PERL
   # An existing value is left alone - the user's choice wins.
   local vcfg="/etc/webmin/virtual-server/config"
   if [ -f "$vcfg" ]; then
-    case "$(awk -F= '/^default_domain_ssl=/{print $2; exit}' "$vcfg")" in
+    case "$(get_kv "$vcfg" default_domain_ssl)" in
       1|2) ;;
       *) set_kv "$vcfg" default_domain_ssl 1
          ok "  Hostname domain enabled in the Virtualmin settings." ;;
@@ -912,7 +912,7 @@ step_docker_site(){
 add_trusted_referer(){
   local conf="$1" site="$2" cur
   [ -f "$conf" ] || return 0
-  cur="$(awk -F= '/^referers=/{sub(/^referers=/,""); print; exit}' "$conf")"
+  cur="$(get_kv "$conf" referers)"
   case " $cur " in
     *" $site "*) ok "  Trusted address already registered: $site"; return 0 ;;
   esac
@@ -949,7 +949,7 @@ set_panel_external_port(){
 # (step_lock_panel_ports) that first verifies the proxy works.
 step_panel_sites(){
   local wport uport
-  wport="$(awk -F= '/^port=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null)"
+  wport="$(get_kv /etc/webmin/miniserv.conf port)"
   wport="${wport:-10000}"
   ensure_proxy_site "${WEBMIN_PREFIX:-webmin}" "https://127.0.0.1:${wport}/" \
                     "Webmin (vmin-kit)" phost
@@ -957,7 +957,7 @@ step_panel_sites(){
   set_panel_external_port "Webmin" /etc/webmin/miniserv.conf webmin
 
   if [ -f /etc/usermin/miniserv.conf ]; then
-    uport="$(awk -F= '/^port=/{print $2; exit}' /etc/usermin/miniserv.conf 2>/dev/null)"
+    uport="$(get_kv /etc/usermin/miniserv.conf port)"
     uport="${uport:-20000}"
     ensure_proxy_site "${USERMIN_PREFIX:-usermin}" "https://127.0.0.1:${uport}/" \
                       "Usermin (vmin-kit)" phost
@@ -988,7 +988,7 @@ lock_panel_port(){
   local name="$1" conf="$2" svc="$3" prefix="$4"
   [ -f "$conf" ] || { log "  $name is not installed, skipping."; return 0; }
 
-  if [ "$(awk -F= '/^bind=/{print $2; exit}' "$conf")" = "127.0.0.1" ]; then
+  if [ "$(get_kv "$conf" bind)" = "127.0.0.1" ]; then
     ok "$name already listens on 127.0.0.1 only."
     return 0
   fi
@@ -1287,7 +1287,7 @@ step_report(){
   say ""
   say "Addresses"
   say "  Site       : https://${MAIN_DOMAIN}"
-  if [ "$(awk -F= '/^bind=/{print $2; exit}' /etc/webmin/miniserv.conf 2>/dev/null)" = "127.0.0.1" ]; then
+  if [ "$(get_kv /etc/webmin/miniserv.conf bind)" = "127.0.0.1" ]; then
     say "  Panel      : https://${WEBMIN_PREFIX:-webmin}.${MAIN_DOMAIN}/"
   else
     say "  Panel      : https://${HOSTNAME_FQDN}:10000"

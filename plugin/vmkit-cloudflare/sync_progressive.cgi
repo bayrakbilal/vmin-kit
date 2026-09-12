@@ -30,10 +30,7 @@ our (%text, %in);
 require './vmkit-cloudflare-lib.pl';
 &ReadParse();
 
-my $d = &virtual_server::get_domain($in{'dom'});
-$d || &error($text{'index_edom'});
-&can_edit_domain($d) || &error($text{'index_eaccess'});
-$d->{'vmkit-cloudflare'} || &error(&text('index_eoff', $d->{'dom'}));
+my $d = &domain_from_in();
 
 &ui_print_unbuffered_header(&virtual_server::domain_in($d), $text{'sync_title'},
 			    "", undef, 0, 0);

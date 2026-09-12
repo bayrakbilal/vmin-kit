@@ -108,6 +108,18 @@ my ($d) = @_;
 return &virtual_server::can_edit_domain($d);
 }
 
+# domain_from_in() -> &domain
+# The domain every page works on: named by 'dom', editable by this user, and
+# with the feature enabled. Any other case ends the page with an error.
+sub domain_from_in
+{
+my $d = &virtual_server::get_domain($in{'dom'});
+$d || &error($text{'index_edom'});
+&can_edit_domain($d) || &error($text{'index_eaccess'});
+$d->{$module_name} || &error(&text('index_eoff', $d->{'dom'}));
+return $d;
+}
+
 # validate_target(&domain, path)
 # The target must live under the DOCUMENT ROOT (public_html). The home
 # directory also holds the panel's own folders, mail, logs and the sub-servers'

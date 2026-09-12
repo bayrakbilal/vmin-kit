@@ -8,10 +8,7 @@ our (%text, %in);
 require './vmkit-composer-lib.pl';
 &ReadParse();
 
-my $d = &virtual_server::get_domain($in{'dom'});
-$d || &error($text{'index_edom'});
-&can_edit_domain($d) || &error($text{'index_eaccess'});
-$d->{'vmkit-composer'} || &error(&text('index_eoff', $d->{'dom'}));
+my $d = &domain_from_in();
 
 # A directory arriving from a link is not trusted: it has to be one of the
 # projects the scan found.

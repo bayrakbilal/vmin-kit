@@ -12,7 +12,7 @@ use warnings;
 BEGIN { push(@INC, ".."); };
 use WebminCore;
 
-our (%config, %text, $module_name, $module_config_directory);
+our (%config, %text, %in, $module_name, $module_config_directory);
 
 &init_config();
 &foreign_require("virtual-server", "virtual-server-lib.pl");
@@ -21,6 +21,18 @@ sub can_edit_domain
 {
 my ($d) = @_;
 return &virtual_server::can_edit_domain($d);
+}
+
+# domain_from_in() -> &domain
+# The domain every page works on: named by 'dom', editable by this user, and
+# with the feature enabled. Any other case ends the page with an error.
+sub domain_from_in
+{
+my $d = &virtual_server::get_domain($in{'dom'});
+$d || &error($text{'index_edom'});
+&can_edit_domain($d) || &error($text{'index_eaccess'});
+$d->{$module_name} || &error(&text('index_eoff', $d->{'dom'}));
+return $d;
 }
 
 # composer_command() -> path to composer, or undef
