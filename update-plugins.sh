@@ -176,7 +176,7 @@ else
   log "  Git Deploy       - deploy from a remote repository"
   log "  Composer         - install/update for directories with a composer.json"
   log "  Cloudflare DNS   - syncs the local zone to Cloudflare"
-  log "The fourth, Check vmin-kit, is a page under System Settings."
+  log "The fourth, Check VminKit, is a page under System Settings."
   if systemctl is-active --quiet vmkit-cloudflare-sync.path 2>/dev/null; then
     log "Automatic DNS sync is running (triggered when a zone changes)."
   fi

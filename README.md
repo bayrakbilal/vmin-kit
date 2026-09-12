@@ -95,7 +95,7 @@ repository installs the same way.
 | `PLUGIN_DEPLOY` | Installs the Git Deploy plugin | 1 |
 | `PLUGIN_COMPOSER` | Installs the Composer plugin | 1 |
 | `PLUGIN_CLOUDFLARE` | Installs the Cloudflare DNS plugin | 1 |
-| `PLUGIN_CHECK` | Installs the Check vmin-kit plugin | 1 |
+| `PLUGIN_CHECK` | Installs the Check VminKit plugin | 1 |
 | `PANEL_PROXY` | Publishes the `webmin.<domain>` and `usermin.<domain>` sub-domains | 1 |
 | `LOCK_PANEL_PORTS` | Binds ports 10000/20000 to `127.0.0.1` only | 1 |
 | `ROUNDCUBE` | The `webmail.<domain>` sub-server + Roundcube | 1 |
@@ -306,9 +306,9 @@ the zone file changes, and checks every 15 minutes besides. An unchanged zone
 makes no API call at all. The plugin's main page shows the state of the service
 and restarts it if it has stopped.
 
-### Check vmin-kit
+### Check VminKit
 
-*System Settings → Check vmin-kit.* The three plugins call into Virtualmin,
+*System Settings → Check VminKit.* The three plugins call into Virtualmin,
 Webmin's UI library and a few Webmin modules, none of which promise a stable
 interface; an upgrade can rename a function or stop calling a hook, and the
 plugin only breaks when someone opens the page. This one finds out first.

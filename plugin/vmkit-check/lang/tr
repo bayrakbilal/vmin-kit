@@ -1,5 +1,5 @@
 feat_name=VminKit - Kontrol
-index_title=vmin-kit Kontrolü
+index_title=VminKit Kontrolü
 index_eaccess=Kontrolleri yalnızca ana yönetici çalıştırabilir
 index_eplugin=Bu eklenti Virtualmin'de etkin değil. System Settings, Features and Plugins altından açın.
 index_return=Virtualmin

@@ -1,5 +1,5 @@
 feat_name=VminKit - Check
-index_title=Check vmin-kit
+index_title=Check VminKit
 index_eaccess=Only the master administrator can run the checks
 index_eplugin=This plugin is not enabled in Virtualmin. Turn it on under System Settings, Features and Plugins.
 index_return=Virtualmin

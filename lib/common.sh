@@ -230,8 +230,12 @@ acl_revoke(){
 # Virtualmin-specific - so we do, with the CLI behind the Features and Plugins
 # page. The "default on for new servers" state is left alone: a freshly
 # enabled plugin is pre-ticked, which is what we want.
+#
+# Read from the config rather than 'list-features': that command lists only
+# plugins that are domain features, so vmkit-check never appears in it.
 plugin_enabled_globally(){
-  virtualmin list-features 2>/dev/null | awk -v m="$1" '$1 == m && $NF == "Yes" { f = 1 } END { exit !f }'
+  local cur; cur="$(get_kv /etc/webmin/virtual-server/config plugins)"
+  case " $cur " in *" $1 "*) return 0 ;; *) return 1 ;; esac
 }
 
 plugins_add(){

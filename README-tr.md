@@ -92,7 +92,7 @@ kurulur.
 | `PLUGIN_DEPLOY` | Git Deploy eklentisini kurar | 1 |
 | `PLUGIN_COMPOSER` | Composer eklentisini kurar | 1 |
 | `PLUGIN_CLOUDFLARE` | Cloudflare DNS eklentisini kurar | 1 |
-| `PLUGIN_CHECK` | Check vmin-kit eklentisini kurar | 1 |
+| `PLUGIN_CHECK` | Check VminKit eklentisini kurar | 1 |
 | `PANEL_PROXY` | `webmin.<domain>` ve `usermin.<domain>` alt alanlarını yayınlar | 1 |
 | `LOCK_PANEL_PORTS` | 10000/20000 portlarını yalnızca `127.0.0.1`'e bağlar | 1 |
 | `ROUNDCUBE` | `webmail.<domain>` alt sunucusu + Roundcube | 1 |
@@ -296,9 +296,9 @@ tetiklenir ve ayrıca 15 dakikada bir kontrol eder. Zone değişmediyse hiçbir 
 çağrısı yapılmaz. Eklentinin ana sayfası servisin durumunu gösterir ve durmuşsa
 yeniden başlatır.
 
-### Check vmin-kit
+### Check VminKit
 
-*System Settings → Check vmin-kit.* Üç eklenti Virtualmin'i, Webmin'in arayüz
+*System Settings → Check VminKit.* Üç eklenti Virtualmin'i, Webmin'in arayüz
 kütüphanesini ve birkaç Webmin modülünü çağırır; hiçbiri kararlı bir arayüz
 vaat etmez. Bir güncelleme bir fonksiyonun adını değiştirebilir ya da bir
 kancayı çağırmayı bırakabilir, ve eklenti ancak biri sayfayı açtığında bozulur.
