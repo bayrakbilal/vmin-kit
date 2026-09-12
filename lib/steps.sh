@@ -303,9 +303,20 @@ step_domain_defaults(){
 #
 # Not re-run when already on: set-dkim rewrites the filter configuration every
 # time, and the selector would follow the calendar.
+#
+# "Already on" is Virtualmin's own verdict, get_dkim_config()->{enabled} - the
+# same test create-domain uses to decide whether a new domain gets DKIM. The
+# 'dkim_enabled' config key is NOT that: the installer's hostname-SSL step
+# writes dkim_enabled=1 while wiring the filter for the hostname only, and on
+# such a box get_dkim_config still says 0 and new domains get no signing.
 step_dkim(){
   need_virtualmin || return 1
-  if [ "$(get_kv /etc/webmin/virtual-server/config dkim_enabled)" = "1" ]; then
+  local state
+  state="$(virtualmin_perl vmkit-dkim.pl '
+    my $d = &get_dkim_config();
+    print(($d && $d->{enabled}) ? "on" : "off");
+  ' 2>/dev/null)"
+  if [ "$state" = "on" ]; then
     ok "DKIM is already on."
     return 0
   fi
