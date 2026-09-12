@@ -457,6 +457,62 @@ step_hardening(){
     warn "Apache conf-available not found; skipping HSTS."; rc=1
   fi
 
+  # --- fail2ban: longer, escalating bans ------------------------------------
+  # The stock ban is 10 minutes - too short for a box with password SSH. Values
+  # come from config.env. Unlike the sections above, this is written to
+  # jail.local, NOT a jail.d drop-in: fail2ban reads jail.d AFTER jail.local, so
+  # a drop-in would silently override anything changed in the Webmin Fail2Ban
+  # panel. jail.local is the file the panel and Virtualmin already use.
+  #
+  # SET ONCE: our marked block is written only when it is absent. A value
+  # changed later (panel or by hand) is a deliberate choice and is kept on the
+  # next run - the same "the user's choice wins" rule as default_domain_ssl.
+  # The block validates before reload and reverts on failure.
+  local jl="/etc/fail2ban/jail.local"
+  if [ ! -f "$jl" ] || ! command -v fail2ban-client >/dev/null 2>&1; then
+    warn "fail2ban not found; skipping."; rc=1
+  elif grep -q 'vmin-kit fail2ban policy' "$jl"; then
+    ok "fail2ban policy already set (leaving the current values)."
+  else
+    cp -a "$jl" "${jl}.vmin-kit.bak"
+    # Does the existing [sshd] section already set its own maxretry? If it does,
+    # leave it (a second one in the same section would be a duplicate key the
+    # parser rejects); if not, the stricter value is inserted into it.
+    local sshd_max=0
+    awk '/^\[sshd\]/{s=1;next} /^\[/{s=0} s&&/^[[:space:]]*maxretry[[:space:]]*=/{f=1} END{exit !f}' \
+      "${jl}.vmin-kit.bak" && sshd_max=1
+    # [DEFAULT] block prepended (DEFAULT belongs before the jail sections), then
+    # the original - never a second [sshd] header, which the parser would reject.
+    {
+      printf '# --- vmin-kit fail2ban policy (delete this block to re-apply defaults) ---\n'
+      printf '[DEFAULT]\n'
+      printf 'bantime = %s\n'  "${F2B_BANTIME:-86400}"
+      printf 'findtime = %s\n' "${F2B_FINDTIME:-600}"
+      printf 'maxretry = %s\n' "${F2B_MAXRETRY:-5}"
+      if is_truthy "${F2B_INCREMENT:-1}"; then
+        printf 'bantime.increment = true\n'
+        printf 'bantime.maxtime = %s\n' "${F2B_MAXTIME:-2592000}"
+      fi
+      printf '# --- end vmin-kit ---\n\n'
+      if [ "$sshd_max" = 0 ]; then
+        awk -v m="${F2B_SSH_MAXRETRY:-3}" \
+          '/^\[sshd\]/ { print; print "maxretry = " m; next } { print }' \
+          "${jl}.vmin-kit.bak"
+      else
+        cat "${jl}.vmin-kit.bak"
+      fi
+    } > "$jl"
+
+    if fail2ban-client -t >/dev/null 2>&1; then
+      systemctl reload fail2ban 2>/dev/null || fail2ban-client reload >/dev/null 2>&1
+      ok "fail2ban: bantime ${F2B_BANTIME:-86400}s, SSH maxretry ${F2B_SSH_MAXRETRY:-3}, escalating bans."
+    else
+      cp -a "${jl}.vmin-kit.bak" "$jl"
+      fail2ban-client reload >/dev/null 2>&1
+      warn "fail2ban config test failed; reverted."; rc=1
+    fi
+  fi
+
   return "$rc"
 }
 

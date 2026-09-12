@@ -125,7 +125,7 @@ Dosyanın sonunda kaçış kapıları var (`SKIP_DNS_CHECK`, `ALLOW_ANY_OS`,
 | `panel-redirects` | `admin.<domain>` ve `webmail.<domain>` kısayollarını kapatır |
 | `domain-defaults` | SPF + DMARC açık, rol adresleri sınırlı |
 | `dkim` | DKIM'i açar; bundan sonra oluşan her domain giden postayı imzalar |
-| `hardening` | Sunucu geneli: Postfix VRFY'yi kapatır ve AUTH'u TLS sonrasına bırakır, Dovecot TLS'siz bağlantıda düz-metin girişi yasaklar, BIND sürümünü gizler, Apache her vhost'a HSTS ve nosniff gönderir |
+| `hardening` | Sunucu geneli: Postfix VRFY'yi kapatır ve AUTH'u TLS sonrasına bırakır, Dovecot TLS'siz bağlantıda düz-metin girişi yasaklar, BIND sürümünü gizler, Apache her vhost'a HSTS ve nosniff gönderir, fail2ban'e daha uzun ve artan ban süreleri verir (değerler `config.env`'de, bir kez yazılır) |
 | `plugins` | Eklentileri paketleyip kurar ve Virtualmin'e tanıtır |
 | `main-domain` | Ana domaini açık bir özellik listesiyle oluşturur (spam/virüs ve PostgreSQL hariç — onlara kurulum sihirbazı karar verir) |
 | `host-dns` | Hostname için A kaydı ekler |
