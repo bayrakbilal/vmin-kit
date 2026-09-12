@@ -8,8 +8,8 @@
 # the summary and the closing line both read this.
 VMINKIT_FAILED=()
 
-# Certificate state per sub-domain prefix: 1 = valid ACME cert, 0 = self-signed.
-# ensure_site_cert writes it, the port-closing steps read it.
+# Certificate state per address key: 1 = valid ACME cert, 0 = self-signed.
+# record_site_cert writes it, site_cert_ok reads it (see the CERTIFICATES block).
 #
 # Without it we can lock a user out of their own server: a browser will not
 # trust a self-signed address, so if the management port is closed at the same
@@ -479,15 +479,10 @@ PERL
     esac
   fi
 
-  # When the certificate succeeded, the function distributed it to the services.
-  if domain_has_acme_cert "$host"; then
-    VMINKIT_SITE_CERT[hostname]=1
-    ok "Certificate obtained: $host"
-    return 0
-  fi
-  VMINKIT_SITE_CERT[hostname]=0
-  warn "Could not obtain a certificate: $host (still self-signed)"
-  return 1
+  # The function already requested the certificate, and distributed it to the
+  # services when it succeeded. Only the verdict is recorded - asking again
+  # right after Virtualmin's own attempt would just burn quota.
+  record_site_cert hostname "$host"
 }
 
 # host_cert_to_services <hostname>
@@ -517,38 +512,43 @@ host_cert_to_services(){
 
 step_ssl(){
   command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping SSL."; return 1; }
-  # create-domain already requests the certificate when automatic ACME is on.
-  # Asking again would issue a second certificate for the same name set and eat
-  # the provider's quota.
-  if domain_has_acme_cert "$MAIN_DOMAIN"; then
-    ok "Certificate already obtained (skipping)."
-    return
-  fi
-  log "Requesting a certificate (ACME/Let's Encrypt): $MAIN_DOMAIN"
-  if virtualmin generate-letsencrypt-cert --domain "$MAIN_DOMAIN" --default-hosts --renew; then
-    ok "Certificate obtained, automatic renewal is on."
-  else
-    warn "Could not obtain a certificate. Check the A record and access to ports 80/443, then:"
-    warn "  virtualmin generate-letsencrypt-cert --domain $MAIN_DOMAIN --default-hosts --renew"
-  fi
+  ensure_site_cert main "$MAIN_DOMAIN"
 }
 
-# ensure_site_cert <key> [fqdn] -> does this address have a valid ACME cert?
+# ---------------------------------------------------------------------------
+# CERTIFICATES - one path for every address.
 #
-# Without an fqdn, <key>.<main-domain> is assumed; the hostname virtual server
-# need not be a subdomain of the main domain, so it passes one.
+# Virtualmin only requests a certificate while CREATING a domain: if DNS has
+# not propagated yet or the Let's Encrypt quota is spent it keeps the
+# self-signed one and nobody ever asks again. So every site step calls
+# ensure_site_cert right after creation, and re-running ./install.sh is enough
+# once the obstacle clears. Only an address WITHOUT a certificate is requested:
+# asking every run would burn the quota (5 per 7 days for the same name set).
 #
-# Called right after a sub-server is created - the same shape as step_ssl for
-# the main domain. Virtualmin only requests a certificate while CREATING the
-# domain: if DNS has not propagated yet or the Let's Encrypt quota is spent it
-# says "keeping self-signed certificate" and nobody ever asks again. Retrying
-# here means re-running ./install.sh is enough once the obstacle clears.
+# The verdict goes into VMINKIT_SITE_CERT, keyed by <key>, and the port-closing
+# steps read it through site_cert_ok. VMINKIT_CERT_NEW marks a certificate
+# obtained in THIS run (the hostname step distributes it to the services then).
 #
-# Only a domain WITHOUT a certificate is requested: asking every run would
-# burn the quota (5 per 7 days for the same name set).
-#
-# The verdict goes into VMINKIT_SITE_CERT for the port-closing steps, and
-# VMINKIT_CERT_NEW marks a certificate obtained in THIS run.
+# The hostname is the one address that is not <key>.<main-domain>, so it passes
+# its fqdn explicitly.
+# ---------------------------------------------------------------------------
+
+# record_site_cert <key> <fqdn> -> reads the real state, records and reports it.
+# No request is made: used where something else already asked.
+record_site_cert(){
+  local key="$1" site="$2"
+  if domain_has_acme_cert "$site"; then
+    VMINKIT_SITE_CERT["$key"]=1
+    ok "Certificate obtained: $site"
+    return 0
+  fi
+  VMINKIT_SITE_CERT["$key"]=0
+  warn "Could not obtain a certificate: $site (still self-signed)"
+  return 1
+}
+
+# ensure_site_cert <key> [fqdn] -> leaves an existing certificate alone,
+# requests a missing one, records the result.
 ensure_site_cert(){
   local key="$1" site="${2:-$1.${MAIN_DOMAIN}}"
   VMINKIT_CERT_NEW=0
@@ -558,15 +558,8 @@ ensure_site_cert(){
     return 0
   fi
   log "Requesting a certificate (ACME): $site"
-  if virtualmin generate-letsencrypt-cert --domain "$site" --default-hosts --renew; then
-    VMINKIT_SITE_CERT["$key"]=1
-    VMINKIT_CERT_NEW=1
-    ok "Certificate obtained: $site"
-    return 0
-  fi
-  VMINKIT_SITE_CERT["$key"]=0
-  warn "Could not obtain a certificate: $site (still self-signed)"
-  return 1
+  virtualmin generate-letsencrypt-cert --domain "$site" --default-hosts --renew && VMINKIT_CERT_NEW=1
+  record_site_cert "$key" "$site"
 }
 
 # site_cert_ok <key> [fqdn] -> can this address be reached with a valid cert?
@@ -870,8 +863,7 @@ step_webmail(){
 
   # A missing certificate fails this step: Roundcube is installed, but nobody
   # reads mail from an address the browser does not trust.
-  [ "${VMINKIT_SITE_CERT[${WEBMAIL_PREFIX:-webmail}]:-1}" = "0" ] && return 1
-  return 0
+  site_cert_ok "${WEBMAIL_PREFIX:-webmail}"
 }
 
 # The docker.<domain> sub-server and its proxy to Portainer.
@@ -968,7 +960,7 @@ step_panel_sites(){
   # the management port therefore stayed open.
   local p rc=0
   for p in "${WEBMIN_PREFIX:-webmin}" "${USERMIN_PREFIX:-usermin}"; do
-    [ "${VMINKIT_SITE_CERT[$p]:-1}" = "0" ] && rc=1
+    site_cert_ok "$p" || rc=1
   done
   return "$rc"
 }
