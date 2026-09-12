@@ -249,16 +249,32 @@ plugins_remove(){
   set_kv "$cfg" plugins "$new"
 }
 
+# virtualmin_perl <label> <perl-code>
+# Runs Perl inside Virtualmin's own library, the way its CLI scripts do:
+# Webmin environment, the module directory as cwd, ACL checks off, then
+# virtual-server-lib.pl loaded into package main. <label> names the
+# pseudo-script ($0) - init_config reads the module name from its directory.
+# Output and exit status are the code's own.
+#
+# Fed to 'perl -' as a script rather than eval'd, so the code behaves exactly
+# as it would in a file. Nothing the code prints is touched here.
+virtualmin_perl(){
+  local label="$1" code="$2" root
+  root="$(webmin_root)"
+  {
+    printf '%s\n' \
+      'my ($root) = @ARGV;' \
+      'push(@INC, $root); $main::no_acl_check++;' \
+      'chdir("$root/virtual-server");' \
+      "\$0 = \"\$root/virtual-server/$label\";" \
+      'require "./virtual-server-lib.pl";'
+    printf '%s\n' "$code"
+  } | WEBMIN_CONFIG="${WEBMIN_CONFIG:-/etc/webmin}" WEBMIN_VAR="${WEBMIN_VAR:-/var/webmin}" \
+      perl - "$root"
+}
+
 # Per-domain menu links are cached on disk and only refreshed when a domain is
 # saved, so new labels and icons stay invisible until the cache is cleared.
 clear_links_cache(){
-  perl -e '
-    my ($root) = @ARGV;
-    $ENV{WEBMIN_CONFIG} ||= "/etc/webmin"; $ENV{WEBMIN_VAR} ||= "/var/webmin";
-    push(@INC, $root); $main::no_acl_check++;
-    chdir("$root/virtual-server");
-    $0 = "$root/virtual-server/clear.pl";
-    require "./virtual-server-lib.pl";
-    &clear_links_cache();
-  ' "$(webmin_root)" 2>/dev/null
+  virtualmin_perl clear.pl '&clear_links_cache();' 2>/dev/null
 }

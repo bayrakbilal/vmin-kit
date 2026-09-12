@@ -306,13 +306,7 @@ step_domain_defaults(){
 step_dkim(){
   need_virtualmin || return 1
   local out
-  out="$(perl -e '
-    my ($root) = @ARGV;
-    $ENV{WEBMIN_CONFIG} ||= q(/etc/webmin); $ENV{WEBMIN_VAR} ||= q(/var/webmin);
-    push(@INC, $root); $main::no_acl_check++;
-    chdir("$root/virtual-server");
-    $0 = "$root/virtual-server/vmkit-dkim.pl";
-    require q(./virtual-server-lib.pl);
+  out="$(virtualmin_perl vmkit-dkim.pl '
     my $err = &check_dkim();
     if ($err) { print qq(VMKIT-DKIM:SKIP $err\n); exit(0); }
     my $dkim = &get_dkim_config() || { };
@@ -332,7 +326,7 @@ step_dkim(){
     &unlock_file($module_config_file);
     &run_post_actions();
     print qq(VMKIT-DKIM:OK $dkim->{selector}\n);
-  ' "$(webmin_root)" 2>&1)"
+  ' 2>&1)"
 
   printf '%s\n' "$out" | grep -v '^VMKIT-DKIM:' | sed 's/^/    /'
   # The marker is extracted per LINE: ${out##...} would take everything after
@@ -470,7 +464,7 @@ step_host_dns(){
 # wrapper for it, hence the inline Perl in Webmin's environment.
 step_host_domain(){
   need_virtualmin || return 1
-  local host="$HOSTNAME_FQDN" vsdir="/usr/share/webmin/virtual-server"
+  local host="$HOSTNAME_FQDN"
 
   if domain_exists "$host"; then
     ok "Hostname virtual server already exists: $host"
@@ -485,23 +479,13 @@ step_host_domain(){
     return
   fi
 
-  if [ ! -f "$vsdir/virtual-server-lib.pl" ]; then
-    err "Virtualmin module not found: $vsdir"
-    return 1
-  fi
   log "Creating the hostname virtual server: $host"
-  WEBMIN_CONFIG=/etc/webmin WEBMIN_VAR=/var/webmin perl - "$vsdir" <<'PERL'
-package virtual_server;
-my $dir = shift(@ARGV);
-$main::no_acl_check++;
-chdir($dir);
-$0 = "$dir/vmkit-host-domain.pl";
-require './virtual-server-lib.pl';
-&set_all_text_print();
-my ($ok, $msg) = &setup_virtualmin_default_hostname_ssl();
-$msg =~ s/<[^>]*>//g;
-print "vmkit: hostname domain -> ", ($ok ? "ok" : "fail"), " : $msg\n";
-PERL
+  virtualmin_perl vmkit-host-domain.pl '
+    &set_all_text_print();
+    my ($ok, $msg) = &setup_virtualmin_default_hostname_ssl();
+    $msg =~ s/<[^>]*>//g;
+    print "vmkit: hostname domain -> ", ($ok ? "ok" : "fail"), " : $msg\n";
+  '
 
   # Success is checked against the system, not the return code: the function
   # uses the same value for a failed certificate and for early refusals.
