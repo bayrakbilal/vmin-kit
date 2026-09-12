@@ -17,7 +17,7 @@ BEGIN { push(@INC, ".."); };
 use WebminCore;
 
 our (%config, %text, %in, $module_name, $module_config_directory,
-     $root_directory);
+     $module_root_directory, $root_directory);
 
 &init_config();
 &foreign_require("virtual-server", "virtual-server-lib.pl");
