@@ -9,7 +9,7 @@ require './vmkit-check-lib.pl';
 &error_setup($text{'fix_err'});
 &virtual_server::master_admin() || &error($text{'index_eaccess'});
 
-$in{'id'} =~ /^[a-z_]+$/ || &error($text{'fix_eunknown'});
+$in{'id'} =~ /^[a-z0-9_]+$/ || &error($text{'fix_eunknown'});
 my $err = &apply_fix($in{'id'});
 &error($err) if ($err);
 &run_and_save();
