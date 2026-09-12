@@ -59,9 +59,10 @@ chmod 0600 "$VMINKIT_LOGFILE"
 # the same rule applies.
 #
 # The message comes BEFORE the rm: log() appends a copy of every line to the
-# file by path, which would recreate it.
+# file by path, which would recreate it. The leading newline is for Ctrl+C at
+# a prompt, where the cursor is still at the end of the question.
 VMINKIT_STEPS_STARTED=0
-trap '[ "$VMINKIT_STEPS_STARTED" = 1 ] || { log "No step ran; the log file was removed."; rm -f "$VMINKIT_LOGFILE"; }' EXIT
+trap '[ "$VMINKIT_STEPS_STARTED" = 1 ] || { printf "\n" >&3; log "No step ran; the log file was removed."; rm -f "$VMINKIT_LOGFILE"; }' EXIT
 trap 'exit 130' INT
 
 # From here on stdout/stderr are THE LOG FILE. log/ok/warn/err write to fd 3
