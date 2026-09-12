@@ -53,6 +53,14 @@ VMINKIT_LOGFILE="$ROOT_DIR/vmin-kit-install-$(date +%Y%m%d-%H%M%S).log"
 : > "$VMINKIT_LOGFILE"
 chmod 0600 "$VMINKIT_LOGFILE"
 
+# A run that never reaches the steps - cancelled at a prompt, or stopped by the
+# checks - has nothing worth keeping: everything it printed was on screen. The
+# flag is raised right before the first step. Ctrl+C is routed through EXIT so
+# the same rule applies.
+VMINKIT_STEPS_STARTED=0
+trap '[ "$VMINKIT_STEPS_STARTED" = 1 ] || { rm -f "$VMINKIT_LOGFILE"; log "No step ran; the log file was removed."; }' EXIT
+trap 'exit 130' INT
+
 # From here on stdout/stderr are THE LOG FILE. log/ok/warn/err write to fd 3
 # (the real terminal) and leave a plain copy in the log - see lib/common.sh.
 #
@@ -276,6 +284,7 @@ fi
 # run_step records the failures so the end of a long install, and the report,
 # can say what did not work.
 set +e
+VMINKIT_STEPS_STARTED=1
 say ""
 run_step step_hostname
 run_step step_virtualmin
