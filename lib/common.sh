@@ -238,17 +238,22 @@ plugin_enabled_globally(){
   case " $cur " in *" $1 "*) return 0 ;; *) return 1 ;; esac
 }
 
+# The command's output is NOT discarded: Virtualmin's CLI prints its error text
+# on stdout, and stdout is the install log.
 plugins_add(){
   local mod="$1"
   plugin_enabled_globally "$mod" && return 0
-  virtualmin set-global-feature --enable-feature "$mod" >/dev/null || return 1
+  if ! virtualmin set-global-feature --enable-feature "$mod"; then
+    warn "  Could not enable $mod in Virtualmin."
+    return 1
+  fi
   log "  enabled in Virtualmin: $mod"
 }
 
 plugins_remove(){
   local mod="$1"
   plugin_enabled_globally "$mod" || return 0
-  virtualmin set-global-feature --disable-feature "$mod" >/dev/null
+  virtualmin set-global-feature --disable-feature "$mod"
 }
 
 # virtualmin_perl <label> <perl-code>

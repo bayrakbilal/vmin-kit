@@ -1131,7 +1131,7 @@ step_plugins(){
   im="$wroot/install-module.pl"
   [ -r "$im" ] || { err "Webmin's install-module.pl is missing: $im"; return 1; }
 
-  local dir mod pkg any=0 skipped=""
+  local dir mod pkg any=0 rc=0 skipped=""
   for dir in "$ROOT_DIR"/plugin/*/; do
     [ -f "${dir}module.info" ] || continue
     mod="$(basename "$dir")"
@@ -1148,14 +1148,16 @@ step_plugins(){
     fi
     pkg="$ROOT_DIR/dist/$mod.wbm.gz"
 
-    # Through perl, not directly: its shebang is /usr/local/bin/perl.
-    if perl "$im" --acl root "$pkg" >/dev/null 2>&1; then
+    # Through perl, not directly: its shebang is /usr/local/bin/perl. Its
+    # output stays in the log.
+    if perl "$im" --acl root "$pkg"; then
       log "  installed: $mod"
     else
       err "  Could not install $mod (install-module.pl)."
+      rc=1
       continue
     fi
-    plugins_add "$mod" || true
+    plugins_add "$mod" || rc=1
     any=1
   done
 
@@ -1170,6 +1172,7 @@ step_plugins(){
   else
     ok "No plugins to install."
   fi
+  return "$rc"
 }
 
 # Installation summary: what this server is, its addresses, what is exposed.
