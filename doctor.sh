@@ -105,8 +105,8 @@ CMD_COUNT="$(wc -l < "$TMP/commands")"
 # Each pattern is handled SEPARATELY and reduced to the key name. One big sed
 # expression was tried and proved fragile ('{' is special in ERE).
 {
-  # set_kv "$cfg" <key> ...   /   set_kv "$conf" <key> ...
-  grep -rhoE 'set_kv "\$[a-z]+" [a-z_][a-z_0-9]*' "$ROOT_DIR/lib" \
+  # set_kv "$cfg" <key> ...   /   get_kv /path/or/"$var" <key>
+  grep -rhoE '(set|get)_kv [^ ]+ [a-z_][a-z_0-9]*' "$ROOT_DIR/lib" \
     | awk '{ print $NF }' || true
   # for row in "<key>|value|label"
   grep -rhoE '"[a-z_][a-z_0-9]*\|' "$ROOT_DIR/lib" | tr -d '"|' || true

@@ -225,28 +225,26 @@ acl_revoke(){
   sed -i "s|^\(root:.*\)\b${mod}\b|\1|" "$acl"
 }
 
-# Virtualmin's 'plugins=' line in virtual-server/config. An installed module
-# that is missing from it is not treated as a plugin at all. install-module.pl
-# does not do this - it is Virtualmin-specific - so we do, which is exactly
-# what ticking the box on Features and Plugins does.
-#
-# 'plugins_inactive' is deliberately left alone: a plugin absent from THAT
-# list is pre-ticked for new virtual servers, which is what we want.
+# An installed module that Virtualmin has not been told about is not treated
+# as a plugin at all. install-module.pl does not do this - it is
+# Virtualmin-specific - so we do, with the CLI behind the Features and Plugins
+# page. The "default on for new servers" state is left alone: a freshly
+# enabled plugin is pre-ticked, which is what we want.
+plugin_enabled_globally(){
+  virtualmin list-features 2>/dev/null | awk -v m="$1" '$1 == m && $NF == "Yes" { f = 1 } END { exit !f }'
+}
+
 plugins_add(){
-  local mod="$1" cur cfg=/etc/webmin/virtual-server/config
-  [ -f "$cfg" ] || return 1
-  cur="$(get_kv "$cfg" plugins)"
-  case " $cur " in *" $mod "*) return 0 ;; esac
-  set_kv "$cfg" plugins "$(echo "$cur $mod" | xargs)"
-  log "  added to the Virtualmin plugin list: $mod"
+  local mod="$1"
+  plugin_enabled_globally "$mod" && return 0
+  virtualmin set-global-feature --enable-feature "$mod" >/dev/null || return 1
+  log "  enabled in Virtualmin: $mod"
 }
 
 plugins_remove(){
-  local mod="$1" cur new cfg=/etc/webmin/virtual-server/config
-  [ -f "$cfg" ] || return 1
-  cur="$(get_kv "$cfg" plugins)"
-  new="$(echo "$cur" | tr ' ' '\n' | grep -vxF "$mod" | xargs || true)"
-  set_kv "$cfg" plugins "$new"
+  local mod="$1"
+  plugin_enabled_globally "$mod" || return 0
+  virtualmin set-global-feature --disable-feature "$mod" >/dev/null
 }
 
 # virtualmin_perl <label> <perl-code>

@@ -297,49 +297,25 @@ step_domain_defaults(){
 #
 # A server-wide, one-time setup, so it runs BEFORE the first domain: with DKIM
 # enabled, every domain created afterwards gets its <selector>._domainkey record
-# automatically. There is no CLI for this, so the steps of the panel's
-# enable_dkim.cgi are repeated here (selector defaults to YYYYMM, sign and
-# verify on, only domains with DNS and mail, 2048-bit key).
+# automatically. The selector is dated (YYYYMM) so it cannot collide with an
+# older server's 'default' selector at cutover; sign and verify are on, the key
+# is 2048 bits.
 #
-# check_dkim() reports why the system cannot do it; in that case we skip rather
-# than fail the install.
+# Not re-run when already on: set-dkim rewrites the filter configuration every
+# time, and the selector would follow the calendar.
 step_dkim(){
   need_virtualmin || return 1
-  local out
-  out="$(virtualmin_perl vmkit-dkim.pl '
-    my $err = &check_dkim();
-    if ($err) { print qq(VMKIT-DKIM:SKIP $err\n); exit(0); }
-    my $dkim = &get_dkim_config() || { };
-    if ($dkim->{enabled}) { print qq(VMKIT-DKIM:ALREADY $dkim->{selector}\n); exit(0); }
-    $dkim->{selector} ||= &get_default_dkim_selector();
-    $dkim->{enabled} = 1;
-    $dkim->{sign}    = 1;
-    $dkim->{verify}  = 1;
-    $dkim->{alldns}  = 0;
-    $dkim->{extra} ||= [ ];
-    &set_all_text_print();
-    my $ok = &enable_dkim($dkim, 0, 2048);
-    if (!$ok) { print qq(VMKIT-DKIM:FAILED\n); exit(1); }
-    $config{dkim_enabled} = 1;
-    &lock_file($module_config_file);
-    &save_module_config();
-    &unlock_file($module_config_file);
-    &run_post_actions();
-    print qq(VMKIT-DKIM:OK $dkim->{selector}\n);
-  ' 2>&1)"
-
-  printf '%s\n' "$out" | grep -v '^VMKIT-DKIM:' | sed 's/^/    /'
-  # The marker is extracted per LINE: ${out##...} would take everything after
-  # the marker instead.
-  local mark val
-  mark="$(printf '%s\n' "$out" | grep '^VMKIT-DKIM:' | head -1)"
-  val="${mark#VMKIT-DKIM:* }"
-  case "$mark" in
-    "VMKIT-DKIM:ALREADY"*) ok "DKIM is already on (selector: $val)." ;;
-    "VMKIT-DKIM:SKIP"*)    warn "DKIM not enabled, skipping: $val" ;;
-    "VMKIT-DKIM:OK"*)      ok "DKIM enabled (selector: $val)." ;;
-    *)                     err "Could not enable DKIM."; return 1 ;;
-  esac
+  if [ "$(get_kv /etc/webmin/virtual-server/config dkim_enabled)" = "1" ]; then
+    ok "DKIM is already on."
+    return 0
+  fi
+  local selector; selector="$(date +%Y%m)"
+  if virtualmin set-dkim --enable --select "$selector" --size 2048 --verify; then
+    ok "DKIM enabled (selector: $selector)."
+  else
+    warn "DKIM could not be enabled."
+    return 1
+  fi
 }
 
 # Creates the main domain with an EXPLICIT feature list.
@@ -393,11 +369,11 @@ step_main_domain(){
       skipped="$skipped $f"
     fi
   done
-  # Plugins are checked separately: they must be on the 'plugins=' line, which
-  # step_plugins writes before this step runs.
+  # Plugins are checked separately: they must be enabled globally, which
+  # step_plugins does before this step runs.
   local p
   for p in vmkit-cloudflare vmkit-composer vmkit-deploy; do
-    if grep -qE "^plugins=.*\b${p}\b" "$cfg" 2>/dev/null; then
+    if plugin_enabled_globally "$p"; then
       flags+=("--$p")
     else
       skipped="$skipped $p"
@@ -1120,9 +1096,9 @@ portainer_set_publish(){
 # values) and runs postinstall.pl -> module_install(), which is where the
 # Cloudflare plugin installs its systemd units.
 #
-# The one thing it does not do is add the module to Virtualmin's 'plugins='
-# list - that is Virtualmin-specific, and real Virtualmin plugins do not
-# self-register either - so we do it.
+# The one thing it does not do is enable the module as a Virtualmin plugin -
+# that is Virtualmin-specific, and real Virtualmin plugins do not
+# self-register either - so we do it (set-global-feature).
 #
 # Flags come from config.env (PLUGIN_DEPLOY, PLUGIN_COMPOSER,
 # PLUGIN_CLOUDFLARE, default 1). 0 means "do not install"; it never uninstalls
