@@ -996,7 +996,7 @@ my ($dep) = @_;
 return undef if (!$dep->{'uuid'});
 my $host = $ENV{'HTTP_HOST'} || $ENV{'SERVER_NAME'} || "";
 return undef if (!$host);
-return "https://$host/$module_name/hook.cgi?uuid=$dep->{'uuid'}";
+return "https://$host/$module_name/nph-hook.cgi?uuid=$dep->{'uuid'}";
 }
 
 
@@ -1015,7 +1015,7 @@ return "https://$host/$module_name/hook.cgi?uuid=$dep->{'uuid'}";
 # miniserv.conf without it. Reading that default out of the miniserv source
 # was the price; 'anonymous' has no such price.
 #
-# hook.cgi itself does not care which mechanism lets it in.
+# nph-hook.cgi itself does not care which mechanism lets it in.
 
 sub hook_user
 {
@@ -1025,7 +1025,7 @@ return "vmkit-hook";
 # The path is matched as a PREFIX (substr), not a regex.
 sub hook_anon_entry
 {
-return "/$module_name/hook.cgi=".&hook_user();
+return "/$module_name/nph-hook.cgi=".&hook_user();
 }
 
 # hook_webmin_user() -> the user record from the acl module, or undef
@@ -1086,9 +1086,12 @@ elsif (&indexof($module_name, @{$u->{'modules'} || []}) < 0) {
 	$changed = 1;
 	}
 
-# The anonymous entry. Other entries are kept: they are not ours to remove.
+# The anonymous entry. Other entries are kept - they are not ours to remove -
+# except ones tied to our own user under another path: those are ours, left
+# by an older version.
 my $e = &hook_anon_entry();
-my @cur = &anon_entries();
+my $mine = "=".&hook_user();
+my @cur = grep { $_ eq $e || substr($_, -length($mine)) ne $mine } &anon_entries();
 if (!grep { $_ eq $e } @cur) {
 	my %ms;
 	&get_miniserv_config(\%ms);
@@ -1106,8 +1109,8 @@ return ($changed, undef);
 # remove_hook_access() - takes the entry and the user away with the module.
 sub remove_hook_access
 {
-my $e = &hook_anon_entry();
-my @keep = grep { $_ ne $e } &anon_entries();
+my $mine = "=".&hook_user();
+my @keep = grep { substr($_, -length($mine)) ne $mine } &anon_entries();
 my %ms;
 &get_miniserv_config(\%ms);
 if (($ms{'anonymous'} || '') ne join(" ", @keep)) {

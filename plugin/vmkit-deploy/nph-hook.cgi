@@ -12,6 +12,13 @@
 #   2. The request body is NEVER READ. Repository, branch and target are
 #      already stored, which keeps the hook provider-agnostic: Gitea, GitLab
 #      and a plain 'curl' work just as well.
+#
+# THE FILE NAME MATTERS: the 'nph-' prefix makes miniserv pass the output
+# through untouched (miniserv-lib.pl: $nph_script). For an ordinary CGI it
+# reads only the Location header and answers 200 whatever else is printed - a
+# 'Status:' header is ignored - so "not found" would reach the caller as 200
+# and a broken hook would look green on GitHub. Here the status line is written
+# by this script itself.
 use strict;
 use warnings;
 
@@ -34,21 +41,29 @@ BEGIN {
 	$main::no_acl_check++;
 	$main::trust_unknown_referers = 1;
 	$main::no_referers_check = 1;
+	# Webmin's &error() dies instead of printing a page - see the eval below.
+	$main::error_must_die = 1;
 	}
 our (%in, %text, $module_root_directory);
 
-require './vmkit-deploy-lib.pl';
-&ReadParse();
-
-# Plain text: a service reads this page, not a person.
+# Plain text: a service reads this page, not a person. The status line is
+# ours to write (see the note on 'nph-' above).
 sub reply
 {
 my ($status, $body) = @_;
-print "Status: $status\r\n";
+print "HTTP/1.0 $status\r\n";
 print "Content-type: text/plain; charset=utf-8\r\n";
+print "Connection: close\r\n";
 print "\r\n";
 print "$body\n";
 }
+
+# Everything runs inside an eval so that a failure - the library not loading,
+# a Webmin &error(), a die - becomes a 500 with the reason, instead of an HTML
+# page with no status line.
+my $ok = eval {
+require './vmkit-deploy-lib.pl';
+&ReadParse();
 
 my ($d, $dep) = &find_by_uuid($in{'uuid'});
 if (!$dep) {
@@ -91,3 +106,11 @@ my $cmd = quotemeta($^X)." ".quotemeta($runner)." ".quotemeta($d->{'id'})." ".
 system("$cmd </dev/null >".quotemeta($log)." 2>&1 &");
 
 &reply("202 Accepted", "accepted: $op");
+1;
+};
+if (!$ok) {
+	my $e = $@ || "unknown error";
+	$e =~ s/<[^>]*>//g;
+	$e =~ s/\s+/ /g;
+	&reply("500 Internal Server Error", "error: $e");
+	}

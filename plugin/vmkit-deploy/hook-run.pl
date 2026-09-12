@@ -2,11 +2,11 @@
 # The job the webhook runs in the background.
 #   hook-run.pl <domain-id> <deploy-id> <pull|deploy|both>
 #
-# It is a separate process because hook.cgi must answer immediately (GitHub
+# It is a separate process because nph-hook.cgi must answer immediately (GitHub
 # drops the connection after ~10 seconds) while a deploy and its post-deploy
 # commands can take minutes.
 #
-# Output goes to the deployment's OWN log - hook.cgi redirects it there,
+# Output goes to the deployment's OWN log - nph-hook.cgi redirects it there,
 # truncating - so there is no second log file to grow and errors stay where
 # the panel already looks.
 use strict;
@@ -21,7 +21,7 @@ $| = 1;
 
 # CLEAR THE CGI ENVIRONMENT - these lines must come BEFORE the library.
 #
-# hook.cgi starts this script with system(), which passes its environment on
+# nph-hook.cgi starts this script with system(), which passes its environment on
 # unchanged, CGI variables included (REQUEST_METHOD, HTTP_HOST, SCRIPT_NAME).
 # Webmin's init_config sees them, believes it is serving a WEB REQUEST and
 # applies the referer check. There is no referer, so it printed the "Security

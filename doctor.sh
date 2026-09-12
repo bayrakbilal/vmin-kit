@@ -256,7 +256,7 @@ echo
 # ---------------------------------------------------------------------------
 # 8) THE WEBHOOK'S ANONYMOUS ACCESS
 #
-# vmkit-deploy lets its hook.cgi through without a login via miniserv's
+# vmkit-deploy lets its nph-hook.cgi through without a login via miniserv's
 # 'anonymous' setting (Webmin Configuration -> Anonymous Module Access), tied
 # to the plugin's own Webmin user. Three things have to hold: the user exists,
 # the user is allowed the module, and the entry is in miniserv.conf. miniserv
@@ -267,7 +267,7 @@ if [ -d "$WEBMIN_ROOT/vmkit-deploy" ]; then
   log "Verifying the webhook's anonymous access..."
   WCONF="${WEBMIN_CONFIG:-/etc/webmin}"
   HOOK_USER="vmkit-hook"
-  HOOK_ENTRY="/vmkit-deploy/hook.cgi=$HOOK_USER"
+  HOOK_ENTRY="/vmkit-deploy/nph-hook.cgi=$HOOK_USER"
   if grep "^${HOOK_USER}:" "$WCONF/miniserv.users" >/dev/null 2>&1; then
     ok "Webmin user exists: $HOOK_USER"
   else

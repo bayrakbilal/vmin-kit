@@ -235,7 +235,7 @@ ilk komutta dağıtım durur ve başarısız işaretlenir; çalışan her komut 
 yazılır.
 
 **Web kancası.** Formda her deployment için bir kanca adresi görünür:
-`https://webmin.<ana-domain>/vmkit-deploy/hook.cgi?uuid=...`. Bu adresi git
+`https://webmin.<ana-domain>/vmkit-deploy/nph-hook.cgi?uuid=...`. Bu adresi git
 sunucunuzun webhook ayarına yazın — sağlayıcı fark etmez (GitHub, GitLab,
 Gitea) ve `curl` ile elle de çağırabilirsiniz. Çağrıldığında dağıtım moduna
 uyar: otomatikse çeker ve dağıtır, manuelse yalnızca çeker.

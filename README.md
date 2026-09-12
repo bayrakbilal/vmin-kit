@@ -244,7 +244,7 @@ work as written, with no full paths. The deployment stops at the first failing
 command and is marked failed; every command that runs is written to the log.
 
 **The webhook.** The form shows a hook address for each deployment:
-`https://webmin.<main-domain>/vmkit-deploy/hook.cgi?uuid=...`. Put that address
+`https://webmin.<main-domain>/vmkit-deploy/nph-hook.cgi?uuid=...`. Put that address
 in your git server's webhook settings — the provider does not matter (GitHub,
 GitLab, Gitea) and you can call it by hand with `curl`. When called it follows
 the deployment mode: automatic pulls and deploys, manual only pulls.
