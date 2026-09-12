@@ -309,8 +309,9 @@ step_dkim(){
     ok "DKIM is already on."
     return 0
   fi
+  # '--selector': the command's usage text says '--select', its parser does not.
   local selector; selector="$(date +%Y%m)"
-  if virtualmin set-dkim --enable --select "$selector" --size 2048 --verify; then
+  if virtualmin set-dkim --enable --selector "$selector" --size 2048 --verify; then
     ok "DKIM enabled (selector: $selector)."
   else
     warn "DKIM could not be enabled."
