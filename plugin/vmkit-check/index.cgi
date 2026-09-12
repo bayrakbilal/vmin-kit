@@ -38,10 +38,16 @@ else {
 		}
 	print "<p><font size=-1><tt>",&html_escape($r->{'stamp'}),"</tt></font></p>\n";
 
-	# Failures first, then the rest grouped by plugin.
-	my @rows;
+	# Failures are always listed in full. Passing checks are one line per
+	# plugin unless the full list is asked for: a hundred green rows hide
+	# the one red one.
+	my (@rows, %passed);
 	foreach my $c (sort { $a->{'ok'} <=> $b->{'ok'} ||
 			      $a->{'plugin'} cmp $b->{'plugin'} } @{$r->{'checks'}}) {
+		if ($c->{'ok'} && !$in{'all'}) {
+			$passed{$c->{'plugin'}}++;
+			next;
+			}
 		my $fix = "";
 		if (!$c->{'ok'} && $c->{'fix'}) {
 			$fix = &ui_form_start("fix.cgi", "post", undef,
@@ -57,9 +63,17 @@ else {
 			      &html_escape($c->{'detail'} || ''),
 			      $fix ]);
 		}
+	foreach my $p (sort keys %passed) {
+		push(@rows, [ $p, &text('index_passed', $passed{$p}),
+			      &ui_text_color($text{'st_ok'}, 'success'), "", "" ]);
+		}
 	print &ui_columns_table([ $text{'col_plugin'}, $text{'col_check'},
 				  $text{'col_state'}, $text{'col_detail'}, "" ],
 				100, \@rows);
+	# Reading only, so a plain link is fine here.
+	print "<p>", ($in{'all'} ? &ui_link("index.cgi", $text{'index_summary'})
+				 : &ui_link("index.cgi?all=1", $text{'index_all'})),
+	      "</p>\n";
 	}
 
 # Running the checks reads source and touches nothing, but it is still a POST:
