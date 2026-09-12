@@ -330,6 +330,115 @@ step_dkim(){
   fi
 }
 
+# Server-wide security hardening measured in the 2026-09-12 pentest. Each of the
+# three sections is global daemon or webserver config - NOT per-domain - so one
+# pass covers every mailbox, zone and vhost, and every domain added by hand
+# later. Sections are independent: a failure in one still lets the others run,
+# and BIND/Apache changes are validated before the service is reloaded so a bad
+# edit cannot take DNS or the web down.
+#
+# Deliberately NOT here: SSH (the user keeps password root login), and BIND's
+# authoritative DNS-over-TLS on 853 (Virtualmin-managed; low risk since
+# recursion is refused).
+step_hardening(){
+  need_virtualmin || return 1
+  local rc=0
+
+  # --- Mail: no credentials in the clear, no user enumeration ---------------
+  # disable_vrfy_command: VRFY let anyone tell a real local user from a fake
+  #   one (252 vs 550).
+  # smtpd_tls_auth_only: submission (587) offered AUTH before STARTTLS, so a
+  #   password could be sent in cleartext. This makes AUTH wait for TLS. Port
+  #   25 offers no AUTH anyway, so it is unaffected.
+  if command -v postconf >/dev/null 2>&1; then
+    if postconf -e 'disable_vrfy_command=yes' 'smtpd_tls_auth_only=yes' 2>/dev/null; then
+      systemctl reload postfix 2>/dev/null || systemctl restart postfix 2>/dev/null
+      ok "Postfix: VRFY disabled, AUTH only after TLS."
+    else
+      warn "Postfix hardening could not be applied."; rc=1
+    fi
+  else
+    warn "postconf not found; skipping Postfix hardening."; rc=1
+  fi
+
+  # Dovecot allowed plaintext IMAP/POP login without TLS (no LOGINDISABLED),
+  # so a mailbox password could be sniffed. A 99- drop-in wins over Virtualmin's
+  # own conf.d files (Dovecot reads conf.d/*.conf in order, last set wins).
+  # 'yes' still permits auth AFTER STARTTLS and on the TLS ports (993/995) - it
+  # only forbids it on a bare connection.
+  local dcd="/etc/dovecot/conf.d"
+  if [ -d "$dcd" ]; then
+    local ddrop="$dcd/99-vmkit-security.conf"
+    printf '%s\n' "# vmin-kit: no plaintext auth on non-TLS connections" \
+                  "disable_plaintext_auth = yes" > "$ddrop"
+    chmod 0644 "$ddrop"
+    systemctl reload dovecot 2>/dev/null || systemctl restart dovecot 2>/dev/null
+    # Confirm it actually took effect - the drop-in only wins if conf.d is
+    # included, which is standard but worth proving rather than assuming.
+    if [ "$(doveconf -h disable_plaintext_auth 2>/dev/null)" = "yes" ]; then
+      ok "Dovecot: plaintext auth disabled on non-TLS connections."
+    else
+      warn "Dovecot drop-in written but disable_plaintext_auth is not 'yes'; check conf.d include."
+      rc=1
+    fi
+  else
+    warn "Dovecot conf.d not found; skipping."; rc=1
+  fi
+
+  # --- DNS: stop leaking the BIND version -----------------------------------
+  # version.bind returned the exact Debian package string. Hide it. The file is
+  # validated before reload so a bad edit never reaches a running named.
+  local nopt="/etc/bind/named.conf.options"
+  if [ -f "$nopt" ]; then
+    if grep -qE '^\s*version\s' "$nopt"; then
+      ok "BIND: version already hidden."
+    else
+      cp -a "$nopt" "${nopt}.vmin-kit.bak"
+      # Insert right after the first 'options {'. awk keeps the rest verbatim.
+      awk '!done && /options[[:space:]]*\{/ { print; print "\tversion \"not available\";"; done=1; next } { print }' \
+        "${nopt}.vmin-kit.bak" > "$nopt"
+      if named-checkconf >/dev/null 2>&1; then
+        rndc reconfig >/dev/null 2>&1 || systemctl reload named 2>/dev/null || systemctl reload bind9 2>/dev/null
+        ok "BIND: version hidden (version.bind no longer reveals it)."
+      else
+        cp -a "${nopt}.vmin-kit.bak" "$nopt"
+        warn "BIND config check failed; reverted, version not hidden."; rc=1
+      fi
+    fi
+  else
+    warn "named.conf.options not found; skipping BIND hardening."; rc=1
+  fi
+
+  # --- Web: HSTS on every vhost ---------------------------------------------
+  # One global conf covers the main site, webmail, the proxy sites and every
+  # future domain. No includeSubDomains and no preload on purpose: a subdomain
+  # or a not-yet-certified domain must never be locked out, and the policy must
+  # stay reversible. A browser ignores HSTS received over an untrusted cert, so
+  # a self-signed new domain is unaffected until it has a real certificate.
+  local aconf="/etc/apache2/conf-available/vmkit-security.conf"
+  if [ -d "/etc/apache2/conf-available" ]; then
+    printf '%s\n' \
+      "# vmin-kit: security headers for all vhosts" \
+      "<IfModule mod_headers.c>" \
+      '  Header always set Strict-Transport-Security "max-age=15768000"' \
+      '  Header always set X-Content-Type-Options "nosniff"' \
+      "</IfModule>" > "$aconf"
+    a2enmod headers >/dev/null 2>&1
+    a2enconf vmkit-security >/dev/null 2>&1
+    if apachectl configtest >/dev/null 2>&1; then
+      systemctl reload apache2 2>/dev/null
+      ok "Apache: HSTS and nosniff set for all vhosts."
+    else
+      a2disconf vmkit-security >/dev/null 2>&1
+      warn "Apache config test failed; HSTS conf disabled."; rc=1
+    fi
+  else
+    warn "Apache conf-available not found; skipping HSTS."; rc=1
+  fi
+
+  return "$rc"
+}
+
 # Creates the main domain with an EXPLICIT feature list.
 #
 # '--default-features' was used at first and had two problems: shaping those

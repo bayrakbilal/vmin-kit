@@ -301,6 +301,9 @@ run_step step_dns_template
 run_step step_panel_redirects
 run_step step_domain_defaults
 run_step step_dkim
+# Server-wide hardening, before any domain, so it covers every mailbox, every
+# zone and every vhost - including domains added by hand later.
+run_step step_hardening
 # Plugins BEFORE any domain, so their features can be selected while the domain
 # is created. Virtualmin is installed by now, so BIND is too and the zone
 # directory the sync service watches already exists.

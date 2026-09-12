@@ -129,6 +129,7 @@ commented out.
 | `panel-redirects` | Turns off the `admin.<domain>` and `webmail.<domain>` shortcuts |
 | `domain-defaults` | SPF + DMARC on, role addresses limited |
 | `dkim` | Enables DKIM; every domain created from then on signs outgoing mail |
+| `hardening` | Server-wide: Postfix drops VRFY and waits for TLS before AUTH, Dovecot forbids plaintext auth on non-TLS connections, BIND hides its version, Apache sends HSTS and nosniff on every vhost |
 | `plugins` | Packages and installs the plugins and registers them with Virtualmin |
 | `main-domain` | Creates the main domain with an explicit feature list (spam/virus scanning and PostgreSQL excluded — the post-install wizard decides those) |
 | `host-dns` | Adds the A record for the hostname |
