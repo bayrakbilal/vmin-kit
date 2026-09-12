@@ -320,6 +320,13 @@ implement, and verifies what each plugin needs to work: the webhook's Webmin
 user and anonymous-access entry, the Cloudflare sync units, the `composer`
 command. Where it can, a **Repair** button puts things right.
 
+It also has a **Server hardening** section that lists the security settings
+vmin-kit applied server-wide (Postfix, Dovecot, BIND, Apache) — what each one
+is, which file it lives in and why — so months later the panel remembers what
+was changed and where. Each shows whether it is still in effect, with a Repair
+that re-applies it if a later upgrade reset it. (fail2ban is left out — it has
+its own Webmin panel.)
+
 You do not have to remember to run it: after a Webmin or Virtualmin upgrade
 (and once a day) the checks run again by themselves when the Virtualmin
 dashboard is opened, and a failure shows up there as a warning. The page itself

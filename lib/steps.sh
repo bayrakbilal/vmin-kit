@@ -344,117 +344,20 @@ step_hardening(){
   need_virtualmin || return 1
   local rc=0
 
-  # --- Mail: no credentials in the clear, no user enumeration ---------------
-  # disable_vrfy_command: VRFY let anyone tell a real local user from a fake
-  #   one (252 vs 550).
-  # smtpd_tls_auth_only: submission (587) offered AUTH before STARTTLS, so a
-  #   password could be sent in cleartext. This makes AUTH wait for TLS. Port
-  #   25 offers no AUTH anyway, so it is unaffected.
-  if command -v postconf >/dev/null 2>&1; then
-    if postconf -e 'disable_vrfy_command=yes' 'smtpd_tls_auth_only=yes' 2>/dev/null; then
-      systemctl reload postfix 2>/dev/null || systemctl restart postfix 2>/dev/null
-      ok "Postfix: VRFY disabled, AUTH only after TLS."
-    else
-      warn "Postfix hardening could not be applied."; rc=1
-    fi
+  # --- Mail / DNS / Web hardening: one shared implementation ----------------
+  # The four measures (Postfix VRFY+TLS, Dovecot cleartext, BIND version, Apache
+  # HSTS) live in ONE file, plugin/vmkit-check/harden-lib.pl, used both here and
+  # by the Check plugin's panel Repair - a single source, no second copy to
+  # drift. It is run from the checkout, so it works even when the Check plugin
+  # is not installed. Each line back is: <ok|fail><TAB><title><TAB><message>.
+  local hl="$ROOT_DIR/plugin/vmkit-check/harden-lib.pl"
+  if [ -r "$hl" ]; then
+    local hst htitle hmsg
+    while IFS=$'\t' read -r hst htitle hmsg; do
+      if [ "$hst" = ok ]; then ok "$htitle: $hmsg"; else warn "$htitle: $hmsg"; rc=1; fi
+    done < <(perl "$hl" apply-all)
   else
-    warn "postconf not found; skipping Postfix hardening."; rc=1
-  fi
-
-  # Dovecot allowed plaintext IMAP/POP login without TLS (no LOGINDISABLED),
-  # so a mailbox password could be sniffed. A 99- drop-in wins over Virtualmin's
-  # own conf.d files (Dovecot reads conf.d/*.conf in order, last set wins).
-  #
-  # The setting NAME differs by version, and we support four OSes with two
-  # Dovecot branches: 2.3 (Debian 12, Ubuntu 22.04/24.04) calls it
-  # 'disable_plaintext_auth = yes'; 2.4 (Debian 13) renamed it to
-  # 'auth_allow_cleartext = no'. Rather than test each OS, the running Dovecot
-  # is ASKED which name it knows ('doveconf -a' lists its valid settings), and
-  # the drop-in is then PARSE-CHECKED before any reload - if it does not parse
-  # it is removed and Dovecot is left on its working config, never restarted
-  # into a broken one. Either setting still permits auth after STARTTLS and on
-  # the TLS ports; it only forbids it on a bare connection.
-  local dcd="/etc/dovecot/conf.d"
-  if [ ! -d "$dcd" ] || ! command -v doveconf >/dev/null 2>&1; then
-    warn "Dovecot not found; skipping."; rc=1
-  else
-    local dkey dval
-    if doveconf -a 2>/dev/null | grep -q '^auth_allow_cleartext'; then
-      dkey="auth_allow_cleartext"; dval="no"          # 2.4+
-    elif doveconf -a 2>/dev/null | grep -q '^disable_plaintext_auth'; then
-      dkey="disable_plaintext_auth"; dval="yes"       # 2.3
-    fi
-    if [ -z "$dkey" ]; then
-      warn "Dovecot: no known cleartext-auth setting; skipping."; rc=1
-    else
-      local ddrop="$dcd/99-vmkit-security.conf"
-      printf '%s\n' "# vmin-kit: no cleartext auth on non-TLS connections" \
-                    "$dkey = $dval" > "$ddrop"
-      chmod 0644 "$ddrop"
-      # Parse BEFORE reloading: a bad drop-in must not reach a restart.
-      if ! doveconf -n >/dev/null 2>&1; then
-        rm -f "$ddrop"
-        warn "Dovecot: drop-in did not parse; removed, config unchanged."; rc=1
-      else
-        systemctl reload dovecot 2>/dev/null || systemctl restart dovecot 2>/dev/null
-        if [ "$(doveconf -h "$dkey" 2>/dev/null)" = "$dval" ]; then
-          ok "Dovecot: cleartext auth disabled on non-TLS connections ($dkey)."
-        else
-          warn "Dovecot: $dkey not in effect after reload."; rc=1
-        fi
-      fi
-    fi
-  fi
-
-  # --- DNS: stop leaking the BIND version -----------------------------------
-  # version.bind returned the exact Debian package string. Hide it. The file is
-  # validated before reload so a bad edit never reaches a running named.
-  local nopt="/etc/bind/named.conf.options"
-  if [ -f "$nopt" ]; then
-    if grep -qE '^\s*version\s' "$nopt"; then
-      ok "BIND: version already hidden."
-    else
-      cp -a "$nopt" "${nopt}.vmin-kit.bak"
-      # Insert right after the first 'options {'. awk keeps the rest verbatim.
-      awk '!done && /options[[:space:]]*\{/ { print; print "\tversion \"not available\";"; done=1; next } { print }' \
-        "${nopt}.vmin-kit.bak" > "$nopt"
-      if named-checkconf >/dev/null 2>&1; then
-        rndc reconfig >/dev/null 2>&1 || systemctl reload named 2>/dev/null || systemctl reload bind9 2>/dev/null
-        ok "BIND: version hidden (version.bind no longer reveals it)."
-      else
-        cp -a "${nopt}.vmin-kit.bak" "$nopt"
-        warn "BIND config check failed; reverted, version not hidden."; rc=1
-      fi
-    fi
-  else
-    warn "named.conf.options not found; skipping BIND hardening."; rc=1
-  fi
-
-  # --- Web: HSTS on every vhost ---------------------------------------------
-  # One global conf covers the main site, webmail, the proxy sites and every
-  # future domain. No includeSubDomains and no preload on purpose: a subdomain
-  # or a not-yet-certified domain must never be locked out, and the policy must
-  # stay reversible. A browser ignores HSTS received over an untrusted cert, so
-  # a self-signed new domain is unaffected until it has a real certificate.
-  local aconf="/etc/apache2/conf-available/vmkit-security.conf"
-  if [ -d "/etc/apache2/conf-available" ]; then
-    printf '%s\n' \
-      "# vmin-kit: security headers for all vhosts" \
-      "<IfModule mod_headers.c>" \
-      '  Header always set Strict-Transport-Security "max-age=15768000"' \
-      '  Header always set X-Content-Type-Options "nosniff"' \
-      "</IfModule>" > "$aconf"
-    a2enmod headers >/dev/null 2>&1
-    a2enconf vmkit-security >/dev/null 2>&1
-    if apachectl configtest >/dev/null 2>&1; then
-      systemctl reload apache2 2>/dev/null
-      ok "Apache: HSTS and nosniff set for all vhosts."
-    else
-      a2disconf vmkit-security >/dev/null 2>&1
-      warn "Apache config test failed; HSTS conf disabled."; rc=1
-    fi
-  else
-    warn "Apache conf-available not found; skipping HSTS."; rc=1
+    warn "harden-lib.pl not found; skipping mail/dns/web hardening."; rc=1
   fi
 
   # --- fail2ban: longer, escalating bans ------------------------------------

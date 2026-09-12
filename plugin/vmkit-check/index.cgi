@@ -38,12 +38,15 @@ else {
 		}
 	print "<p><font size=-1><tt>",&html_escape($r->{'stamp'}),"</tt></font></p>\n";
 
+	# Hardening rows are rendered in their own always-visible section below
+	# (with where/why), so keep them out of the collapsing plugin table.
 	# Failures are always listed in full. Passing checks are one line per
 	# plugin unless the full list is asked for: a hundred green rows hide
 	# the one red one.
 	my (@rows, %passed);
 	foreach my $c (sort { $a->{'ok'} <=> $b->{'ok'} ||
 			      $a->{'plugin'} cmp $b->{'plugin'} } @{$r->{'checks'}}) {
+		next if ($c->{'plugin'} eq 'hardening');
 		if ($c->{'ok'} && !$in{'all'}) {
 			$passed{$c->{'plugin'}}++;
 			next;
@@ -74,6 +77,36 @@ else {
 	print "<p>", ($in{'all'} ? &ui_link("index.cgi", $text{'index_summary'})
 				 : &ui_link("index.cgi?all=1", $text{'index_all'})),
 	      "</p>\n";
+
+	# --- Hardening: always shown in full, with where and why --------------
+	# This is the "what did vmin-kit change, and where" reference the whole
+	# section exists for. State comes from the same saved run.
+	my %hstate = map { $_->{'fix'} => $_->{'ok'} }
+		     grep { $_->{'plugin'} eq 'hardening' } @{$r->{'checks'}};
+	print &ui_subheading($text{'hard_title'});
+	print "<p><font size=-1>$text{'hard_intro'}</font></p>\n";
+	my @hrows;
+	foreach my $m (&hardening_measures()) {
+		my $fixid = 'harden_'.$m->{'id'};
+		my $ok = $hstate{$fixid};
+		my $act = "";
+		if (!$ok) {
+			$act = &ui_form_start("fix.cgi", "post", undef,
+					      "style='display:inline-block;margin:0'").
+			       &ui_hidden("id", $fixid).
+			       &ui_submit($text{'fix_update'}).
+			       &ui_form_end();
+			}
+		push(@hrows, [ &html_escape($m->{'title'}),
+			       "<tt>".&html_escape($m->{'where'})."</tt>",
+			       &html_escape($m->{'why'}),
+			       &ui_text_color($ok ? $text{'st_ok'} : $text{'st_failed'},
+					      $ok ? 'success' : 'danger'),
+			       $act ]);
+		}
+	print &ui_columns_table([ $text{'hard_col_what'}, $text{'hard_col_where'},
+				  $text{'hard_col_why'}, $text{'col_state'}, "" ],
+				100, \@hrows);
 	}
 
 # Running the checks reads source and touches nothing, but it is still a POST:

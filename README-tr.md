@@ -311,6 +311,13 @@ denetler ve her eklentinin çalışmak için ihtiyaç duyduğunu doğrular: kanc
 Webmin kullanıcısı ve anonim erişim girdisi, Cloudflare senkron birimleri,
 `composer` komutu. Yapabildiği yerde bir **Onar** düğmesi düzeltir.
 
+Ayrıca bir **Sunucu sertleştirme** bölümü var: vmin-kit'in sunucu genelinde
+uyguladığı güvenlik ayarlarını (Postfix, Dovecot, BIND, Apache) listeler — her
+biri ne yapar, hangi dosyada durur ve neden — böylece aylar sonra panel neyi
+nereye koyduğumuzu hatırlatır. Her biri hâlâ etkin mi gösterir; sonraki bir
+güncelleme sıfırladıysa **Onar** yeniden uygular. (fail2ban hariç — kendi
+Webmin paneli var.)
+
 Çalıştırmayı hatırlamanız gerekmez: bir Webmin ya da Virtualmin
 güncellemesinden sonra (ve günde bir kez) kontroller Virtualmin panosu
 açıldığında kendiliğinden yeniden çalışır ve bir hata orada uyarı olarak

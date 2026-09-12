@@ -22,6 +22,11 @@ our (%config, %text, %in, $module_name, $module_config_directory,
 &init_config();
 &foreign_require("virtual-server", "virtual-server-lib.pl");
 
+# The hardening measures are defined ONCE in harden-lib.pl (the same file the
+# installer runs); we require it for their check/apply subs and their
+# where/why metadata. Standalone Perl, so requiring it here is harmless.
+require "$module_root_directory/harden-lib.pl";
+
 # The plugins this module looks after: every vmkit-* module that is a
 # Virtualmin plugin, except this one.
 sub vmkit_plugins
@@ -207,6 +212,31 @@ return &mkcheck($mod, $text{'chk_composer'}, $cmd ? 1 : 0,
 		$cmd ? $cmd : $text{'chk_missing'});
 }
 
+# ---- hardening (the four pentest measures) ---------------------------------
+# One check per measure, using the shared harden-lib.pl. 'plugin' is 'hardening'
+# so the page can pull these into their own section; 'where'/'why' carry the
+# "what did we change and where" the user wants surfaced months later. The fix
+# id is harden_<id>, dispatched in apply_fix.
+sub check_hardening
+{
+my @checks;
+foreach my $m (&vmkit_harden::measures()) {
+	my $ok = eval { $m->{'check'}->() } ? 1 : 0;
+	my $c = &mkcheck('hardening', $m->{'title'}, $ok,
+			 $m->{'where'}, 'harden_'.$m->{'id'});
+	$c->{'where'} = $m->{'where'};
+	$c->{'why'}   = $m->{'why'};
+	push(@checks, $c);
+	}
+return @checks;
+}
+
+# hardening_measures() -> the raw list, for the page's own Hardening table.
+sub hardening_measures
+{
+return &vmkit_harden::measures();
+}
+
 # ---- running and storing ---------------------------------------------------
 
 # The versions the results were produced under. Any change means an upgrade
@@ -233,6 +263,7 @@ foreach my $m (sort keys %plugins) {
 push(@checks, &check_deploy())     if ($plugins{'vmkit-deploy'});
 push(@checks, &check_cloudflare()) if ($plugins{'vmkit-cloudflare'});
 push(@checks, &check_composer())   if ($plugins{'vmkit-composer'});
+push(@checks, &check_hardening());
 return \@checks;
 }
 
@@ -301,6 +332,12 @@ if ($id eq 'cloudflare_units') {
 	&foreign_require("vmkit-cloudflare", "vmkit-cloudflare-lib.pl");
 	my ($done, $err) = &vmkit_cloudflare::ensure_sync_units(1);
 	return $err;
+	}
+if ($id =~ /^harden_(.+)$/) {
+	my $m = &vmkit_harden::measure_by_id($1);
+	return $text{'fix_eunknown'} if (!$m);
+	my ($ok, $msg) = $m->{'apply'}->();
+	return $ok ? undef : $msg;
 	}
 return $text{'fix_eunknown'};
 }
