@@ -315,8 +315,10 @@ Ayrıca bir **Sunucu sertleştirme** bölümü var: vmin-kit'in sunucu genelinde
 uyguladığı güvenlik ayarlarını (Postfix, Dovecot, BIND, Apache) listeler — her
 biri ne yapar, hangi dosyada durur ve neden — böylece aylar sonra panel neyi
 nereye koyduğumuzu hatırlatır. Her biri hâlâ etkin mi gösterir; sonraki bir
-güncelleme sıfırladıysa **Onar** yeniden uygular. (fail2ban hariç — kendi
-Webmin paneli var.)
+güncelleme sıfırladıysa **Onar** yeniden uygular. fail2ban da burada ama bir
+sağlık satırı olarak: canlı ban değerlerini ve servis/jail'lerin ayakta
+olduğunu gösterir (**Onar** yeniden başlatır), değerleri dayatmaz — onlar
+Fail2Ban panelinden senin kontrolünde kalır.
 
 Çalıştırmayı hatırlamanız gerekmez: bir Webmin ya da Virtualmin
 güncellemesinden sonra (ve günde bir kez) kontroller Virtualmin panosu

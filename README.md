@@ -324,8 +324,10 @@ It also has a **Server hardening** section that lists the security settings
 vmin-kit applied server-wide (Postfix, Dovecot, BIND, Apache) — what each one
 is, which file it lives in and why — so months later the panel remembers what
 was changed and where. Each shows whether it is still in effect, with a Repair
-that re-applies it if a later upgrade reset it. (fail2ban is left out — it has
-its own Webmin panel.)
+that re-applies it if a later upgrade reset it. fail2ban appears there too, but
+as a health row: it shows the live ban values and that the service and jails
+are up (Repair restarts it), without enforcing the numbers — those stay yours
+to change in the Fail2Ban panel.
 
 You do not have to remember to run it: after a Webmin or Virtualmin upgrade
 (and once a day) the checks run again by themselves when the Virtualmin

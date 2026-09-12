@@ -123,6 +123,34 @@ sub apache_apply {
 	return (1, "HSTS and nosniff set");
 }
 
+# ---- fail2ban: HEALTH only (values are the admin's, set once by the installer)
+# We do NOT enforce the numbers here - the admin owns them through the Fail2Ban
+# panel. What matters is that fail2ban is alive and the jails are up: a jail
+# broken by an upgrade (e.g. a journalmatch change) leaves SSH unprotected
+# silently. So check = running + sshd jail up; apply = restart; status shows the
+# live values so the panel can display "active, with these values".
+sub f2b_check {
+	_has("fail2ban-client") or return 0;
+	_run("fail2ban-client ping") or return 0;
+	return _run("fail2ban-client status sshd") ? 1 : 0;
+}
+sub f2b_apply {
+	_has("fail2ban-client") or return (0, "fail2ban not installed");
+	_run("systemctl restart fail2ban") or return (0, "could not restart fail2ban");
+	return f2b_check() ? (1, "restarted, jails up") : (0, "restarted but jails not up");
+}
+sub f2b_status {
+	_has("fail2ban-client") or return "";
+	my $ban = _out("fail2ban-client get sshd bantime");
+	return "" if ($ban eq "");
+	my $find = _out("fail2ban-client get sshd findtime");
+	my $mssh = _out("fail2ban-client get sshd maxretry");
+	my $mdef = _out("fail2ban-client get dovecot maxretry");
+	my $inc  = _out("fail2ban-client get sshd bantime.increment");
+	my $incs = ($inc =~ /true/i) ? "on" : "off";
+	return "active - ban ${ban}s, findtime ${find}s, maxretry $mdef (SSH $mssh), increment $incs";
+}
+
 # ---- the measures, in order ------------------------------------------------
 sub measures {
 	return (
@@ -146,6 +174,12 @@ sub measures {
 	    'where' => '/etc/apache2/conf-available/vmkit-security.conf',
 	    'why'   => 'no HSTS on the Apache vhosts (webmail login, the proxy sites)',
 	    'check' => \&apache_check, 'apply' => \&apache_apply },
+	  { 'id'     => 'fail2ban',
+	    'title'  => 'fail2ban: running with the ban policy',
+	    'where'  => '/etc/fail2ban/jail.local (set once; managed in the Fail2Ban panel)',
+	    'why'    => 'brute-force protection; a jail broken by an upgrade leaves SSH unprotected',
+	    'health' => 1,
+	    'check'  => \&f2b_check, 'apply' => \&f2b_apply, 'status' => \&f2b_status },
 	);
 }
 
@@ -162,6 +196,9 @@ unless (caller()) {
 	my $rc = 0;
 	if ($cmd eq 'apply-all') {
 		foreach my $m (&measures()) {
+			# Health measures (fail2ban) are not applied at install -
+			# the installer sets the policy itself, set-once.
+			next if ($m->{'health'});
 			my ($ok, $msg) = $m->{'apply'}->();
 			printf("%s\t%s\t%s\n", ($ok ? 'ok' : 'fail'), $m->{'title'}, $msg);
 			$rc = 1 if (!$ok);

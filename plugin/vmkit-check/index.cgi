@@ -97,7 +97,14 @@ else {
 			       &ui_submit($text{'fix_update'}).
 			       &ui_form_end();
 			}
-		push(@hrows, [ &html_escape($m->{'title'}),
+		# A measure may show a live status line (fail2ban lists its
+		# current values, without enforcing them).
+		my $what = &html_escape($m->{'title'});
+		if ($m->{'status'}) {
+			my $s = eval { $m->{'status'}->() };
+			$what .= "<br><font size=-1>".&html_escape($s)."</font>" if ($s);
+			}
+		push(@hrows, [ $what,
 			       "<tt>".&html_escape($m->{'where'})."</tt>",
 			       &html_escape($m->{'why'}),
 			       &ui_text_color($ok ? $text{'st_ok'} : $text{'st_failed'},
