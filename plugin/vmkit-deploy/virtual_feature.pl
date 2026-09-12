@@ -66,9 +66,9 @@ sub feature_setup
 {
 my ($d) = @_;
 &$virtual_server::first_print($text{'setup_start'});
-# Make sure the hook path is registered on the first domain: the module may
+# Make sure the hook's access is set up on the first domain: the module may
 # have been copied by hand, in which case postinstall.pl never ran.
-&ensure_hook_path();
+&ensure_hook_access();
 &$virtual_server::second_print($virtual_server::text{'setup_done'});
 }
 

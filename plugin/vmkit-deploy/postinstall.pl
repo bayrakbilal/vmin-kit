@@ -14,7 +14,7 @@ require 'vmkit-deploy-lib.pl';
 
 sub module_install
 {
-my ($changed, $err) = &ensure_hook_path();
+my ($changed, $err) = &ensure_hook_access();
 # An error does not abort the installation: the module works without the hook,
 # deployments just have to be triggered by hand. The state is visible on the
 # module's own page.

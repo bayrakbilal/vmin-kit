@@ -58,7 +58,7 @@ code_lines(){
 
 # sigil + paket + isim
 code_lines "$ROOT_DIR/plugin" \
-  | grep -oE '[&$@%](virtual_server|bind8)::[a-zA-Z_0-9]+' \
+  | grep -oE '[&$@%](virtual_server|bind8|acl)::[a-zA-Z_0-9]+' \
   | sed -E 's/^(.)([a-z8_]+)::(.*)$/\1\t\2\t\3/' \
   | sort -u > "$TMP/symbols"
 
@@ -150,13 +150,15 @@ chdir("$root/virtual-server");
 $0 = "$root/virtual-server/doctor.pl";
 require "./virtual-server-lib.pl";
 eval { &foreign_require("bind8"); };
+eval { &foreign_require("acl", "acl-lib.pl"); };
 
 while(my $l = <STDIN>) {
 	chomp($l);
 	my ($sigil, $pkg, $name) = split(/\t/, $l);
 	next if (!$name);
-	# The plugins' 'virtual_server::' and 'main::' here are the same set.
-	my $p = $pkg eq 'bind8' ? 'bind8' : 'main';
+	# The plugins' 'virtual_server::' and 'main::' here are the same set;
+	# other modules are checked in their own package.
+	my $p = $pkg eq 'virtual_server' || $pkg eq 'main' ? 'main' : $pkg;
 	my $ok;
 	if ($sigil eq '&') {
 		no strict 'refs';
@@ -252,73 +254,38 @@ ok "$HOOK_OK plugin hooks are called by Virtualmin"
 echo
 
 # ---------------------------------------------------------------------------
-# 8) MINISERV'S 'unauthcgi' LIST
+# 8) THE WEBHOOK'S ANONYMOUS ACCESS
 #
-# vmkit-deploy adds the webhook path to miniserv's list of CGIs that may RUN
-# without a login. That key's default is not in miniserv.conf but in miniserv's
-# own %vital table, and it applies only while the key is absent from the file:
-#
-#   foreach my $v (keys %vital) { if (!$config{$v}) { $config{$v} = $vital{$v} } }
-#
-# So whoever writes the key must reproduce the whole default, or it disappears
-# silently - for 'unauthcgi' that would be Webmin's password-recovery pages.
-#
-# The plugin reads the default from the source and merges on every run, but a
-# Webmin upgrade in between can add an entry the written copy lacks. That is
-# the contract checked here: is every entry of the source default present in
-# the file?
-#
-# The defaults do change between versions: the 'unauth' list was identical from
-# 1.990 to 2.111 and gained '^/service-worker.js$' by 2.202. Not a theoretical
-# scenario.
+# vmkit-deploy lets its hook.cgi through without a login via miniserv's
+# 'anonymous' setting (Webmin Configuration -> Anonymous Module Access), tied
+# to the plugin's own Webmin user. Three things have to hold: the user exists,
+# the user is allowed the module, and the entry is in miniserv.conf. miniserv
+# itself would let an unknown user through, so a missing user does not break
+# the hook today - it is still reported, because that leniency is not promised.
 # ---------------------------------------------------------------------------
-log "Verifying miniserv's unauthcgi list..."
-MSCONF="${WEBMIN_CONFIG:-/etc/webmin}/miniserv.conf"
-UNAUTH_CUR="$(sed -n 's/^unauthcgi=//p' "$MSCONF" 2>/dev/null | head -1)"
-if [ -z "$UNAUTH_CUR" ]; then
-  # The key is absent, so miniserv uses its own default and there is no drift
-  # to verify.
-  ok "unauthcgi is not in the file (miniserv's default applies)"
-else
-  # The string in the source is double-quoted, so '\$' and '\\' are escapes
-  # that Perl resolves; they are resolved here too. In a regex '\$' and '$' are
-  # not the same thing, so matching without resolving them would be wrong.
-  UNAUTH_RAW="$(grep -hoE '"unauthcgi", "[^"]*"' \
-                  "$WEBMIN_ROOT/miniserv-lib.pl" "$WEBMIN_ROOT/miniserv.pl" \
-                  2>/dev/null | head -1)"
-  if [ -z "$UNAUTH_RAW" ]; then
-    warn "could not find the unauthcgi default in the miniserv source; not compared"
-    MISSING=$((MISSING + 1))
+if [ -d "$WEBMIN_ROOT/vmkit-deploy" ]; then
+  log "Verifying the webhook's anonymous access..."
+  WCONF="${WEBMIN_CONFIG:-/etc/webmin}"
+  HOOK_USER="vmkit-hook"
+  HOOK_ENTRY="/vmkit-deploy/hook.cgi=$HOOK_USER"
+  if grep "^${HOOK_USER}:" "$WCONF/miniserv.users" >/dev/null 2>&1; then
+    ok "Webmin user exists: $HOOK_USER"
   else
-    UNAUTH_DEF="${UNAUTH_RAW#\"unauthcgi\", \"}"
-    UNAUTH_DEF="${UNAUTH_DEF%\"}"
-    UNAUTH_DEF="$(printf '%s' "$UNAUTH_DEF" | sed 's/\\\$/$/g; s/\\\\/\\/g')"
-    UNAUTH_OK=0
-    declare -A UNAUTH_SEEN=()
-    # Filename expansion OFF: entries contain things like '[A-Za-z0-9\-/_]'
-    # which the shell would treat as a glob after word splitting.
-    set -f
-    for d in $UNAUTH_DEF; do
-      # The default list contains '^/robots.txt$' twice (since Webmin 1.990);
-      # count the duplicate once.
-      [ -n "${UNAUTH_SEEN[$d]:-}" ] && continue
-      UNAUTH_SEEN["$d"]=1
-      # Literal comparison rather than a glob: in a 'case' pattern those same
-      # expressions would be read as character classes.
-      hit=0
-      for c in $UNAUTH_CUR; do [ "$c" = "$d" ] && hit=1; done
-      if [ "$hit" = 1 ]; then
-        UNAUTH_OK=$((UNAUTH_OK + 1))
-      else
-        err "default missing from the unauthcgi list: $d"
-        MISSING=$((MISSING + 1))
-      fi
-    done
-    set +f
-    ok "$UNAUTH_OK unauthcgi defaults in place"
+    err "Webmin user missing: $HOOK_USER"; MISSING=$((MISSING + 1))
   fi
+  # webmin.acl lines look like "user: mod1 mod2 ..."
+  if awk -v u="$HOOK_USER:" '$1 == u { for (i = 2; i <= NF; i++) if ($i == "vmkit-deploy") found = 1 } END { exit !found }' "$WCONF/webmin.acl" 2>/dev/null; then
+    ok "$HOOK_USER is allowed the vmkit-deploy module"
+  else
+    err "$HOOK_USER is not allowed the vmkit-deploy module (webmin.acl)"; MISSING=$((MISSING + 1))
+  fi
+  if sed -n 's/^anonymous=//p' "$WCONF/miniserv.conf" 2>/dev/null | tr ' ' '\n' | grep -xF "$HOOK_ENTRY" >/dev/null; then
+    ok "anonymous entry in place: $HOOK_ENTRY"
+  else
+    err "anonymous entry missing from miniserv.conf: $HOOK_ENTRY"; MISSING=$((MISSING + 1))
+  fi
+  echo
 fi
-echo
 
 # ---------------------------------------------------------------------------
 if [ "$MISSING" -eq 0 ]; then

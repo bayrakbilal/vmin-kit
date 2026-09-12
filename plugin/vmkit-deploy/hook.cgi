@@ -1,8 +1,8 @@
 #!/usr/bin/perl
 # The webhook: triggers a deployment when the UUID in the URL is valid.
 #
-# THIS PAGE REQUIRES NO LOGIN - its path is registered in miniserv's list of
-# paths that run without authentication (ensure_hook_path). The UUID is the
+# THIS PAGE REQUIRES NO LOGIN - miniserv lets its path through anonymously as
+# the plugin's own Webmin user (ensure_hook_access). The UUID is the
 # authorisation.
 #
 # Two rules:

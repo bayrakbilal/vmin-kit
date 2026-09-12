@@ -8,7 +8,7 @@ require 'vmkit-deploy-lib.pl';
 
 sub module_uninstall
 {
-&remove_hook_path();
+&remove_hook_access();
 return undef;
 }
 

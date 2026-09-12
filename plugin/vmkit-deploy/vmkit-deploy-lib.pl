@@ -924,7 +924,7 @@ print &ui_table_row($text{'edit_hook'},
 	&ui_submit($text{'edit_hook_regen'}, "regen")."<br>".
 	"<font size=-1>$text{'edit_hook_help'}</font>".
 	($new ? "<br><font size=-1>$text{'edit_hook_new'}</font>" : "").
-	(&hook_path_registered() ? "" :
+	(&hook_access_ready() ? "" :
 		"<br><b>$text{'edit_hook_notready'}</b>"));
 
 print &ui_table_end();
@@ -999,98 +999,41 @@ return undef if (!$host);
 return "https://$host/$module_name/hook.cgi?uuid=$dep->{'uuid'}";
 }
 
-# ---- miniserv: the path that needs no login ------------------------------
-# The hook URL has to be reachable without signing in, which is a Webmin
-# setting. Its NAME is never guessed: the installed miniserv source is read to
-# find which key it uses, so a rename between versions is picked up here.
-sub miniserv_source
+
+# ---- hook access: an anonymous path tied to the plugin's own Webmin user ---
+#
+# The hook URL has to work without a login. miniserv's 'anonymous' setting does
+# exactly that: "anonymous=<path>=<webmin-user>" lets requests under <path>
+# through as that user (miniserv-lib.pl: $validated = 3, the CGI is executed,
+# ANONYMOUS_USER=1). It is the setting behind Webmin Configuration -> Anonymous
+# Module Access, it has no compiled-in default to preserve, and its own page
+# requires the user to exist - so the plugin owns a Webmin user for it:
+# 'vmkit-hook', password locked, allowed this module only.
+#
+# 'unauthcgi' was used before and works too, but its default list lives in
+# miniserv's %vital table and vanishes the moment the key is written to
+# miniserv.conf without it. Reading that default out of the miniserv source
+# was the price; 'anonymous' has no such price.
+#
+# hook.cgi itself does not care which mechanism lets it in.
+
+sub hook_user
 {
-my $src = "";
-foreach my $f ("miniserv-lib.pl", "miniserv.pl") {
-	my $p = "$root_directory/$f";
-	$src .= &read_file_contents($p) if (-r $p);
-	}
-return $src;
+return "vmkit-hook";
 }
 
-# unauth_key() -> the miniserv key the hook path is written to
-#
-# 'unauthcgi', NOT 'unauth'. They share a mechanism but mean different things:
-#
-#   foreach my $u (@unauth)    { $unauth = 4 if ($simple =~ /$u/); }
-#   foreach my $u (@unauthcgi) { $unauth = 3 if ($simple =~ /$u/); }
-#
-# and the execution gate:
-#
-#   if (&get_type($full) eq "internal/cgi" && $validated != 4) { ... CGI ... }
-#
-# So a .cgi listed in 'unauth' is NOT EXECUTED - its source is sent as a file.
-# Measured: a session-less request returned '200 internal/cgi' and the Perl
-# source of hook.cgi, and the hook never fired. From a logged-in browser it
-# looked like it worked, because then the list is never consulted at all.
-#
-# 'unauthcgi' gives $validated=3, executes the CGI and sets ANONYMOUS_USER=1,
-# which is what we want.
-#
-# Returns undef when the key is absent from the installed source: not
-# registering the hook is better than writing to the wrong place, and falling
-# back to 'unauth' would serve the source code.
-sub unauth_key
+# The path is matched as a PREFIX (substr), not a regex.
+sub hook_anon_entry
 {
-my $src = &miniserv_source();
-return $src =~ /["']unauthcgi["']/ ? "unauthcgi" : undef;
+return "/$module_name/hook.cgi=".&hook_user();
 }
 
-# unauth_default(key) -> the default list compiled into miniserv
-#
-# WITHOUT THIS FUNCTION THE PLUGIN BROKE WEBMIN. The default lists are not in
-# miniserv.conf but in miniserv's %vital table, and they apply only while the
-# key is absent from the file:
-#
-#   foreach my $v (keys %vital) { if (!$config{$v}) { $config{$v} = $vital{$v} } }
-#
-# So "append to the value in the file" REPLACED the list with our single path,
-# because the file had no value. For 'unauthcgi' that default is Webmin's
-# password-recovery pages, which must not be deleted either.
-#
-# The list is NEVER COPIED BY HAND: it is read from the installed source so it
-# cannot drift when Webmin changes. The string there is double-quoted, so
-# escapes like '\$' are resolved by Perl and are resolved here too - in a regex
-# '\$' and '$' are not the same thing.
-sub unauth_default
+# hook_webmin_user() -> the user record from the acl module, or undef
+sub hook_webmin_user
 {
-my ($key) = @_;
-my $src = &miniserv_source();
-return "" if (!$src || !$key);
-return "" if ($src !~ /["']\Q$key\E["']\s*,\s*"((?:[^"\\]|\\.)*)"/);
-my $def = $1;
-$def =~ s/\\([\$\@\\"])/$1/g;
-return $def;
-}
-
-# wanted_unauth_list(key, current) -> what the list should be
-# The default, plus whatever is already in the file, plus our path, in order
-# and without duplicates. Entries already in the file are kept: if something
-# else added a path, removing it is not ours to do.
-sub wanted_unauth_list
-{
-my ($key, $cur) = @_;
-my @want;
-my %seen;
-foreach my $p (split(/\s+/, &unauth_default($key)),
-	       split(/\s+/, $cur || ''),
-	       &hook_path()) {
-	next if ($p eq '' || $seen{$p}++);
-	push(@want, $p);
-	}
-return join(" ", @want);
-}
-
-# List entries are evaluated as REGEXES ($simple =~ /$u/), not as literals.
-# Unanchored, the path would match anywhere in a URL.
-sub hook_path
-{
-return "^/$module_name/hook\\.cgi\$";
+&foreign_require("acl", "acl-lib.pl");
+my ($u) = grep { $_->{'name'} eq &hook_user() } &acl::list_users();
+return $u;
 }
 
 sub miniserv_conf
@@ -1098,88 +1041,85 @@ sub miniserv_conf
 return "$ENV{'WEBMIN_CONFIG'}/miniserv.conf";
 }
 
-# hook_path_registered() -> is the path in the list?
-sub hook_path_registered
+# anon_entries() -> the current 'anonymous' list, as entries
+sub anon_entries
 {
-my $conf = &miniserv_conf();
-return 0 if (!-r $conf);
-my $key = &unauth_key();
-return 0 if (!$key);
-my $cur = "";
-foreach my $l (split(/\n/, &read_file_contents($conf))) {
-	$cur = $1 if ($l =~ /^\Q$key\E=(.*)$/);
-	}
-my $p = &hook_path();
-return (grep { $_ eq $p } split(/\s+/, $cur)) ? 1 : 0;
+my %ms;
+&get_miniserv_config(\%ms);
+return grep { $_ ne '' } split(/\s+/, $ms{'anonymous'} || '');
 }
 
-# ensure_hook_path() -> (changed?, error)
-# Adds the path to the list and reloads miniserv. Idempotent: does nothing when
-# it is already right, so it can be called on every install.
-sub ensure_hook_path
+# hook_access_ready() -> user present with the module, and the entry in place
+sub hook_access_ready
 {
-my $conf = &miniserv_conf();
-return (0, undef) if (!-r $conf);
-my $key = &unauth_key();
-return (0, &text('hook_econf', $conf)) if (!$key);
-my %mc;
-&read_file($conf, \%mc);
-my $cur = $mc{$key};
-
-# If the default cannot be read, nothing is written: an incomplete list would
-# break Webmin's own pages. Appending to an existing value is safe, because
-# then there is no default being overwritten.
-my $def = &unauth_default($key);
-if ($def eq '' && ($cur || '') eq '') {
-	return (0, &text('hook_econf', $conf));
-	}
-
-my $want = $def eq '' ? join(" ", grep { $_ ne '' }
-				  (split(/\s+/, $cur || ''), &hook_path()))
-		      : &wanted_unauth_list($key, $cur);
-# Compared by content, not by "is our path there": on installs an older version
-# broke, our path was present but the defaults were missing, and this is what
-# repairs them.
-return (0, undef) if (($cur || '') eq $want);
-return (0, &text('hook_econf', $conf)) if (!-w $conf);
-$mc{$key} = $want;
-&lock_file($conf);
-&write_file($conf, \%mc);
-&unlock_file($conf);
-# The setting only takes effect once miniserv reloads. Webmin's own function
-# does that without killing the request in flight - the same call its
-# Configuration pages use.
-if (defined(&restart_miniserv)) {
-	eval { &restart_miniserv(1); };
-	}
-return (1, undef);
+my $u = &hook_webmin_user();
+return 0 if (!$u);
+return 0 if (&indexof($module_name, @{$u->{'modules'} || []}) < 0);
+my $e = &hook_anon_entry();
+return (grep { $_ eq $e } &anon_entries()) ? 1 : 0;
 }
 
-# remove_hook_path() - removes the path from the list when the module is removed.
-sub remove_hook_path
+# ensure_hook_access() -> (changed?, error)
+# Creates the user when missing, grants the module when missing, adds the
+# anonymous entry when missing, reloads miniserv when anything changed.
+# Idempotent, so it runs on every install and on every feature_setup.
+sub ensure_hook_access
 {
-my $conf = &miniserv_conf();
-return 0 if (!-w $conf);
-my $key = &unauth_key();
-return 0 if (!$key);
-my %mc;
-&read_file($conf, \%mc);
-my $p = &hook_path();
-my @keep = grep { $_ ne '' && $_ ne $p } split(/\s+/, $mc{$key} || '');
-return 0 if (join(" ", @keep) eq ($mc{$key} || ''));
-# If only the default remains, the key is deleted entirely: miniserv then uses
-# its built-in list and no copy of ours is left in miniserv.conf.
-if (join(" ", @keep) eq &unauth_default($key)) {
-	delete($mc{$key});
+my $changed = 0;
+
+# The Webmin user. '*LK*' is a locked password: nobody can log in as it.
+my $u = &hook_webmin_user();
+if (!$u) {
+	eval {
+		&acl::create_user({ 'name'    => &hook_user(),
+				    'pass'    => '*LK*',
+				    'modules' => [ $module_name ],
+				    'sync'    => 0 });
+		};
+	return (0, &text('hook_euser', "$@")) if ($@);
+	$changed = 1;
 	}
-else {
-	$mc{$key} = join(" ", @keep);
+elsif (&indexof($module_name, @{$u->{'modules'} || []}) < 0) {
+	push(@{$u->{'modules'}}, $module_name);
+	eval { &acl::modify_user($u->{'name'}, $u); };
+	return (0, &text('hook_euser', "$@")) if ($@);
+	$changed = 1;
 	}
-&lock_file($conf);
-&write_file($conf, \%mc);
-&unlock_file($conf);
-if (defined(&restart_miniserv)) {
-	eval { &restart_miniserv(1); };
+
+# The anonymous entry. Other entries are kept: they are not ours to remove.
+my $e = &hook_anon_entry();
+my @cur = &anon_entries();
+if (!grep { $_ eq $e } @cur) {
+	my %ms;
+	&get_miniserv_config(\%ms);
+	$ms{'anonymous'} = join(" ", @cur, $e);
+	&lock_file(&miniserv_conf());
+	&put_miniserv_config(\%ms);
+	&unlock_file(&miniserv_conf());
+	# Takes effect on reload; Webmin's own pages use the same call.
+	&reload_miniserv();
+	$changed = 1;
+	}
+return ($changed, undef);
+}
+
+# remove_hook_access() - takes the entry and the user away with the module.
+sub remove_hook_access
+{
+my $e = &hook_anon_entry();
+my @keep = grep { $_ ne $e } &anon_entries();
+my %ms;
+&get_miniserv_config(\%ms);
+if (($ms{'anonymous'} || '') ne join(" ", @keep)) {
+	if (@keep) { $ms{'anonymous'} = join(" ", @keep); }
+	else       { delete($ms{'anonymous'}); }
+	&lock_file(&miniserv_conf());
+	&put_miniserv_config(\%ms);
+	&unlock_file(&miniserv_conf());
+	&reload_miniserv();
+	}
+if (&hook_webmin_user()) {
+	eval { &acl::delete_user(&hook_user()); };
 	}
 return 1;
 }
