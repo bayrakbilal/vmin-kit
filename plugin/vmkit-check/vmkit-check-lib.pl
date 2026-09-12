@@ -73,6 +73,12 @@ return { 'plugin' => $plugin, 'desc' => $desc, 'ok' => $ok ? 1 : 0,
 #
 # A helper the plugin calls behind defined(&name) is optional by design and is
 # skipped: the plugin already falls back when it is missing.
+#
+# ui_* helpers are looked up in the PLUGIN'S OWN PACKAGE: miniserv runs a
+# module's CGIs in a package named after the module (vmkit-deploy ->
+# vmkit_deploy) and Webmin's libraries load into that package, so that is
+# where the plugin's pages will find - or miss - them. Loading the plugin's
+# library with foreign_require brings the libraries in the same way.
 sub check_symbols
 {
 my ($mod) = @_;
@@ -82,6 +88,9 @@ my %pkgs = ( 'virtual_server' => 'virtual-server', 'bind8' => 'bind8',
 foreach my $p (values %pkgs) {
 	eval { &foreign_require($p) } if (-d "$root_directory/$p");
 	}
+my $modpkg = $mod;
+$modpkg =~ s/[^A-Za-z0-9]/_/g;
+eval { &foreign_require($mod, "$mod-lib.pl"); };
 foreach my $f (&source_files($mod)) {
 	my $code = &code_of($f);
 	while ($code =~ /defined\(&(ui_[a-z_0-9]+)\)/g) { $optional{$1} = 1; }
@@ -101,7 +110,7 @@ foreach my $f (&source_files($mod)) {
 		my $name = $1;
 		next if ($seen{"ui:$name"}++ || $optional{$name});
 		my $ok;
-		{ no strict 'refs'; $ok = defined(&{"main::$name"}); }
+		{ no strict 'refs'; $ok = defined(&{"${modpkg}::$name"}); }
 		push(@checks, &mkcheck($mod, &text('chk_symbol', "&$name"),
 				       $ok, $ok ? "" : $text{'chk_missing'}));
 		}
