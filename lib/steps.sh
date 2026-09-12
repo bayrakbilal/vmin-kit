@@ -364,25 +364,46 @@ step_hardening(){
   # Dovecot allowed plaintext IMAP/POP login without TLS (no LOGINDISABLED),
   # so a mailbox password could be sniffed. A 99- drop-in wins over Virtualmin's
   # own conf.d files (Dovecot reads conf.d/*.conf in order, last set wins).
-  # 'yes' still permits auth AFTER STARTTLS and on the TLS ports (993/995) - it
-  # only forbids it on a bare connection.
+  #
+  # The setting NAME differs by version, and we support four OSes with two
+  # Dovecot branches: 2.3 (Debian 12, Ubuntu 22.04/24.04) calls it
+  # 'disable_plaintext_auth = yes'; 2.4 (Debian 13) renamed it to
+  # 'auth_allow_cleartext = no'. Rather than test each OS, the running Dovecot
+  # is ASKED which name it knows ('doveconf -a' lists its valid settings), and
+  # the drop-in is then PARSE-CHECKED before any reload - if it does not parse
+  # it is removed and Dovecot is left on its working config, never restarted
+  # into a broken one. Either setting still permits auth after STARTTLS and on
+  # the TLS ports; it only forbids it on a bare connection.
   local dcd="/etc/dovecot/conf.d"
-  if [ -d "$dcd" ]; then
-    local ddrop="$dcd/99-vmkit-security.conf"
-    printf '%s\n' "# vmin-kit: no plaintext auth on non-TLS connections" \
-                  "disable_plaintext_auth = yes" > "$ddrop"
-    chmod 0644 "$ddrop"
-    systemctl reload dovecot 2>/dev/null || systemctl restart dovecot 2>/dev/null
-    # Confirm it actually took effect - the drop-in only wins if conf.d is
-    # included, which is standard but worth proving rather than assuming.
-    if [ "$(doveconf -h disable_plaintext_auth 2>/dev/null)" = "yes" ]; then
-      ok "Dovecot: plaintext auth disabled on non-TLS connections."
-    else
-      warn "Dovecot drop-in written but disable_plaintext_auth is not 'yes'; check conf.d include."
-      rc=1
-    fi
+  if [ ! -d "$dcd" ] || ! command -v doveconf >/dev/null 2>&1; then
+    warn "Dovecot not found; skipping."; rc=1
   else
-    warn "Dovecot conf.d not found; skipping."; rc=1
+    local dkey dval
+    if doveconf -a 2>/dev/null | grep -q '^auth_allow_cleartext'; then
+      dkey="auth_allow_cleartext"; dval="no"          # 2.4+
+    elif doveconf -a 2>/dev/null | grep -q '^disable_plaintext_auth'; then
+      dkey="disable_plaintext_auth"; dval="yes"       # 2.3
+    fi
+    if [ -z "$dkey" ]; then
+      warn "Dovecot: no known cleartext-auth setting; skipping."; rc=1
+    else
+      local ddrop="$dcd/99-vmkit-security.conf"
+      printf '%s\n' "# vmin-kit: no cleartext auth on non-TLS connections" \
+                    "$dkey = $dval" > "$ddrop"
+      chmod 0644 "$ddrop"
+      # Parse BEFORE reloading: a bad drop-in must not reach a restart.
+      if ! doveconf -n >/dev/null 2>&1; then
+        rm -f "$ddrop"
+        warn "Dovecot: drop-in did not parse; removed, config unchanged."; rc=1
+      else
+        systemctl reload dovecot 2>/dev/null || systemctl restart dovecot 2>/dev/null
+        if [ "$(doveconf -h "$dkey" 2>/dev/null)" = "$dval" ]; then
+          ok "Dovecot: cleartext auth disabled on non-TLS connections ($dkey)."
+        else
+          warn "Dovecot: $dkey not in effect after reload."; rc=1
+        fi
+      fi
+    fi
   fi
 
   # --- DNS: stop leaking the BIND version -----------------------------------
