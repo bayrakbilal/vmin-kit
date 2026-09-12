@@ -1,0 +1,4 @@
+desc=VminKit Check
+depends=virtual-server
+category=servers
+version=1.0.0

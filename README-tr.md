@@ -15,8 +15,10 @@ iddia edip yarım kurulum bırakmak, hiç desteklememekten kötü olurdu.
 Kurulum bittiğinde ana domain oluşmuş, sertifikası alınmış ve yayında olur;
 panel, webmail ve Docker arayüzü kendi alt alanlarından erişilebilir olur.
 
-Yanında üç Webmin eklentisi gelir: **Git Deploy**, **Composer** ve **Cloudflare
-DNS** — üçü de Virtualmin panelinde domain başına çalışır.
+Yanında dört Webmin eklentisi gelir: **Git Deploy**, **Composer** ve
+**Cloudflare DNS** Virtualmin panelinde domain başına çalışır; **Check
+vmin-kit** ise bir Webmin ya da Virtualmin güncellemesinin bunlardan birini
+bozup bozmadığını panelden söyler.
 
 ---
 
@@ -90,6 +92,7 @@ kurulur.
 | `PLUGIN_DEPLOY` | Git Deploy eklentisini kurar | 1 |
 | `PLUGIN_COMPOSER` | Composer eklentisini kurar | 1 |
 | `PLUGIN_CLOUDFLARE` | Cloudflare DNS eklentisini kurar | 1 |
+| `PLUGIN_CHECK` | Check vmin-kit eklentisini kurar | 1 |
 | `PANEL_PROXY` | `webmin.<domain>` ve `usermin.<domain>` alt alanlarını yayınlar | 1 |
 | `LOCK_PANEL_PORTS` | 10000/20000 portlarını yalnızca `127.0.0.1`'e bağlar | 1 |
 | `ROUNDCUBE` | `webmail.<domain>` alt sunucusu + Roundcube | 1 |
@@ -199,7 +202,7 @@ Araç, domainin NS kayıtlarına bakıp modu kendisi tespit eder:
 
 ## 5. Eklentiler
 
-Üçü de **domain başına** çalışır. Bir domainde kullanmak için *Edit Virtual
+İlk üçü **domain başına** çalışır. Bir domainde kullanmak için *Edit Virtual
 Server* içinde ilgili onay kutusu açık olmalı (yeni domainlerde varsayılan
 açıktır). Açıkken sol menüde domainin altında görünürler.
 
@@ -292,6 +295,25 @@ kurulduğunda kendi systemd birimlerini oluşturur, zone dosyası değiştiği a
 tetiklenir ve ayrıca 15 dakikada bir kontrol eder. Zone değişmediyse hiçbir API
 çağrısı yapılmaz. Eklentinin ana sayfası servisin durumunu gösterir ve durmuşsa
 yeniden başlatır.
+
+### Check vmin-kit
+
+*System Settings → Check vmin-kit.* Üç eklenti Virtualmin'i, Webmin'in arayüz
+kütüphanesini ve birkaç Webmin modülünü çağırır; hiçbiri kararlı bir arayüz
+vaat etmez. Bir güncelleme bir fonksiyonun adını değiştirebilir ya da bir
+kancayı çağırmayı bırakabilir, ve eklenti ancak biri sayfayı açtığında bozulur.
+Bu eklenti bunu önce öğrenir.
+
+Eklentilerin kendi kaynağını tarayıp çağırdıkları her şeyi çalışan sistemde
+arar, uyguladıkları her kancanın Virtualmin tarafından hâlâ çağrıldığını
+denetler ve her eklentinin çalışmak için ihtiyaç duyduğunu doğrular: kancanın
+Webmin kullanıcısı ve anonim erişim girdisi, Cloudflare senkron birimleri,
+`composer` komutu. Yapabildiği yerde bir **Onar** düğmesi düzeltir.
+
+Çalıştırmayı hatırlamanız gerekmez: bir Webmin ya da Virtualmin
+güncellemesinden sonra (ve günde bir kez) kontroller Virtualmin panosu
+açıldığında kendiliğinden yeniden çalışır ve bir hata orada uyarı olarak
+görünür. Sayfanın kendisi yalnızca son sonucu gösterir.
 
 ---
 

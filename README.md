@@ -17,8 +17,10 @@ When the run finishes the main domain is created, has a certificate and is
 live; the panel, webmail and the Docker interface are reachable on their own
 sub-domains.
 
-Three Webmin plugins come with it: **Git Deploy**, **Composer** and
-**Cloudflare DNS** — all three work per domain inside the Virtualmin panel.
+Four Webmin plugins come with it: **Git Deploy**, **Composer** and
+**Cloudflare DNS** work per domain inside the Virtualmin panel, and **Check
+vmin-kit** tells you from the panel whether a Webmin or Virtualmin upgrade has
+broken any of them.
 
 ---
 
@@ -93,6 +95,7 @@ repository installs the same way.
 | `PLUGIN_DEPLOY` | Installs the Git Deploy plugin | 1 |
 | `PLUGIN_COMPOSER` | Installs the Composer plugin | 1 |
 | `PLUGIN_CLOUDFLARE` | Installs the Cloudflare DNS plugin | 1 |
+| `PLUGIN_CHECK` | Installs the Check vmin-kit plugin | 1 |
 | `PANEL_PROXY` | Publishes the `webmin.<domain>` and `usermin.<domain>` sub-domains | 1 |
 | `LOCK_PANEL_PORTS` | Binds ports 10000/20000 to `127.0.0.1` only | 1 |
 | `ROUNDCUBE` | The `webmail.<domain>` sub-server + Roundcube | 1 |
@@ -208,9 +211,9 @@ In both modes the local zone is always generated, and the nameserver pair is
 
 ## 5. The plugins
 
-All three work **per domain**. To use one on a domain, its checkbox has to be
-on under *Edit Virtual Server* (on by default for new domains). When it is,
-they appear in the left menu under the domain.
+The first three work **per domain**. To use one on a domain, its checkbox has
+to be on under *Edit Virtual Server* (on by default for new domains). When it
+is, they appear in the left menu under the domain.
 
 Root manages every domain; a domain owner logs in with their own account and
 sees only their own domain.
@@ -302,6 +305,24 @@ plugin is installed it creates its own systemd units, is triggered the moment
 the zone file changes, and checks every 15 minutes besides. An unchanged zone
 makes no API call at all. The plugin's main page shows the state of the service
 and restarts it if it has stopped.
+
+### Check vmin-kit
+
+*System Settings → Check vmin-kit.* The three plugins call into Virtualmin,
+Webmin's UI library and a few Webmin modules, none of which promise a stable
+interface; an upgrade can rename a function or stop calling a hook, and the
+plugin only breaks when someone opens the page. This one finds out first.
+
+It scans the plugins' own source for everything they call and looks each name
+up in the running system, checks that Virtualmin still calls every hook they
+implement, and verifies what each plugin needs to work: the webhook's Webmin
+user and anonymous-access entry, the Cloudflare sync units, the `composer`
+command. Where it can, a **Repair** button puts things right.
+
+You do not have to remember to run it: after a Webmin or Virtualmin upgrade
+(and once a day) the checks run again by themselves when the Virtualmin
+dashboard is opened, and a failure shows up there as a warning. The page itself
+only shows the last result.
 
 ---
 

@@ -170,12 +170,13 @@ if [ "$MODE" = remove ]; then
 else
   ok "Modules installed: ${MODULES[*]}"
   echo
-  log "All three are per-domain features. Enable them under System Settings ->"
+  log "Three are per-domain features. Enable them under System Settings ->"
   log "Features and Plugins, then turn them on for a domain in Edit Virtual"
   log "Server. Once on, they appear in that domain's menu:"
   log "  Git Deploy       - deploy from a remote repository"
   log "  Composer         - install/update for directories with a composer.json"
   log "  Cloudflare DNS   - syncs the local zone to Cloudflare"
+  log "The fourth, Check vmin-kit, is a page under System Settings."
   if systemctl is-active --quiet vmkit-cloudflare-sync.path 2>/dev/null; then
     log "Automatic DNS sync is running (triggered when a zone changes)."
   fi
