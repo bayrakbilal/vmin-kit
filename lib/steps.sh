@@ -73,6 +73,49 @@ step_virtualmin(){
 }
 
 # Does the domain have an ACME (Let's Encrypt) certificate?
+# Every step after step_virtualmin needs the CLI; the guard is one place.
+need_virtualmin(){
+  command -v virtualmin >/dev/null 2>&1 && return 0
+  err "Virtualmin is missing; skipping this step."
+  return 1
+}
+
+# domain_exists <name> -> is there a virtual server with exactly this name?
+domain_exists(){
+  virtualmin list-domains --name-only 2>/dev/null | grep -xF "$1" >/dev/null
+}
+
+# ensure_sub_server <site> <desc> [extra create-domain flags]
+# Creates a sub-server of the main domain when it does not exist. The feature
+# list is the minimum a website needs: --dir (required for a website), --web
+# (vhost), --ssl, --dns (the sub-domain's A record - with bind_sub=yes it goes
+# into the parent zone rather than creating a new one; without it the name does
+# not resolve at all), --parent (a sub-server, so no separate unix user) and
+# --break-ssl-cert so it gets its own certificate instead of sharing the main
+# domain's. Callers add what they need on top (webmail adds --mysql).
+#
+# A failed create-domain is a real failure here: Virtualmin only exits non-zero
+# when the server could not be created. A failed certificate request during
+# creation is printed and swallowed by Virtualmin, and ensure_site_cert deals
+# with it right after.
+ensure_sub_server(){
+  local site="$1" desc="$2"; shift 2
+  if domain_exists "$site"; then
+    ok "Sub-server already exists: $site"
+    return 0
+  fi
+  log "Creating sub-server: $site (parent: $MAIN_DOMAIN)"
+  if ! virtualmin create-domain \
+         --domain "$site" \
+         --parent "$MAIN_DOMAIN" \
+         --desc   "$desc" \
+         --dir --web --ssl --dns --break-ssl-cert "$@"; then
+    err "Could not create $site."
+    return 1
+  fi
+  ok "Sub-server created: $site"
+}
+
 # The label is not reliable - the line in list-domains output is named
 # differently across Virtualmin versions - so check the filesystem first.
 domain_has_acme_cert(){
@@ -137,7 +180,7 @@ step_dns_template(){
   set_kv "$cfg" dns_ns      "$NS2"
   set_kv "$cfg" dns_prins   "1"
   set_kv "$cfg" bind_sub    "yes"
-  systemctl restart webmin 2>/dev/null || warn "Could not restart webmin (manually: systemctl restart webmin)"
+  systemctl restart webmin 2>/dev/null || warn "Could not restart Webmin."
   ok "dns-template: bind_master=$NS1, dns_ns=$NS2, bind_sub=yes"
 }
 
@@ -261,7 +304,7 @@ step_domain_defaults(){
 # check_dkim() reports why the system cannot do it; in that case we skip rather
 # than fail the install.
 step_dkim(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping DKIM."; return 1; }
+  need_virtualmin || return 1
   local out
   out="$(perl -e '
     my ($root) = @ARGV;
@@ -331,8 +374,8 @@ step_dkim(){
 # <user>@<domain>. Its password is random and discarded, so set one from the
 # panel before using it.
 step_main_domain(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping main domain."; return 1; }
-  if virtualmin list-domains --name-only 2>/dev/null | grep -x "$MAIN_DOMAIN" >/dev/null; then
+  need_virtualmin || return 1
+  if domain_exists "$MAIN_DOMAIN"; then
     ok "Main domain already exists: $MAIN_DOMAIN (skipping)."; return
   fi
   # Random password, stored nowhere. A secret that is not kept cannot leak;
@@ -368,13 +411,19 @@ step_main_domain(){
   done
   [ -z "$skipped" ] || warn "Skipped because they are disabled:$skipped"
 
+  # The exit status is trusted - see ensure_sub_server.
   log "Creating the main domain: $MAIN_DOMAIN"
+  local rc=0
   virtualmin create-domain \
     --domain "$MAIN_DOMAIN" \
     --pass   "$pw" \
     --desc   "$MAIN_DOMAIN" \
-    "${flags[@]}"
+    "${flags[@]}" || rc=$?
   unset pw
+  if [ "$rc" -ne 0 ]; then
+    err "Could not create the main domain: $MAIN_DOMAIN"
+    return 1
+  fi
   ok "Main domain created."
   # Record what was actually enabled: some flags depend on the module config.
   virtualmin list-domains --domain "$MAIN_DOMAIN" --multiline 2>/dev/null |
@@ -386,7 +435,7 @@ step_main_domain(){
 # zone is our model and has to be right for the sync to send the right record.
 # In BIND mode it is what makes the panel address resolve once delegation lands.
 step_host_dns(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping the hostname DNS record."; return 1; }
+  need_virtualmin || return 1
   case "$HOSTNAME_FQDN" in
     *".$MAIN_DOMAIN") ;;
     *) log "Hostname is not a subdomain of the main domain; skipping the DNS record."; return;;
@@ -401,8 +450,8 @@ step_host_dns(){
   if virtualmin modify-dns --domain "$MAIN_DOMAIN" --add-record "${HOSTNAME_FQDN}. A ${ip}"; then
     ok "Hostname A record added."
   else
-    warn "Could not add it. Manually:"
-    warn "  virtualmin modify-dns --domain $MAIN_DOMAIN --add-record \"${HOSTNAME_FQDN}. A ${ip}\""
+    warn "Could not add the hostname A record."
+    return 1
   fi
 }
 
@@ -420,10 +469,10 @@ step_host_dns(){
 # Virtualmin would not recognise it as the hostname domain. There is no CLI
 # wrapper for it, hence the inline Perl in Webmin's environment.
 step_host_domain(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping the hostname virtual server."; return 1; }
+  need_virtualmin || return 1
   local host="$HOSTNAME_FQDN" vsdir="/usr/share/webmin/virtual-server"
 
-  if virtualmin list-domains --name-only 2>/dev/null | grep -xF "$host" >/dev/null; then
+  if domain_exists "$host"; then
     ok "Hostname virtual server already exists: $host"
     # The function is no use here: it refuses when the domain exists
     # ('check_defhost_clash'), so the certificate is requested the normal way.
@@ -456,7 +505,7 @@ PERL
 
   # Success is checked against the system, not the return code: the function
   # uses the same value for a failed certificate and for early refusals.
-  if ! virtualmin list-domains --name-only 2>/dev/null | grep -xF "$host" >/dev/null; then
+  if ! domain_exists "$host"; then
     err "Could not create the hostname virtual server: $host"
     return 1
   fi
@@ -511,7 +560,7 @@ host_cert_to_services(){
 }
 
 step_ssl(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping SSL."; return 1; }
+  need_virtualmin || return 1
   ensure_site_cert main "$MAIN_DOMAIN"
 }
 
@@ -640,33 +689,11 @@ step_portainer_token(){
 # This is the pattern for publishing a management UI without opening a port:
 # the interface listens on 127.0.0.1 and is reached through Apache under that
 # sub-domain's OWN certificate. docker./webmin./usermin. all use it.
-#
-# Features are kept minimal: --dir (required for a website), --web (vhost),
-# --ssl, --dns (the sub-domain's A record - with bind_sub=yes it goes into the
-# parent zone rather than creating a new one; without it the name does not
-# resolve at all), --parent (a sub-server, so no separate unix user) and
-# --break-ssl-cert so it gets its own certificate instead of sharing the main
-# domain's.
-#
 ensure_proxy_site(){
   local prefix="$1" url="$2" desc="$3" phost="${4:-}"
   local site="${prefix}.${MAIN_DOMAIN}"
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping $site."; return 1; }
-
-  if virtualmin list-domains --name-only 2>/dev/null | grep -xF "$site" >/dev/null; then
-    ok "Sub-server already exists: $site"
-  else
-    log "Creating sub-server: $site (parent: $MAIN_DOMAIN)"
-    if ! virtualmin create-domain \
-           --domain "$site" \
-           --parent "$MAIN_DOMAIN" \
-           --desc   "$desc" \
-           --dir --web --ssl --dns --break-ssl-cert; then
-      err "Could not create $site."
-      return 1
-    fi
-    ok "Sub-server created: $site"
-  fi
+  need_virtualmin || return 1
+  ensure_sub_server "$site" "$desc" || return 1
 
   # Is the proxy already defined? (look for the target in the vhost)
   local vhost="/etc/apache2/sites-available/${site}.conf"
@@ -680,7 +707,7 @@ ensure_proxy_site(){
     elif virtualmin create-proxy --domain "$site" --path / --url "$url" --websockets; then
       ok "Proxy added."
     else
-      err "Could not add the proxy. Manually: virtualmin create-proxy --domain $site --path / --url $url --websockets"
+      err "Could not add the proxy for $site."
       return 1
     fi
   fi
@@ -734,23 +761,9 @@ proxy_site_works(){
 # users, mailboxes and passwords stay in Virtualmin. Logins use the full email
 # address.
 step_webmail(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping webmail."; return 1; }
+  need_virtualmin || return 1
   local site="${WEBMAIL_PREFIX:-webmail}.${MAIN_DOMAIN}"
-
-  if virtualmin list-domains --name-only 2>/dev/null | grep -xF "$site" >/dev/null; then
-    ok "Sub-server already exists: $site"
-  else
-    log "Creating sub-server: $site (parent: $MAIN_DOMAIN)"
-    if ! virtualmin create-domain \
-           --domain "$site" \
-           --parent "$MAIN_DOMAIN" \
-           --desc   "Roundcube (vmin-kit)" \
-           --dir --web --ssl --dns --mysql --break-ssl-cert; then
-      err "Could not create $site; skipping Roundcube."
-      return 1
-    fi
-    ok "Sub-server created: $site"
-  fi
+  ensure_sub_server "$site" "Roundcube (vmin-kit)" --mysql || return 1
 
   # Same shape as the proxy sites: certificate right after creation.
   ensure_site_cert "${WEBMAIL_PREFIX:-webmail}" || true
@@ -763,7 +776,7 @@ step_webmail(){
            --version latest --path / --db "mysql roundcube" --newdb --prefix-db; then
       ok "Roundcube installed: https://${site}/"
     else
-      err "Could not install Roundcube. Manually: Virtualmin -> $site -> Install Scripts"
+      err "Could not install Roundcube."
       return 1
     fi
   fi
@@ -867,7 +880,6 @@ step_webmail(){
 }
 
 # The docker.<domain> sub-server and its proxy to Portainer.
-# The feature list is the minimum a reverse proxy needs; see ensure_proxy_site.
 step_docker_site(){
   local prefix="${DOCKER_PREFIX:-docker}" port="${PORTAINER_PORT:-9000}"
   ensure_proxy_site "$prefix" "http://127.0.0.1:${port}/" "Portainer (vmin-kit)" || return 1
@@ -884,7 +896,7 @@ step_docker_site(){
     portainer_set_publish "127.0.0.1:${port}:9000"
     return
   fi
-  warn "Portainer ${port} left open: ${prefix}.${MAIN_DOMAIN} has no certificate."
+  warn "Portainer port left open: ${prefix}.${MAIN_DOMAIN} has no certificate."
   portainer_set_publish "${port}:9000"
   return 1   # missing certificate: count the step as failed so it is visible
 }
@@ -968,8 +980,7 @@ step_panel_sites(){
 # Binds the management ports to 127.0.0.1 only.
 #
 # A DANGEROUS step: afterwards the panel is reachable only through the proxy.
-# So the proxy is verified first, and if that fails the port is left open with
-# instructions for doing it by hand.
+# So the proxy is verified first, and if that fails the port is left open.
 #
 # The interface keeps its own SSL and the proxy talks https to it, so Webmin
 # still considers itself secure and emits https links.
@@ -983,8 +994,7 @@ lock_panel_port(){
   fi
 
   if ! proxy_site_works "$prefix"; then
-    warn "$name not locked: the ${prefix}.${MAIN_DOMAIN} proxy could not be verified."
-    warn "  Once the proxy works: add bind=127.0.0.1 to $conf and restart $svc"
+    warn "$name port left open: the ${prefix}.${MAIN_DOMAIN} proxy could not be verified."
     return 1
   fi
 
@@ -1154,7 +1164,7 @@ plugin_list_enabled(){
 }
 
 step_plugins(){
-  command -v virtualmin >/dev/null 2>&1 || { err "Virtualmin missing; skipping plugins."; return 1; }
+  need_virtualmin || return 1
   local wroot im
   wroot="$(webmin_root)"
   im="$wroot/install-module.pl"
