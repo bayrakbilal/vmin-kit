@@ -137,6 +137,16 @@ sub f2b_check {
 sub f2b_apply {
 	_has("fail2ban-client") or return (0, "fail2ban not installed");
 	_run("systemctl restart fail2ban") or return (0, "could not restart fail2ban");
+	# systemd reports "started" before fail2ban's socket is ready and the jails
+	# are loaded, so poll for readiness rather than checking immediately.
+	for (1 .. 20) {
+		last if (_run("fail2ban-client ping"));
+		sleep(1);
+	}
+	for (1 .. 10) {
+		last if (_run("fail2ban-client status sshd"));
+		sleep(1);
+	}
 	return f2b_check() ? (1, "restarted, jails up") : (0, "restarted but jails not up");
 }
 sub f2b_status {
