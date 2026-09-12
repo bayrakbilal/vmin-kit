@@ -1086,12 +1086,9 @@ elsif (&indexof($module_name, @{$u->{'modules'} || []}) < 0) {
 	$changed = 1;
 	}
 
-# The anonymous entry. Other entries are kept - they are not ours to remove -
-# except ones tied to our own user under another path: those are ours, left
-# by an older version.
+# The anonymous entry. Other entries are kept: they are not ours to remove.
 my $e = &hook_anon_entry();
-my $mine = "=".&hook_user();
-my @cur = grep { $_ eq $e || substr($_, -length($mine)) ne $mine } &anon_entries();
+my @cur = &anon_entries();
 if (!grep { $_ eq $e } @cur) {
 	my %ms;
 	&get_miniserv_config(\%ms);
@@ -1109,8 +1106,8 @@ return ($changed, undef);
 # remove_hook_access() - takes the entry and the user away with the module.
 sub remove_hook_access
 {
-my $mine = "=".&hook_user();
-my @keep = grep { substr($_, -length($mine)) ne $mine } &anon_entries();
+my $e = &hook_anon_entry();
+my @keep = grep { $_ ne $e } &anon_entries();
 my %ms;
 &get_miniserv_config(\%ms);
 if (($ms{'anonymous'} || '') ne join(" ", @keep)) {
