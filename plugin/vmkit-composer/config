@@ -1,0 +1,3 @@
+scan_depth=3
+flags=nodev,optimize
+timeout=900

@@ -1,0 +1,4 @@
+desc=Git Deploy
+depends=virtual-server
+category=servers
+version=1.0.0
